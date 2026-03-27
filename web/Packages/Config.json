@@ -1,0 +1,55 @@
+{
+  "CustomAppSettings": [
+    {
+      "Label": "Elise Application Id",
+      "Path": "EliseSoapService.Authentication.ApplicationID",
+      "Value": "CustomActions"
+    },
+    {
+      "Label": "Elise Applciation Key",
+      "Path": "EliseSoapService.Authentication.ApplicationKey",
+      "Value": "XXXXXXXXXXXXXXXXXXXXXX"
+    }
+  ],
+  "AppSettings": {
+    "CustomAction.EnableWebHookCheck": true,
+    "CustomAction.APIKey": "xxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+
+    "CustomAction.Jwt.Key": "6TqBqlB1ghLgYrXr7Q9rtbCPYRBes4wXhDAccCN9G2HfDmfjH11nWJ2RsiiyMrWLLV4mClw5ECxHgSK0as2QAtno2198CzcWNu4hIQy07HdnRq2gJmbKSAK8sEFvG4gG",
+    "CustomAction.Jwt.Expires": 0,
+    "CustomAction.Jwt.Issuer": "{@HostElise}",
+    "CustomAction.Jwt.Audience": "{@HostElise}",
+    "CustomAction.Jwt.ValidateIssuer": true,
+    "CustomAction.Jwt.ValidateAudience": true,
+    "CustomAction.Jwt.ValidateLifetime": true,
+    "CustomAction.Jwt.ValidateIssuerSigningKey": true,
+
+    "EliseSoapService.Address": "{@HostElise}/{Instance}/Elise/WebServiceApplication/EliseWebService.svc/SOAP",
+    "EliseSoapService.Authentication.Instance": "GED",
+
+    "Serilog.WriteTo[0].Args.configureLogger.WriteTo[0].Args.path": "C:\\ProgramData\\Archimed\\logs\\Integration.Sample.API.log",
+    "Serilog.WriteTo[1].Args.configureLogger.WriteTo[0].Args.path": "C:\\ProgramData\\Archimed\\logs\\Integration.Sample.SOAP.log",
+
+    "Template.Sample": "Exemple"
+  },
+
+  "ApiKey": "xxxxxxxx-xxxx-xxxx-xxxxx-xxxxxxxxxxxxxx",
+
+  "CustomActions": [
+    {
+      "actionId": "Sample",
+      "labels[0].value": "Sample",
+      "icon.name": "not_started",
+      "displayByPriority": 1,
+      "refreshData": true,
+      "eliseUi[0].scope": 1,
+      "eliseUi[0].target": 2,
+      "eliseUi[0].frameConfiguration.frameId": 1,
+      "eliseUi[0].frameConfiguration.size.width": 450,
+      "eliseUi[0].frameConfiguration.size.height": 250,
+      "eliseUi[0].frameConfiguration.size.unitMeasure": 1,
+      "url": "CustomAction",
+      "ActivatedBySort": true
+    }
+  ]
+}

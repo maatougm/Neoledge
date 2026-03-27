@@ -1,0 +1,15 @@
+@import './base.css';
+
+#app {
+  font-family: var(--nl-font);
+}
+
+a {
+  text-decoration: none;
+  color: var(--nl-accent);
+  transition: color 0.15s;
+}
+
+a:hover {
+  color: var(--nl-accent-hover);
+}

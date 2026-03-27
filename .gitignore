@@ -1,0 +1,20 @@
+# Claude Code local settings (not for repo)
+.claude/
+
+# NeoLibrary extracted folder (only keep the .tgz)
+deign/components-0.2.123448/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.user
+
+# Temp / backup
+*.bak
+*.tmp

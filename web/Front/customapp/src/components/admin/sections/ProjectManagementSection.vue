@@ -1,0 +1,558 @@
+<!--
+  @file     ProjectManagementSection.vue
+  @module   NeoLeadge — Deployment Manager
+  @author   [dev]
+  @date     2026-03-27
+  @desc     Gestion des projets — list with bulk selection, archive, duplicate, delete actions
+-->
+<template>
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <h2 class="section-title">Gestion des projets</h2>
+        <p class="section-sub">{{ store.projects.length }} projet(s) au total</p>
+      </div>
+      <div v-if="!selectedProjectId" class="header-actions">
+        <NeoButton
+          label="Exporter CSV"
+          icon="pi pi-download"
+          outlined
+          @click="exportCsv"
+        />
+        <NeoButton
+          label="Nouveau projet"
+          icon="pi pi-plus"
+          @click="showForm = true"
+        />
+      </div>
+    </div>
+
+    <!-- Project detail panel -->
+    <ProjectDetailPanel
+      v-if="selectedProjectId"
+      :project-id="selectedProjectId"
+      @close="selectedProjectId = null"
+    />
+
+    <!-- Create form inline -->
+    <ProjectCreateForm v-else-if="showForm" @cancel="showForm = false" @created="showForm = false" />
+
+    <!-- Project table -->
+    <template v-else>
+      <div v-if="store.loading" class="loading-state">
+        <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #0d9488" />
+      </div>
+      <div v-else-if="store.projects.length === 0" class="empty-state">
+        <i class="pi pi-folder-open" />
+        <p>Aucun projet. Créez-en un pour commencer.</p>
+      </div>
+      <div v-else class="project-table-wrap">
+        <!-- Search & filter bar -->
+        <div class="filter-bar">
+          <NeoInputText
+            v-model="searchText"
+            placeholder="Rechercher par nom ou client…"
+            class="filter-search"
+          />
+          <NeoSelect
+            v-model="statusFilter"
+            :options="statusFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Tous les statuts"
+            class="filter-status"
+          />
+        </div>
+
+        <!-- Bulk action bar -->
+        <div v-if="selectedIds.size > 0" class="bulk-bar">
+          <span class="bulk-count">{{ selectedIds.size }} projet(s) sélectionné(s)</span>
+          <NeoButton
+            label="Archiver"
+            icon="pi pi-inbox"
+            severity="warn"
+            size="small"
+            @click="handleBulkArchive"
+          />
+          <NeoButton
+            label="Désélectionner"
+            severity="secondary"
+            outlined
+            size="small"
+            @click="clearSelection"
+          />
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="col-check">
+                <input
+                  type="checkbox"
+                  :checked="allSelected"
+                  :indeterminate="someSelected"
+                  @change="toggleSelectAll"
+                  class="row-checkbox"
+                />
+              </th>
+              <th>Nom</th>
+              <th>Client</th>
+              <th>Chef de projet</th>
+              <th>Statut</th>
+              <th>Créé le</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="p in filteredProjects"
+              :key="p.id"
+              :class="{ 'row--selected': selectedIds.has(p.id) }"
+            >
+              <td class="col-check">
+                <input
+                  type="checkbox"
+                  :checked="selectedIds.has(p.id)"
+                  @change="toggleRow(p.id)"
+                  class="row-checkbox"
+                />
+              </td>
+              <td class="cell-name">
+                {{ p.name }}
+                <span
+                  v-if="isNearDeadline(p)"
+                  title="Échéance dans moins de 7 jours"
+                  style="color:#f59e0b;margin-left:4px"
+                >
+                  <i class="pi pi-exclamation-triangle" />
+                </span>
+              </td>
+              <td>{{ p.clientName }}</td>
+              <td>{{ p.projectManagerName ?? '—' }}</td>
+              <td>
+                <NeoTag
+                  :value="PROJECT_STATUS_LABELS[p.status]"
+                  :severity="statusSeverity(p.status)"
+                />
+              </td>
+              <td class="cell-date">{{ formatDate(p.createdAt) }}</td>
+              <td>
+                <div class="action-row">
+                  <NeoButton
+                    icon="pi pi-eye"
+                    size="small"
+                    outlined
+                    title="Gérer le questionnaire"
+                    @click="selectedProjectId = p.id"
+                  />
+                  <NeoButton
+                    icon="pi pi-user-edit"
+                    size="small"
+                    outlined
+                    title="Assigner chef de projet"
+                    @click="openAssign(p.id, p.name)"
+                  />
+                  <NeoButton
+                    icon="pi pi-copy"
+                    size="small"
+                    outlined
+                    title="Dupliquer"
+                    @click="openDuplicate(p.id, p.name)"
+                  />
+                  <NeoButton
+                    icon="pi pi-inbox"
+                    size="small"
+                    outlined
+                    severity="warn"
+                    :disabled="p.status === 'Archived'"
+                    title="Archiver"
+                    @click="handleArchive(p.id, p.name)"
+                  />
+                  <NeoButton
+                    icon="pi pi-trash"
+                    size="small"
+                    outlined
+                    severity="danger"
+                    title="Supprimer"
+                    @click="handleDelete(p.id, p.name)"
+                  />
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- Assign manager dialog -->
+    <AssignManagerDialog
+      :visible="showAssign"
+      :project-id="assignId"
+      :project-name="assignName"
+      @close="showAssign = false"
+      @assigned="showAssign = false"
+    />
+
+    <!-- Duplicate dialog -->
+    <Dialog
+      v-model:visible="showDuplicate"
+      header="Dupliquer le projet"
+      :modal="true"
+      style="width: 420px"
+    >
+      <div class="dialog-body">
+        <p class="dialog-hint">Saisissez le nom du nouveau projet (copie de « {{ duplicateSrcName }} »).</p>
+        <div class="field-wrap">
+          <label class="field-label">Nom du projet</label>
+          <NeoInputText
+            v-model="duplicateName"
+            placeholder="Nom du projet dupliqué"
+            class="w-full"
+          />
+        </div>
+        <NeoMessage v-if="duplicateError" severity="error" :text="duplicateError" />
+      </div>
+      <template #footer>
+        <NeoButton label="Annuler" severity="secondary" outlined @click="closeDuplicate" />
+        <NeoButton
+          label="Dupliquer"
+          icon="pi pi-copy"
+          :loading="duplicateLoading"
+          :disabled="!duplicateName.trim()"
+          @click="confirmDuplicate"
+        />
+      </template>
+    </Dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import axios from 'axios'
+import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import Dialog from 'primevue/dialog'
+import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
+import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
+import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'
+import { useProjectStore } from '@/stores/projectStore'
+import { useApp } from '@/stores/useApp'
+import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
+import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+
+const store   = useProjectStore()
+const app     = useApp()
+const toast   = useNeoToast()
+const confirm = useNeoConfirm()
+
+const showForm          = ref(false)
+const selectedProjectId = ref<string | null>(null)
+const showAssign        = ref(false)
+const assignId          = ref('')
+const assignName        = ref('')
+
+// ─── Search & filter ──────────────────────────────────────────────────────────
+const searchText   = ref('')
+const statusFilter = ref<ProjectStatus | ''>('')
+
+const statusFilterOptions = [
+  { label: 'Tous les statuts', value: '' },
+  ...Object.entries(PROJECT_STATUS_LABELS).map(([value, label]) => ({ label, value })),
+]
+
+const filteredProjects = computed(() => {
+  const q   = searchText.value.trim().toLowerCase()
+  const s   = statusFilter.value
+  return store.projects.filter((p) => {
+    const matchText = !q || p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q)
+    const matchStatus = !s || p.status === s
+    return matchText && matchStatus
+  })
+})
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+const exportCsv = () => {
+  const headers = ['Nom', 'Client', 'Statut', 'Chef de projet', 'Date début', 'Date fin', 'Créé le']
+  const rows = store.projects.map((p) => [
+    p.name,
+    p.clientName,
+    PROJECT_STATUS_LABELS[p.status],
+    p.projectManagerName ?? '',
+    p.startDate ? new Date(p.startDate).toLocaleDateString('fr-FR') : '',
+    p.endDate   ? new Date(p.endDate).toLocaleDateString('fr-FR')   : '',
+    new Date(p.createdAt).toLocaleDateString('fr-FR'),
+  ])
+  const csv = [headers, ...rows]
+    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `projets_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ─── Deadline badge helper ─────────────────────────────────────────────────────
+const isNearDeadline = (p: ProjectSummary): boolean => {
+  if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return false
+  const diff = new Date(p.endDate).getTime() - Date.now()
+  return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000
+}
+
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selectedIds = ref<Set<string>>(new Set())
+
+const allSelected = computed(
+  () => filteredProjects.value.length > 0 && filteredProjects.value.every((p) => selectedIds.value.has(p.id)),
+)
+const someSelected = computed(
+  () => filteredProjects.value.some((p) => selectedIds.value.has(p.id)) && !allSelected.value,
+)
+
+const toggleRow = (id: string) => {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+  }
+  selectedIds.value = next
+}
+
+const toggleSelectAll = () => {
+  if (allSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(filteredProjects.value.map((p) => p.id))
+  }
+}
+
+const clearSelection = () => {
+  selectedIds.value = new Set()
+}
+
+// ─── Duplicate ────────────────────────────────────────────────────────────────
+const showDuplicate     = ref(false)
+const duplicateSrcId    = ref('')
+const duplicateSrcName  = ref('')
+const duplicateName     = ref('')
+const duplicateError    = ref('')
+const duplicateLoading  = ref(false)
+
+const openDuplicate = (id: string, name: string) => {
+  duplicateSrcId.value   = id
+  duplicateSrcName.value = name
+  duplicateName.value    = `Copie de ${name}`
+  duplicateError.value   = ''
+  showDuplicate.value    = true
+}
+
+const closeDuplicate = () => {
+  showDuplicate.value  = false
+  duplicateError.value = ''
+}
+
+const confirmDuplicate = async () => {
+  if (!duplicateName.value.trim()) return
+  duplicateLoading.value = true
+  duplicateError.value   = ''
+  try {
+    await axios.post(
+      `${app.apiUrl}/admin/project/${duplicateSrcId.value}/duplicate`,
+      { name: duplicateName.value.trim() },
+      { headers: app.authHeader() },
+    )
+    toast.add({ severity: 'success', detail: `Projet dupliqué : « ${duplicateName.value.trim()} ».`, life: 3000 })
+    closeDuplicate()
+    await store.fetchAll()
+  } catch {
+    duplicateError.value = 'Erreur lors de la duplication du projet.'
+  } finally {
+    duplicateLoading.value = false
+  }
+}
+
+// ─── Lifecycle ────────────────────────────────────────────────────────────────
+onMounted(() => store.fetchAll())
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const statusSeverity = (s: ProjectStatus) =>
+  PROJECT_STATUS_SEVERITY[s] as 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast'
+
+const formatDate = (iso: string) =>
+  iso ? new Date(iso).toLocaleDateString('fr-FR') : '—'
+
+const openAssign = (id: string, name: string) => {
+  assignId.value   = id
+  assignName.value = name
+  showAssign.value = true
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+const handleArchive = (id: string, name: string) => {
+  confirm.require({
+    message: `Archiver le projet « ${name} » ?`,
+    header: "Confirmer l'archivage",
+    icon: 'pi pi-inbox',
+    acceptLabel: 'Archiver',
+    rejectLabel: 'Annuler',
+    accept: async () => {
+      await store.archiveProject(id)
+      toast.add({ severity: 'info', detail: `Projet « ${name} » archivé.`, life: 3000 })
+    },
+  })
+}
+
+const handleDelete = (id: string, name: string) => {
+  confirm.require({
+    message: `Supprimer définitivement le projet « ${name} » ? Cette action est irréversible.`,
+    header: 'Confirmer la suppression',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    accept: async () => {
+      await store.deleteProject(id)
+      toast.add({ severity: 'success', detail: `Projet « ${name} » supprimé.`, life: 3000 })
+    },
+  })
+}
+
+const handleBulkArchive = () => {
+  if (selectedIds.value.size === 0) return
+  confirm.require({
+    message: `Archiver ${selectedIds.value.size} projet(s) ?`,
+    header: 'Confirmation',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Archiver',
+    rejectLabel: 'Annuler',
+    accept: async () => {
+      try {
+        await axios.post(
+          `${app.apiUrl}/admin/project/bulk-archive`,
+          { projectIds: [...selectedIds.value] },
+          { headers: app.authHeader() },
+        )
+        toast.add({ severity: 'success', detail: `${selectedIds.value.size} projet(s) archivé(s).`, life: 3000 })
+        selectedIds.value = new Set()
+        await store.fetchAll()
+      } catch {
+        toast.add({ severity: 'error', detail: "Erreur lors de l'archivage.", life: 4000 })
+      }
+    },
+  })
+}
+</script>
+
+<style scoped>
+.section { display: flex; flex-direction: column; gap: 1.5rem; }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
+.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem;
+  color: #9ca3af;
+}
+.empty-state i { font-size: 2.5rem; }
+
+.project-table-wrap { overflow-x: auto; }
+
+/* ── Header actions ──────────────────────────────────────────────────────────── */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Filter bar ──────────────────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.filter-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-status {
+  min-width: 200px;
+}
+
+/* ── Bulk action bar ─────────────────────────────────────────────────────────── */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.bulk-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  flex: 1;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.data-table th {
+  background: #f9fafb;
+  padding: 0.65rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+  vertical-align: middle;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: #f9fafb; }
+
+.col-check { width: 2.5rem; text-align: center; }
+.row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: #0d9488; }
+
+.row--selected td { background: #f0fdfa !important; }
+
+.cell-name { font-weight: 600; color: #111827; }
+.cell-date { white-space: nowrap; color: #6b7280; font-size: 0.8rem; }
+
+.action-row { display: flex; gap: 0.4rem; }
+
+/* ── Duplicate dialog ────────────────────────────────────────────────────────── */
+.dialog-body { display: flex; flex-direction: column; gap: 1rem; padding: 0.25rem 0; }
+.dialog-hint { margin: 0; font-size: 0.85rem; color: #6b7280; }
+.field-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
+.field-label { font-size: 0.82rem; color: #6b7280; font-weight: 500; }
+</style>

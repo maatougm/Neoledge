@@ -1,0 +1,196 @@
+<template>
+  <div class="pm-detail">
+    <div class="detail-header">
+      <button class="back-btn" @click="emit('close')">
+        <i class="pi pi-arrow-left" /> Mes projets
+      </button>
+      <NeoTag
+        :value="PROJECT_STATUS_LABELS[project.status]"
+        :severity="statusSeverity(project.status)"
+      />
+      <NeoButton
+        label="Exporter PDF"
+        icon="pi pi-file-pdf"
+        outlined
+        size="small"
+        @click="exportPdf"
+      />
+    </div>
+
+    <!-- Hidden print area -->
+    <div id="pm-print-area" style="display: none">
+      <h1>{{ project.name }}</h1>
+      <div class="meta">
+        Client : {{ project.clientName }} | Statut : {{ PROJECT_STATUS_LABELS[project.status] }}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Champ</th>
+            <th>Valeur</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="field in project.fields" :key="field.id">
+            <td>{{ field.label }}</td>
+            <td>{{ fieldValue(field.id) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Project title + meta -->
+    <div class="detail-meta">
+      <div>
+        <h2 class="detail-name">{{ project.name }}</h2>
+        <p class="detail-client">Client : <strong>{{ project.clientName }}</strong></p>
+      </div>
+    </div>
+
+    <!-- Phase stepper -->
+    <PhasesStepper :status="project.status" />
+
+    <!-- Inner tabs -->
+    <div class="inner-tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        :class="['inner-tab', { 'inner-tab--active': activeTab === tab.id }]"
+        @click="activeTab = tab.id"
+      >
+        <i :class="['pi', tab.icon]" />
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div class="tab-body">
+      <QuestionnaireForm v-if="activeTab === 'questionnaire'" :project="project" :readonly="readonly" />
+      <AIOutputSection   v-else-if="activeTab === 'ai'"      :ai-output="project.aiOutput" />
+      <TeamValidationSection
+        v-else-if="activeTab === 'validation'"
+        :project-id="project.id"
+        :validations="validations"
+      />
+      <ActivityFeed
+        v-else-if="activeTab === 'activity'"
+        :activities="store.activities"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { NeoButton, NeoTag } from '@neolibrary/components'
+import { watch } from 'vue'
+import PhasesStepper         from '@/components/pm/PhasesStepper.vue'
+import QuestionnaireForm     from '@/components/pm/QuestionnaireForm.vue'
+import AIOutputSection       from '@/components/pm/AIOutputSection.vue'
+import TeamValidationSection from '@/components/pm/TeamValidationSection.vue'
+import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
+import { usePmStore }        from '@/stores/pmStore'
+import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
+import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
+import type { ProjectValidation } from '@/types/pm.types'
+
+const props = defineProps<{ project: ProjectDetail; validations: ProjectValidation[]; readonly?: boolean }>()
+const emit = defineEmits<{ close: [] }>()
+const store = usePmStore()
+
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'activity'
+const activeTab = ref<TabId>('questionnaire')
+
+watch(activeTab, (tab) => {
+  if (tab === 'activity') store.fetchActivity(props.project.id)
+})
+
+const tabs: { id: TabId; label: string; icon: string }[] = [
+  { id: 'questionnaire', label: 'Questionnaire',      icon: 'pi-list-check' },
+  { id: 'ai',            label: 'Résultat IA',        icon: 'pi-sparkles' },
+  { id: 'validation',    label: 'Validation équipes', icon: 'pi-shield' },
+  { id: 'activity',      label: 'Activité',           icon: 'pi-history' },
+]
+
+const statusSeverity = (s: ProjectStatus) =>
+  PROJECT_STATUS_SEVERITY[s] as 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast'
+
+function fieldValue(fieldId: string): string {
+  const fv = props.project.fieldValues.find((v) => v.projectFieldId === fieldId)
+  return fv?.value ?? '—'
+}
+
+function exportPdf(): void {
+  const printArea = document.getElementById('pm-print-area')
+  if (!printArea) return
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${props.project.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 2rem; color: #111827; }
+        h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+        .meta { color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f3f4f6; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.8rem; text-transform: uppercase; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
+        .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.75rem; }
+      </style>
+    </head>
+    <body>
+      ${printArea.innerHTML}
+    </body>
+    </html>
+  `)
+  win.document.close()
+  win.print()
+}
+</script>
+
+<style scoped>
+.pm-detail { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.detail-header { display: flex; align-items: center; gap: 1rem; }
+
+.back-btn {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: none; border: none; color: #6b7280;
+  font-size: 0.875rem; cursor: pointer; padding: 0.3rem 0;
+  transition: color 0.15s;
+}
+.back-btn:hover { color: #0d9488; }
+
+.detail-meta { display: flex; align-items: flex-start; justify-content: space-between; }
+.detail-name { font-size: 1.4rem; font-weight: 800; color: #111827; margin: 0; }
+.detail-client { font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0; }
+
+.inner-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.inner-tab {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem; font-weight: 600;
+  color: #6b7280; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  border-radius: 4px 4px 0 0;
+}
+.inner-tab:hover { color: #111827; }
+.inner-tab--active { color: #0d9488; border-bottom-color: #0d9488; }
+
+.tab-body {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+</style>

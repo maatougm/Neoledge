@@ -1,0 +1,60 @@
+/* ── NeoLeadge Design System ──────────────────────────────────────────────────── */
+:root {
+  --nl-bg:            #F4F4F5;
+  --nl-surface:       #FFFFFF;
+  --nl-surface-2:     #FAFAFA;
+  --nl-border:        #E4E4E7;
+  --nl-border-strong: #D4D4D8;
+  --nl-text-1:        #09090B;
+  --nl-text-2:        #52525B;
+  --nl-text-3:        #A1A1AA;
+  --nl-accent:        #0D9488;
+  --nl-accent-hover:  #0F766E;
+  --nl-accent-light:  #F0FDFA;
+  --nl-danger:        #EF4444;
+  --nl-danger-light:  #FEF2F2;
+  --nl-warning:       #F59E0B;
+  --nl-warning-light: #FFFBEB;
+  --nl-success:       #22C55E;
+  --nl-success-light: #F0FDF4;
+  --nl-sidebar-bg:    #09090B;
+  --nl-radius:        8px;
+  --nl-radius-lg:     12px;
+  --nl-shadow:        0 1px 3px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
+  --nl-shadow-lg:     0 4px 20px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.06);
+  --nl-font:          'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--nl-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--nl-text-1);
+  background: var(--nl-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--nl-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbar (webkit) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--nl-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--nl-text-3); }
