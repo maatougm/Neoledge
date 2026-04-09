@@ -26,6 +26,6 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-app.use(NeoLibraryThemePlugin)
+app.use(NeoLibraryThemePlugin, { theme: 'neoledge' })
 
 app.mount('#app')
