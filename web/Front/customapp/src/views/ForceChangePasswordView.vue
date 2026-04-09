@@ -110,13 +110,14 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f5f9;
+  background: var(--nl-bg);
 }
 
 .fcp-card {
-  background: #ffffff;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--nl-shadow-lg);
   padding: 2.5rem 2rem;
   width: 100%;
   max-width: 440px;
@@ -151,13 +152,13 @@ const handleSubmit = async () => {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--nl-text-1);
 }
 
 .fcp-subtitle {
   margin: 0;
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--nl-text-3);
   line-height: 1.5;
 }
 

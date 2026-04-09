@@ -334,8 +334,8 @@ const confirmDelete = async (filter: SavedFilter): Promise<void> => {
 }
 
 .sfp__item--active {
-  border-color: #0d9488;
-  background: #f0fdfa;
+  border-color: var(--nl-accent);
+  background: var(--nl-accent-light);
 }
 
 .sfp__item-header {

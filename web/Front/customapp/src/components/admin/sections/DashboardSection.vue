@@ -313,6 +313,8 @@ const stackedAriaLabel = computed(() =>
 }
 
 .kpi--warn { background: #FFFCF0; }
+:global(.dark) .kpi--warn { background: rgba(217, 119, 6, 0.12); }
+
 
 .kpi-divider {
   width: 1px;
@@ -353,6 +355,9 @@ const stackedAriaLabel = computed(() =>
 .kpi-badge--success { background: #DCFCE7; color: #15803D; }
 .kpi-badge--danger  { background: #FEE2E2; color: #DC2626; }
 .kpi-badge--warn    { background: #FEF3C7; color: #B45309; }
+:global(.dark) .kpi-badge--success { background: rgba(5,150,105,0.18); color: #34d399; }
+:global(.dark) .kpi-badge--danger  { background: rgba(220,38,38,0.18); color: #fb7185; }
+:global(.dark) .kpi-badge--warn    { background: rgba(217,119,6,0.18); color: #fcd34d; }
 
 /* Mid grid */
 .mid-grid {

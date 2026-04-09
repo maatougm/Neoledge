@@ -22,6 +22,8 @@ const app = useApp()
 <style>
 .app-root {
   min-height: 100vh;
-  background-color: #f5f7fa;
+  background-color: var(--nl-bg);
+  color: var(--nl-text-1);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 </style>

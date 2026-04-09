@@ -252,7 +252,7 @@ async function copyTempPassword(): Promise<void> {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #f0fdfa;
+  background: var(--nl-accent-light);
   color: var(--nl-accent);
   display: flex;
   align-items: center;
@@ -296,8 +296,8 @@ async function copyTempPassword(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius);
   padding: 0.75rem 1rem;
   width: 100%;

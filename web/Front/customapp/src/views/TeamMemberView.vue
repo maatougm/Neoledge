@@ -195,10 +195,10 @@ function formatDate(iso: string): string {
 </script>
 
 <style scoped>
-.team-layout { display: flex; min-height: 100vh; background: #f8fafc; }
+.team-layout { display: flex; min-height: 100vh; background: var(--nl-bg); transition: background 0.2s ease; }
 
 .sidebar {
-  width: 240px; flex-shrink: 0; background: #0f172a;
+  width: 240px; flex-shrink: 0; background: var(--nl-sidebar-bg);
   display: flex; flex-direction: column; min-height: 100vh;
   position: sticky; top: 0;
 }

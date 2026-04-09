@@ -52,20 +52,52 @@
   --nl-transition:    all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Dark Mode Tokens (Future-proofing) */
+/* Dark Mode Tokens */
 .dark {
+  /* Backgrounds & Surfaces */
   --nl-bg:            #020617;
   --nl-surface:       #0F172A;
   --nl-surface-2:     #1E293B;
   --nl-border:        #334155;
   --nl-border-strong: #475569;
+
+  /* Text */
   --nl-text-1:        #F8FAFC;
   --nl-text-2:        #CBD5E1;
   --nl-text-3:        #94A3B8;
-  --nl-glass-bg:      rgba(15, 23, 42, 0.7);
-  --nl-glass-border:  rgba(255, 255, 255, 0.08);
+
+  /* Accent (brighter teal for dark bg readability) */
+  --nl-accent:        #14B8A6;
+  --nl-accent-hover:  #0D9488;
+  --nl-accent-light:  rgba(13, 148, 136, 0.18);
+  --nl-accent-glow:   rgba(13, 148, 136, 0.3);
+
+  /* Status — lighter tones for dark backgrounds */
+  --nl-danger:        #FB7185;
+  --nl-danger-light:  rgba(225, 29, 72, 0.18);
+  --nl-warning:       #FCD34D;
+  --nl-warning-light: rgba(217, 119, 6, 0.18);
+  --nl-success:       #34D399;
+  --nl-success-light: rgba(5, 150, 105, 0.18);
+
+  /* Layout */
   --nl-sidebar-bg:    #020617;
   --nl-overlay-bg:    rgba(2, 6, 23, 0.85);
+
+  /* Interactive */
+  --nl-hover-bg:      rgba(255, 255, 255, 0.04);
+  --nl-hover-bg-2:    rgba(255, 255, 255, 0.08);
+
+  /* Shadows (stronger on dark) */
+  --nl-shadow:        0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.25);
+  --nl-shadow-lg:     0 10px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  --nl-shadow-glow:   0 0 20px rgba(13, 148, 136, 0.25);
+
+  /* Glassmorphism */
+  --nl-glass-bg:      rgba(15, 23, 42, 0.75);
+  --nl-glass-border:  rgba(255, 255, 255, 0.08);
+  --nl-glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.4);
+  --nl-glass-blur:    blur(16px);
 }
 
 *, *::before, *::after {

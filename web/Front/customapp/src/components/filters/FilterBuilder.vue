@@ -254,7 +254,7 @@ defineExpose({ resetAll, buildCriteria })
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 50%;
-  background: #0d9488;
+  background: var(--nl-accent);
   color: #fff;
   font-size: 0.7rem;
   font-weight: 700;
@@ -281,7 +281,7 @@ defineExpose({ resetAll, buildCriteria })
 .filter-builder__label {
   font-size: 0.78rem;
   font-weight: 500;
-  color: var(--text-color-secondary, #64748b);
+  color: var(--nl-text-3);
 }
 
 .filter-builder__chips {
@@ -315,12 +315,12 @@ defineExpose({ resetAll, buildCriteria })
   height: 1.4rem;
   border-radius: 999px;
   border: none;
-  background: var(--surface-300, #cbd5e1);
+  background: var(--nl-border-strong);
   cursor: pointer;
   transition: background 0.2s;
   padding: 0;
 }
-.filter-builder__toggle--on { background: #0d9488; }
+.filter-builder__toggle--on { background: var(--nl-accent); }
 
 .filter-builder__toggle-knob {
   position: absolute;

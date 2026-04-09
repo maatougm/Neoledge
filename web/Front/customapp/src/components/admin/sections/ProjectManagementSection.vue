@@ -589,6 +589,8 @@ const handleBulkArchive = () => {
   color: #1d4ed8;
   flex: 1;
 }
+:global(.dark) .bulk-bar { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.25); }
+:global(.dark) .bulk-count { color: #93c5fd; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .data-table {
@@ -618,6 +620,7 @@ const handleBulkArchive = () => {
 .row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: var(--nl-accent); }
 
 .row--selected td { background: #f0fdfa !important; }
+:global(.dark) .row--selected td { background: rgba(13,148,136,0.12) !important; }
 
 .cell-name { font-weight: 600; color: var(--nl-text-1); }
 .cell-date { white-space: nowrap; color: var(--nl-text-3); font-size: 0.8rem; }
@@ -643,7 +646,7 @@ const handleBulkArchive = () => {
 }
 
 .filter-active-badge {
-  background: #0d9488;
+  background: var(--nl-accent);
   color: #fff;
   border-radius: 999px;
   padding: 0.1rem 0.5rem;

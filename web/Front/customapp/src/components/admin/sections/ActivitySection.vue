@@ -508,6 +508,11 @@ function relativeTime(iso: string): string {
 .dot--deleted    { background: #fef2f2; color: #dc2626; }
 .dot--validation { background: #f5f3ff; color: #7c3aed; }
 .dot--default    { background: var(--nl-surface-2); color: var(--nl-text-3); }
+:global(.dark) .dot--created    { background: rgba(5,150,105,0.18); color: #34d399; }
+:global(.dark) .dot--updated    { background: rgba(59,130,246,0.18); color: #60a5fa; }
+:global(.dark) .dot--status     { background: rgba(234,88,12,0.18);  color: #fb923c; }
+:global(.dark) .dot--deleted    { background: rgba(220,38,38,0.18);  color: #fb7185; }
+:global(.dark) .dot--validation { background: rgba(124,58,237,0.18); color: #a78bfa; }
 
 .timeline-line {
   width: 2px;
