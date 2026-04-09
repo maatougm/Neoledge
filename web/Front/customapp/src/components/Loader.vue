@@ -11,15 +11,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--nl-overlay-bg);
   z-index: 9999;
 }
 
 .loader-spinner {
   width: 56px;
   height: 56px;
-  border: 6px solid #e5e7eb;
-  border-top-color: #0a6e89;
+  border: 6px solid var(--nl-border);
+  border-top-color: var(--nl-accent);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
 }

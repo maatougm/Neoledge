@@ -33,7 +33,15 @@
 
       <div class="sidebar-footer">
         <button class="user-identity-btn" @click="router.push({ name: 'profile' })" title="Mon profil">
-          <div class="sidebar-avatar" aria-hidden="true">{{ userInitials }}</div>
+          <img
+            v-if="sidebarAvatarUrl"
+            :src="sidebarAvatarUrl"
+            class="sidebar-avatar sidebar-avatar--img"
+            alt="Avatar"
+            aria-hidden="true"
+            @error="(e) => { (e.target as HTMLImageElement).style.display = 'none' }"
+          />
+          <div v-else class="sidebar-avatar" aria-hidden="true">{{ userInitials }}</div>
           <div class="sidebar-user-info">
             <span class="sidebar-user-name">{{ userName }}</span>
             <span class="sidebar-user-role">{{ userRoleLabel }}</span>
@@ -41,6 +49,7 @@
           <i class="pi pi-chevron-right sidebar-chevron" aria-hidden="true" />
         </button>
         <div class="footer-actions-row">
+          <NotificationBell />
           <button class="footer-icon-btn" :title="darkMode.isDark.value ? 'Mode clair' : 'Mode sombre'" @click="darkMode.toggle()" :aria-label="darkMode.isDark.value ? 'Passer en mode clair' : 'Passer en mode sombre'">
             <i :class="['pi', darkMode.isDark.value ? 'pi-sun' : 'pi-moon']" />
           </button>
@@ -96,10 +105,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoToast, NeoTag } from '@neolibrary/components'
 import { useDarkMode } from '@/composables/useDarkMode'
+import { useNotificationSocket } from '@/composables/useNotificationSocket'
+import NotificationBell from '@/components/NotificationBell.vue'
+import { useNotificationStore } from '@/stores/notificationStore'
 import PMProjectList   from '@/components/pm/PMProjectList.vue'
 import PMProjectDetail from '@/components/pm/PMProjectDetail.vue'
 import { usePmStore }  from '@/stores/pmStore'
@@ -107,10 +119,22 @@ import { useApp }      from '@/stores/useApp'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 
-const router   = useRouter()
-const store    = usePmStore()
-const app      = useApp()
-const darkMode = useDarkMode()
+const router             = useRouter()
+const store              = usePmStore()
+const app                = useApp()
+const darkMode           = useDarkMode()
+const notificationStore  = useNotificationStore()
+const notifSocket        = useNotificationSocket()
+
+onMounted(() => {
+  notificationStore.startPolling()
+  if (app.jwt && app.apiUrl) void darkMode.loadFromBackend(app.jwt, app.apiUrl)
+  if (app.apiUrl && app.jwt) notifSocket.connect(app.apiUrl, app.jwt)
+})
+onUnmounted(() => {
+  notificationStore.stopPolling()
+  notifSocket.disconnect()
+})
 
 type Section = 'projects' | 'validations'
 const activeSection     = ref<Section>('projects')
@@ -137,6 +161,16 @@ const userName = computed<string>(() => {
 const userRoleLabel = computed<string>(() =>
   app.userRole ? (USER_ROLE_LABELS[app.userRole as UserRole] ?? app.userRole) : ''
 )
+
+const sidebarAvatarUrl = computed<string | null>(() => {
+  if (!app.jwt) return null
+  try {
+    const p = JSON.parse(atob(app.jwt.split('.')[1]))
+    const sub: string = p.sub ?? ''
+    if (!sub) return null
+    return `${app.apiUrl}/api/userprofile/avatar/${sub}`
+  } catch { return null }
+})
 
 function selectSection(s: Section) {
   activeSection.value = s
@@ -173,7 +207,7 @@ function formatDate(iso: string): string {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .sidebar-logo {
-  width: 36px; height: 36px; border-radius: 8px; background: #0d9488;
+  width: 36px; height: 36px; border-radius: var(--nl-radius); background: var(--nl-accent);
   color: #fff; font-size: 0.85rem; font-weight: 700;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
@@ -183,30 +217,31 @@ function formatDate(iso: string): string {
 
 .nav-item {
   display: flex; align-items: center; gap: 0.75rem;
-  padding: 0.65rem 0.875rem; border-radius: 8px; border: none;
+  padding: 0.65rem 0.875rem; border-radius: var(--nl-radius); border: none;
   background: transparent; color: #94a3b8;
   font-size: 0.875rem; font-weight: 500; cursor: pointer;
   transition: background 0.15s, color 0.15s; text-align: left; width: 100%;
 }
 .nav-item:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
 .nav-item--active { background: rgba(13,148,136,0.15); color: #2dd4bf; }
-.nav-item--project { border-left: 2px solid #0d9488; border-radius: 0 8px 8px 0; }
+.nav-item--project { border-left: 2px solid var(--nl-accent); border-radius: 0 8px 8px 0; }
 .nav-label--truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-icon { font-size: 1rem; flex-shrink: 0; }
 
 .sidebar-footer { padding: 0.75rem; border-top: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; gap: 0.5rem; }
 .user-identity-btn { display: flex; align-items: center; gap: 0.625rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 0.625rem 0.75rem; width: 100%; cursor: pointer; transition: background 0.15s; text-align: left; }
 .user-identity-btn:hover { background: rgba(255,255,255,0.08); }
-.user-identity-btn:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
-.sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #0d9488, #0891b2); color: #fff; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-identity-btn:focus-visible { outline: 2px solid var(--nl-accent); outline-offset: 2px; }
+.sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--nl-accent), #0891b2); color: #fff; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sidebar-avatar--img { object-fit: cover; }
 .sidebar-user-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .sidebar-user-name { font-size: 0.8125rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-user-role { font-size: 0.7rem; color: #64748b; }
 .sidebar-chevron { font-size: 0.65rem; color: #475569; flex-shrink: 0; }
 .footer-actions-row { display: flex; gap: 0.375rem; }
-.footer-icon-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: none; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; color: #64748b; font-size: 0.9rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.footer-icon-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: none; border: 1px solid rgba(255,255,255,0.07); border-radius: var(--nl-radius); color: #64748b; font-size: 0.9rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
 .footer-icon-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
-.footer-icon-btn:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
+.footer-icon-btn:focus-visible { outline: 2px solid var(--nl-accent); outline-offset: 2px; }
 .footer-icon-btn--logout:hover { color: #f87171; }
 
 .main-content { flex: 1; min-width: 0; overflow-y: auto; }
@@ -215,19 +250,19 @@ function formatDate(iso: string): string {
 .loading-state { display: flex; align-items: center; justify-content: center; padding: 3rem; }
 
 .validations-section { display: flex; flex-direction: column; gap: 1.25rem; }
-.section-title { font-size: 1.25rem; font-weight: 800; color: #111827; margin: 0; }
+.section-title { font-size: 1.25rem; font-weight: 800; color: var(--nl-text-1); margin: 0; }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 3rem; color: #94a3b8; font-size: 0.875rem; }
 
 .validation-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .validation-card {
-  background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+  background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 10px;
   padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.4rem;
 }
 .v-header { display: flex; align-items: center; justify-content: space-between; }
-.v-date { font-size: 0.78rem; color: #9ca3af; }
-.v-detail { font-size: 0.875rem; color: #374151; }
-.v-comment { font-size: 0.82rem; color: #6b7280; font-style: italic; }
+.v-date { font-size: 0.78rem; color: var(--nl-text-3); }
+.v-detail { font-size: 0.875rem; color: var(--nl-text-2); }
+.v-comment { font-size: 0.82rem; color: var(--nl-text-3); font-style: italic; }
 
 /* ── Mobile responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 768px) {

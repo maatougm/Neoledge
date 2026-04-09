@@ -126,8 +126,8 @@ const handleAssign = async () => {
 }
 
 .dialog-panel {
-  background: #fff;
-  border-radius: 12px;
+  background: var(--nl-surface);
+  border-radius: var(--nl-radius-lg);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   width: 100%;
   max-width: 420px;
@@ -138,13 +138,13 @@ const handleAssign = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--nl-surface-2);
 }
 
 .dialog-title {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--nl-text-1);
   margin: 0;
 }
 
@@ -152,12 +152,12 @@ const handleAssign = async () => {
   background: none;
   border: none;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--nl-text-3);
   font-size: 1rem;
   padding: 0.25rem;
   border-radius: 4px;
 }
-.dialog-close:hover { color: #111827; background: #f3f4f6; }
+.dialog-close:hover { color: var(--nl-text-1); background: var(--nl-surface-2); }
 
 .dialog-body {
   padding: 1.5rem;
@@ -168,7 +168,7 @@ const handleAssign = async () => {
 
 .dialog-hint {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   margin: 0;
 }
 
@@ -177,7 +177,7 @@ const handleAssign = async () => {
   justify-content: flex-end;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid #f3f4f6;
-  background: #f9fafb;
+  border-top: 1px solid var(--nl-surface-2);
+  background: var(--nl-surface-2);
 }
 </style>

@@ -3,7 +3,9 @@
     <div
       v-for="(phase, i) in PHASES"
       :key="phase.key"
-      :class="['step', stepState(phase.key)]"
+      :class="['step', stepState(phase.key), { clickable: isAdjacent(phase.key) }]"
+      :title="phase.label"
+      @click="handleClick(phase.key)"
     >
       <div class="step-connector" v-if="i > 0" />
       <div class="step-circle">
@@ -19,14 +21,15 @@
 import type { ProjectStatus } from '@/types/project.types'
 
 const props = defineProps<{ status: ProjectStatus }>()
+const emit = defineEmits<{ 'change-status': [newStatus: ProjectStatus] }>()
 
-const PHASES: { key: ProjectStatus; label: string }[] = [
-  { key: 'Draft',                  label: 'Brouillon' },
-  { key: 'InProgress',             label: 'En cours' },
-  { key: 'SpecificationValidation',label: 'Questionnaire' },
-  { key: 'Realization',            label: 'Réalisation' },
-  { key: 'DeploymentValidation',   label: 'Validation' },
-  { key: 'Completed',              label: 'Terminé' },
+const PHASES: readonly { key: ProjectStatus; label: string }[] = [
+  { key: 'Draft',                   label: 'Brouillon' },
+  { key: 'InProgress',              label: 'En cours' },
+  { key: 'SpecificationValidation', label: 'Questionnaire' },
+  { key: 'Realization',             label: 'Réalisation' },
+  { key: 'DeploymentValidation',    label: 'Validation' },
+  { key: 'Completed',               label: 'Terminé' },
 ]
 
 const ORDER: Record<ProjectStatus, number> = {
@@ -34,12 +37,24 @@ const ORDER: Record<ProjectStatus, number> = {
   Realization: 3, DeploymentValidation: 4, Completed: 5, Archived: 6,
 }
 
-const stepState = (key: ProjectStatus) => {
+const stepState = (key: ProjectStatus): 'done' | 'active' | 'pending' => {
   const cur = ORDER[props.status] ?? 0
   const idx = ORDER[key] ?? 0
-  if (idx < cur)  return 'done'
+  if (idx < cur) return 'done'
   if (idx === cur) return 'active'
   return 'pending'
+}
+
+const isAdjacent = (key: ProjectStatus): boolean => {
+  const cur = ORDER[props.status] ?? 0
+  const idx = ORDER[key] ?? 0
+  return Math.abs(idx - cur) === 1
+}
+
+const handleClick = (key: ProjectStatus): void => {
+  if (isAdjacent(key)) {
+    emit('change-status', key)
+  }
 }
 </script>
 
@@ -59,6 +74,18 @@ const stepState = (key: ProjectStatus) => {
   flex: 1;
   min-width: 80px;
   position: relative;
+  cursor: default;
+}
+
+.step.clickable {
+  cursor: pointer;
+}
+.step.clickable:hover .step-circle {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.18);
+}
+.step.clickable:hover .step-label {
+  color: var(--nl-accent);
 }
 
 .step-connector {
@@ -67,11 +94,11 @@ const stepState = (key: ProjectStatus) => {
   right: 50%;
   width: 100%;
   height: 2px;
-  background: #e5e7eb;
+  background: var(--nl-border);
   z-index: 0;
 }
 .step.done  .step-connector,
-.step.active .step-connector { background: #0d9488; }
+.step.active .step-connector { background: var(--nl-accent); }
 
 .step-circle {
   width: 28px;
@@ -84,21 +111,24 @@ const stepState = (key: ProjectStatus) => {
   font-weight: 700;
   position: relative;
   z-index: 1;
-  background: #e5e7eb;
-  color: #9ca3af;
-  border: 2px solid #e5e7eb;
+  background: var(--nl-border);
+  color: var(--nl-text-3);
+  border: 2px solid var(--nl-border);
   transition: all 0.2s;
 }
-.step.done   .step-circle { background: #0d9488; color: #fff; border-color: #0d9488; }
-.step.active .step-circle { background: #fff; color: #0d9488; border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,0.15); }
+.step.done   .step-circle { background: var(--nl-accent); color: #fff; border-color: var(--nl-accent); }
+.step.active .step-circle { background: var(--nl-surface); color: var(--nl-accent); border-color: var(--nl-accent); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15); }
+.step.pending .step-circle { opacity: 0.5; }
 
 .step-label {
   font-size: 0.72rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
   margin-top: 0.4rem;
   text-align: center;
   line-height: 1.2;
+  transition: color 0.15s;
 }
-.step.active .step-label { color: #0d9488; font-weight: 600; }
-.step.done   .step-label { color: #374151; }
+.step.active  .step-label { color: var(--nl-accent); font-weight: 600; }
+.step.done    .step-label { color: var(--nl-text-2); }
+.step.pending .step-label { opacity: 0.5; }
 </style>

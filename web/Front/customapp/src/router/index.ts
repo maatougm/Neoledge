@@ -3,11 +3,28 @@
  * @module   NeoLeadge — Deployment Manager
  * @author   [dev]
  * @date     2026-03-26
- * @desc     Vue Router configuration — auth guard, lazy-loaded views
+ * @desc     Vue Router configuration — auth guard, role-based access, lazy-loaded views
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteLocationNormalized } from 'vue-router'
 import { useApp } from '@/stores/useApp'
+import type { UserRole } from '@/types/user.types'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    allowedRoles?: UserRole[]
+  }
+}
+
+const ALL_AUTHENTICATED_ROLES: UserRole[] = [
+  'Admin',
+  'ProjectManager',
+  'SpecificationTeam',
+  'RealizationTeam',
+  'DeploymentTeam',
+  'Viewer',
+]
 
 const PUBLIC_ROUTES = ['login', 'unauthorized', 'force-change-password']
 
@@ -18,21 +35,27 @@ const router = createRouter({
       path: '/',
       name: 'CustomAction',
       component: () => import('@/views/CustomActionView.vue'),
+      meta: { allowedRoles: ALL_AUTHENTICATED_ROLES },
     },
     {
       path: '/admin',
       name: 'admin',
       component: () => import('@/views/AdminView.vue'),
+      meta: { allowedRoles: ['Admin'] },
     },
     {
       path: '/pm',
       name: 'pm',
       component: () => import('@/views/ProjectManagerView.vue'),
+      meta: { allowedRoles: ['ProjectManager'] },
     },
     {
       path: '/team',
       name: 'team',
       component: () => import('@/views/TeamMemberView.vue'),
+      meta: {
+        allowedRoles: ['SpecificationTeam', 'RealizationTeam', 'DeploymentTeam', 'Viewer'],
+      },
     },
     {
       path: '/login',
@@ -48,6 +71,7 @@ const router = createRouter({
       path: '/profile',
       name: 'profile',
       component: () => import('@/views/UserProfileView.vue'),
+      meta: { allowedRoles: ALL_AUTHENTICATED_ROLES },
     },
     {
       path: '/force-change-password',
@@ -57,10 +81,14 @@ const router = createRouter({
   ],
 })
 
+function isPublicRoute(to: RouteLocationNormalized): boolean {
+  return PUBLIC_ROUTES.includes(to.name as string)
+}
+
 router.beforeEach(async (to) => {
   const app = useApp()
 
-  if (!PUBLIC_ROUTES.includes(to.name as string)) {
+  if (!isPublicRoute(to)) {
     app.setLoading(true)
   }
 
@@ -68,13 +96,15 @@ router.beforeEach(async (to) => {
     await app.fetchApiUrl()
   }
 
-  if (!app.jwt && !PUBLIC_ROUTES.includes(to.name as string)) {
+  // --- Obtain JWT if missing (existing auth flows) ---
+  if (!app.jwt && !isPublicRoute(to)) {
     // If Elise passes a GUID in the query string, use the GUID auth flow
     const guid = to.query.Guid as string | undefined
     if (guid) {
       try {
         await app.fetchJwt(guid)
       } catch {
+        app.setLoading(false)
         return { name: 'unauthorized' }
       }
     } else {
@@ -93,6 +123,22 @@ router.beforeEach(async (to) => {
         app.setLoading(false)
         return { name: 'login' }
       }
+    }
+  }
+
+  // --- Force-change-password check ---
+  if (app.jwt && app.mustChangePassword && !isPublicRoute(to)) {
+    app.setLoading(false)
+    return { name: 'force-change-password' }
+  }
+
+  // --- Role-based access check ---
+  const allowedRoles = to.meta.allowedRoles as UserRole[] | undefined
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRole = app.userRole as UserRole | null
+    if (!userRole || !allowedRoles.includes(userRole)) {
+      app.setLoading(false)
+      return { name: 'unauthorized' }
     }
   }
 

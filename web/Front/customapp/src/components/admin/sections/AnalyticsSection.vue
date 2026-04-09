@@ -231,8 +231,8 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 }
 
 .section-header { margin-bottom: 0.25rem; }
-.section-title  { font-size: 1.5rem; font-weight: 800; color: #111827; margin: 0; }
-.section-subtitle { font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0; }
+.section-title  { font-size: 1.5rem; font-weight: 800; color: var(--nl-text-1); margin: 0; }
+.section-subtitle { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.25rem 0 0; }
 
 /* ── Metric cards ──────────────────────────────────────────────────────────── */
 .metrics-grid {
@@ -242,9 +242,9 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 }
 
 .metric-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -254,31 +254,31 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 .metric-value {
   font-size: 2rem;
   font-weight: 800;
-  color: #111827;
+  color: var(--nl-text-1);
   line-height: 1;
 }
-.metric-value--success  { color: #16a34a; }
-.metric-value--info     { color: #0284c7; }
-.metric-value--secondary { color: #6b7280; }
+.metric-value--success  { color: var(--nl-success); }
+.metric-value--info     { color: var(--nl-accent); }
+.metric-value--secondary { color: var(--nl-text-3); }
 
 .metric-label {
   font-size: 0.8rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-weight: 500;
 }
 
 /* ── Chart card ─────────────────────────────────────────────────────────────── */
 .chart-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   padding: 1.5rem;
 }
 
 .chart-title {
   font-size: 1rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--nl-text-1);
   margin: 0 0 1.25rem;
 }
 
@@ -298,14 +298,14 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 
 .status-bar-label {
   font-size: 0.85rem;
-  color: #374151;
+  color: var(--nl-text-2);
   font-weight: 500;
   text-align: right;
 }
 
 .status-bar-track {
   height: 12px;
-  background: #f3f4f6;
+  background: var(--nl-surface-2);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -317,15 +317,15 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
   transition: width 0.4s ease;
 }
 
-.status-bar-fill--secondary { background: #9ca3af; }
-.status-bar-fill--info      { background: #0284c7; }
-.status-bar-fill--warning   { background: #d97706; }
-.status-bar-fill--success   { background: #16a34a; }
+.status-bar-fill--secondary { background: var(--nl-border-strong); }
+.status-bar-fill--info      { background: var(--nl-accent); }
+.status-bar-fill--warning   { background: var(--nl-warning); }
+.status-bar-fill--success   { background: var(--nl-success); }
 
 .status-bar-count {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--nl-text-2);
   text-align: center;
 }
 
@@ -358,7 +358,7 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 
 .monthly-bar {
   width: 100%;
-  background: #0d9488;
+  background: var(--nl-accent);
   border-radius: 4px 4px 0 0;
   min-height: 4px;
   transition: height 0.4s ease;
@@ -366,13 +366,13 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 
 .monthly-label {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-weight: 500;
 }
 
 .monthly-count {
   font-size: 0.75rem;
-  color: #374151;
+  color: var(--nl-text-2);
   font-weight: 600;
 }
 
@@ -383,28 +383,28 @@ const avgDurationRows = computed((): AvgDurationRow[] => {
 }
 
 .avg-table th {
-  background: #f3f4f6;
+  background: var(--nl-surface-2);
   padding: 0.5rem 0.75rem;
   text-align: left;
   font-size: 0.8rem;
   text-transform: uppercase;
-  color: #6b7280;
+  color: var(--nl-text-3);
   letter-spacing: 0.05em;
   font-weight: 600;
 }
 
 .avg-table td {
   padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--nl-border);
   font-size: 0.875rem;
-  color: #374151;
+  color: var(--nl-text-2);
 }
 
 .avg-table tr:last-child td { border-bottom: none; }
 
 .empty-row {
   text-align: center;
-  color: #9ca3af;
+  color: var(--nl-text-3);
   font-style: italic;
   padding: 1.5rem;
 }

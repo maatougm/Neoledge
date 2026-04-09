@@ -208,7 +208,7 @@ const handleSubmit = () => {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
+  background: linear-gradient(135deg, var(--nl-accent), #0891b2);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 700;
@@ -224,7 +224,7 @@ const handleSubmit = () => {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #111827;
+  color: var(--nl-text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -233,7 +233,7 @@ const handleSubmit = () => {
 .user-hero-email {
   margin: 0;
   font-size: 0.78rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -258,7 +258,7 @@ const handleSubmit = () => {
 .role-hint {
   margin: 0.35rem 0 0;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
   min-height: 1.1em;
   transition: color 0.15s;
 }

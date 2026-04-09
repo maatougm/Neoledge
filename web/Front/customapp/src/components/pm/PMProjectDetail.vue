@@ -71,9 +71,21 @@
         :project-id="project.id"
         :validations="validations"
       />
+      <ValidationTimeline
+        v-else-if="activeTab === 'history' && historyLoaded"
+        :project-id="project.id"
+      />
       <ActivityFeed
         v-else-if="activeTab === 'activity'"
         :activities="store.activities"
+      />
+      <MeetingSection
+        v-else-if="activeTab === 'meetings'"
+        :project-id="project.id"
+      />
+      <CommentsSection
+        v-else-if="activeTab === 'comments'"
+        :project-id="project.id"
       />
     </div>
   </div>
@@ -88,7 +100,11 @@ import QuestionnaireForm     from '@/components/pm/QuestionnaireForm.vue'
 import AIOutputSection       from '@/components/pm/AIOutputSection.vue'
 import TeamValidationSection from '@/components/pm/TeamValidationSection.vue'
 import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
+import MeetingSection        from '@/components/pm/MeetingSection.vue'
+import CommentsSection       from '@/components/pm/CommentsSection.vue'
+import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
 import { usePmStore }        from '@/stores/pmStore'
+import { useCommentStore }   from '@/stores/commentStore'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
@@ -96,19 +112,27 @@ import type { ProjectValidation } from '@/types/pm.types'
 const props = defineProps<{ project: ProjectDetail; validations: ProjectValidation[]; readonly?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const store = usePmStore()
+const commentStore = useCommentStore()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'activity'
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments'
 const activeTab = ref<TabId>('questionnaire')
+
+const historyLoaded = ref(false)
 
 watch(activeTab, (tab) => {
   if (tab === 'activity') store.fetchActivity(props.project.id)
+  if (tab === 'comments') commentStore.fetchComments(props.project.id)
+  if (tab === 'history') historyLoaded.value = true
 })
 
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'questionnaire', label: 'Questionnaire',      icon: 'pi-list-check' },
   { id: 'ai',            label: 'Résultat IA',        icon: 'pi-sparkles' },
-  { id: 'validation',    label: 'Validation équipes', icon: 'pi-shield' },
-  { id: 'activity',      label: 'Activité',           icon: 'pi-history' },
+  { id: 'validation',    label: 'Validation équipes',      icon: 'pi-shield' },
+  { id: 'history',       label: 'Historique validations', icon: 'pi-clock' },
+  { id: 'activity',      label: 'Activité',               icon: 'pi-history' },
+  { id: 'meetings',      label: 'Réunions',           icon: 'pi-microphone' },
+  { id: 'comments',      label: 'Commentaires',       icon: 'pi-comments' },
 ]
 
 const statusSeverity = (s: ProjectStatus) =>
@@ -157,20 +181,20 @@ function exportPdf(): void {
 
 .back-btn {
   display: flex; align-items: center; gap: 0.4rem;
-  background: none; border: none; color: #6b7280;
+  background: none; border: none; color: var(--nl-text-3);
   font-size: 0.875rem; cursor: pointer; padding: 0.3rem 0;
   transition: color 0.15s;
 }
-.back-btn:hover { color: #0d9488; }
+.back-btn:hover { color: var(--nl-accent); }
 
 .detail-meta { display: flex; align-items: flex-start; justify-content: space-between; }
-.detail-name { font-size: 1.4rem; font-weight: 800; color: #111827; margin: 0; }
-.detail-client { font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0; }
+.detail-name { font-size: 1.4rem; font-weight: 800; color: var(--nl-text-1); margin: 0; }
+.detail-client { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.25rem 0 0; }
 
 .inner-tabs {
   display: flex;
   gap: 0.25rem;
-  border-bottom: 2px solid #e5e7eb;
+  border-bottom: 2px solid var(--nl-border);
 }
 
 .inner-tab {
@@ -180,16 +204,16 @@ function exportPdf(): void {
   margin-bottom: -2px;
   padding: 0.6rem 1rem;
   font-size: 0.875rem; font-weight: 600;
-  color: #6b7280; cursor: pointer;
+  color: var(--nl-text-3); cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   border-radius: 4px 4px 0 0;
 }
-.inner-tab:hover { color: #111827; }
-.inner-tab--active { color: #0d9488; border-bottom-color: #0d9488; }
+.inner-tab:hover { color: var(--nl-text-1); }
+.inner-tab--active { color: var(--nl-accent); border-bottom-color: var(--nl-accent); }
 
 .tab-body {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
   padding: 1.5rem;
 }

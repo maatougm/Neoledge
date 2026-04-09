@@ -28,7 +28,15 @@
 
       <div class="sidebar-footer">
         <button class="user-identity-btn" @click="router.push({ name: 'profile' })" title="Mon profil">
-          <div class="sidebar-avatar" aria-hidden="true">{{ userInitials }}</div>
+          <img
+            v-if="sidebarAvatarUrl"
+            :src="sidebarAvatarUrl"
+            class="sidebar-avatar sidebar-avatar--img"
+            alt="Avatar"
+            aria-hidden="true"
+            @error="(e) => { (e.target as HTMLImageElement).style.display = 'none' }"
+          />
+          <div v-else class="sidebar-avatar" aria-hidden="true">{{ userInitials }}</div>
           <div class="sidebar-user-info">
             <span class="sidebar-user-name">{{ userName }}</span>
             <span class="sidebar-user-role">{{ userRoleLabel }}</span>
@@ -36,6 +44,7 @@
           <i class="pi pi-chevron-right sidebar-chevron" aria-hidden="true" />
         </button>
         <div class="footer-actions-row">
+          <NotificationBell />
           <button
             class="footer-icon-btn"
             :title="darkMode.isDark.value ? 'Mode clair' : 'Mode sombre'"
@@ -59,19 +68,19 @@
     <!-- Main content -->
     <main class="main-content">
       <div class="content-inner">
-        <div v-if="store.loading && !store.currentProject" class="loading-state">
-          <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #0d9488" />
-        </div>
         <PMProjectDetail
-          v-else-if="selectedProjectId && store.currentProject"
+          v-if="selectedProjectId && store.currentProject"
           :project="store.currentProject"
           :validations="store.validations"
           @close="selectedProjectId = null"
         />
         <PMProjectList
-          v-else
+          v-else-if="!selectedProjectId"
           @select="openProject"
         />
+        <div v-else class="loading-state">
+          <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #0d9488" />
+        </div>
       </div>
     </main>
 
@@ -80,10 +89,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoToast } from '@neolibrary/components'
 import { useDarkMode } from '@/composables/useDarkMode'
+import { useNotificationSocket } from '@/composables/useNotificationSocket'
+import NotificationBell from '@/components/NotificationBell.vue'
+import { useNotificationStore } from '@/stores/notificationStore'
 import PMProjectList   from '@/components/pm/PMProjectList.vue'
 import PMProjectDetail from '@/components/pm/PMProjectDetail.vue'
 import { usePmStore }  from '@/stores/pmStore'
@@ -91,12 +103,26 @@ import { useApp }      from '@/stores/useApp'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 
-const router   = useRouter()
-const store    = usePmStore()
-const app      = useApp()
-const darkMode = useDarkMode()
+const router            = useRouter()
+const store             = usePmStore()
+const app               = useApp()
+const darkMode          = useDarkMode()
+const notificationStore = useNotificationStore()
+const notifSocket       = useNotificationSocket()
 
 const selectedProjectId = ref<string | null>(null)
+
+onMounted(() => {
+  if (store.projects.length === 0) store.fetchMyProjects()
+  notificationStore.startPolling()
+  if (app.jwt && app.apiUrl) void darkMode.loadFromBackend(app.jwt, app.apiUrl)
+  if (app.apiUrl && app.jwt) notifSocket.connect(app.apiUrl, app.jwt)
+})
+
+onUnmounted(() => {
+  notificationStore.stopPolling()
+  notifSocket.disconnect()
+})
 
 const userInitials = computed<string>(() => {
   if (!app.jwt) return '?'
@@ -120,6 +146,16 @@ const userRoleLabel = computed<string>(() =>
   app.userRole ? (USER_ROLE_LABELS[app.userRole as UserRole] ?? app.userRole) : ''
 )
 
+const sidebarAvatarUrl = computed<string | null>(() => {
+  if (!app.jwt) return null
+  try {
+    const p = JSON.parse(atob(app.jwt.split('.')[1]))
+    const sub: string = p.sub ?? ''
+    if (!sub) return null
+    return `${app.apiUrl}/api/userprofile/avatar/${sub}`
+  } catch { return null }
+})
+
 const openProject = async (id: string) => {
   selectedProjectId.value = id
   await store.fetchProject(id)
@@ -141,7 +177,7 @@ const handleLogout = async () => {
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────────── */
 .sidebar {
-  width: 220px;
+  width: 260px;
   flex-shrink: 0;
   background: var(--nl-sidebar-bg);
   display: flex;
@@ -150,54 +186,56 @@ const handleLogout = async () => {
   position: sticky;
   top: 0;
   border-right: 1px solid rgba(255,255,255,0.05);
+  box-shadow: 4px 0 24px rgba(0,0,0,0.15);
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 1.25rem 1rem 1rem;
+  gap: 0.75rem;
+  padding: 1.5rem 1.25rem;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .sidebar-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: var(--nl-accent);
   color: #fff;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   letter-spacing: 0.5px;
+  box-shadow: var(--nl-shadow-glow);
 }
 
 .sidebar-brand-name {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 700;
-  color: #FAFAFA;
+  color: #F8FAFC;
   letter-spacing: -0.1px;
 }
 
 .sidebar-nav {
   flex: 1;
-  padding: 0.75rem 0.625rem;
+  padding: 1rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0.25rem;
   overflow-y: auto;
 }
 
 .nav-section-label {
-  font-size: 0.625rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #3F3F46;
-  padding: 0.625rem 0.5rem 0.25rem;
+  color: #64748B;
+  padding: 0.75rem 0.5rem 0.25rem;
   margin-top: 0.5rem;
 }
 
@@ -206,37 +244,56 @@ const handleLogout = async () => {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 6px;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
   border: none;
   background: transparent;
-  color: #71717A;
-  font-size: 0.8125rem;
+  color: #94A3B8;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
   width: 100%;
   font-family: var(--nl-font);
+  position: relative;
+  overflow: hidden;
 }
 
-.nav-item:hover { background: rgba(255,255,255,0.06); color: #D4D4D8; }
+.nav-item:hover { 
+  background: rgba(255,255,255,0.04); 
+  color: #F8FAFC; 
+  transform: translateX(4px);
+}
 
 .nav-item--active {
   background: rgba(255,255,255,0.08);
-  color: #FAFAFA;
+  color: var(--nl-accent-light);
   font-weight: 600;
+}
+
+.nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10%;
+  bottom: 10%;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--nl-accent);
+  box-shadow: 0 0 8px var(--nl-accent);
 }
 
 .nav-item--project {
   border-left: 2px solid var(--nl-accent);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 8px 8px 0;
+  background: rgba(13, 148, 136, 0.1);
 }
 
 .nav-label--truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.nav-icon { font-size: 0.875rem; flex-shrink: 0; width: 16px; text-align: center; }
+.nav-icon { font-size: 1rem; flex-shrink: 0; width: 18px; text-align: center; }
 
 .sidebar-footer {
   padding: 0.625rem;
@@ -278,6 +335,7 @@ const handleLogout = async () => {
   flex-shrink: 0;
 }
 
+.sidebar-avatar--img { object-fit: cover; }
 .sidebar-user-info { flex: 1; min-width: 0; }
 
 .sidebar-user-name {

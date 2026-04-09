@@ -93,8 +93,8 @@ onMounted(load)
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .header-actions { display: flex; gap: 0.5rem; }
 
@@ -105,14 +105,14 @@ onMounted(load)
   align-items: center;
   gap: 0.75rem;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
-.error-state { color: #ef4444; }
+.error-state { color: var(--nl-danger); }
 .error-state i { font-size: 2rem; }
 
 .log-box {
   background: #0f172a;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   padding: 1rem;
   max-height: 560px;
   overflow-y: auto;

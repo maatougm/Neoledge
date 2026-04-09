@@ -22,7 +22,24 @@ import type {
   ProjectActivity,
   ProjectTemplateSummary,
   CreateTemplatePayload,
+  DeletedProjectSummary,
 } from '@/types/project.types'
+
+// ─── Pure helper — exported for testing ──────────────────────────────────────
+
+/**
+ * Computes the fill percentage of required fields for a project detail.
+ * Returns 100 when there are no required fields.
+ */
+export function computeProgress(project: ProjectDetail): number {
+  const requiredFields = project.fields.filter((f) => f.isRequired)
+  if (requiredFields.length === 0) return 100
+  const filled = requiredFields.filter((f) => {
+    const val = project.fieldValues.find((v) => v.projectFieldId === f.id)
+    return val?.value !== null && val?.value !== undefined && val.value.trim() !== ''
+  })
+  return Math.round((filled.length / requiredFields.length) * 100)
+}
 
 export const useProjectStore = defineStore('projects', () => {
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -30,8 +47,13 @@ export const useProjectStore = defineStore('projects', () => {
   const currentProject = ref<ProjectDetail | null>(null)
   const activities = ref<ProjectActivity[]>([])
   const templates = ref<ProjectTemplateSummary[]>([])
+  const deletedProjects = ref<DeletedProjectSummary[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const searchQuery = ref<string>('')
+  const statusFilter = ref<string>('')
+  const totalProjects = ref<number>(0)
+  const selectedProjectIds = ref<string[]>([])
 
   // ─── Getters ─────────────────────────────────────────────────────────────────
   const draftProjects = computed(() => projects.value.filter((p) => p.status === 'Draft'))
@@ -54,8 +76,36 @@ export const useProjectStore = defineStore('projects', () => {
     try {
       const { data } = await axios.get<ProjectSummary[]>(apiBase(), { headers: authHeader() })
       projects.value = [...data]
+      totalProjects.value = data.length
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const searchProjects = async (params: {
+    search?: string
+    status?: string
+    skip?: number
+    take?: number
+  }) => {
+    loading.value = true
+    error.value = null
+    searchQuery.value = params.search ?? ''
+    statusFilter.value = params.status ?? ''
+    try {
+      const queryParams = new URLSearchParams()
+      if (params.search) queryParams.set('search', params.search)
+      if (params.status) queryParams.set('status', params.status)
+      if (params.skip !== undefined) queryParams.set('skip', String(params.skip))
+      if (params.take !== undefined) queryParams.set('take', String(params.take))
+      const url = queryParams.toString() ? `${apiBase()}?${queryParams.toString()}` : apiBase()
+      const { data } = await axios.get<ProjectSummary[]>(url, { headers: authHeader() })
+      projects.value = [...data]
+      totalProjects.value = data.length
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la recherche des projets.'
     } finally {
       loading.value = false
     }
@@ -243,6 +293,122 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
+  // ─── Selection ───────────────────────────────────────────────────────────────
+
+  const toggleSelection = (id: string): void => {
+    if (selectedProjectIds.value.includes(id)) {
+      selectedProjectIds.value = selectedProjectIds.value.filter((sid) => sid !== id)
+    } else {
+      selectedProjectIds.value = [...selectedProjectIds.value, id]
+    }
+  }
+
+  const selectAll = (ids: string[]): void => {
+    selectedProjectIds.value = [...ids]
+  }
+
+  const clearSelection = (): void => {
+    selectedProjectIds.value = []
+  }
+
+  // ─── Bulk Actions ─────────────────────────────────────────────────────────────
+
+  const bulkArchive = async (ids: string[]): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      await axios.post(
+        `${apiBase()}/bulk-archive`,
+        { ids },
+        { headers: authHeader() },
+      )
+      await fetchAll()
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : "Erreur lors de l'archivage en masse."
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const bulkUpdateStatus = async (ids: string[], status: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      await axios.post(
+        `${apiBase()}/bulk-status`,
+        { ids, status },
+        { headers: authHeader() },
+      )
+      await fetchAll()
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors du changement de statut en masse.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const bulkAssignManager = async (ids: string[], managerId: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      await axios.post(
+        `${apiBase()}/bulk-assign-manager`,
+        { ids, managerId },
+        { headers: authHeader() },
+      )
+      await fetchAll()
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : "Erreur lors de l'assignation en masse."
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── Trash ───────────────────────────────────────────────────────────────────
+
+  const fetchDeletedProjects = async (): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      const { data } = await axios.get<DeletedProjectSummary[]>(
+        `${apiBase()}/deleted`,
+        { headers: authHeader() },
+      )
+      deletedProjects.value = [...data]
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la corbeille.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const restoreProject = async (id: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      await axios.post(`${apiBase()}/${id}/restore`, null, { headers: authHeader() })
+      deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
+      await fetchAll()
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la restauration du projet.'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const purgeProject = async (id: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      await axios.delete(`${apiBase()}/${id}/hard-delete`, { headers: authHeader() })
+      deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression définitive.'
+    } finally {
+      loading.value = false
+    }
+  }
+
   // ─── Activity ────────────────────────────────────────────────────────────────
   const fetchActivity = async (projectId: string) => {
     try {
@@ -284,11 +450,17 @@ export const useProjectStore = defineStore('projects', () => {
     currentProject,
     activities,
     templates,
+    deletedProjects,
     loading,
     error,
+    searchQuery,
+    statusFilter,
+    totalProjects,
+    selectedProjectIds,
     draftProjects,
     activeProjects,
     fetchAll,
+    searchProjects,
     fetchById,
     createProject,
     updateProject,
@@ -299,10 +471,19 @@ export const useProjectStore = defineStore('projects', () => {
     addField,
     removeField,
     toggleManagerFields,
+    fetchDeletedProjects,
+    restoreProject,
+    purgeProject,
     fetchActivity,
     fetchTemplates,
     createTemplate,
     deleteTemplate,
     applyTemplate,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    bulkArchive,
+    bulkUpdateStatus,
+    bulkAssignManager,
   }
 })

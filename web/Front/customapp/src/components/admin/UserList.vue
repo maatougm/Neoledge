@@ -152,9 +152,10 @@ const formatDate = (iso: string) =>
 
 <style scoped>
 .user-list {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  background: var(--nl-surface);
+  border-radius: var(--nl-radius-lg);
+  border: 1px solid var(--nl-border);
+  box-shadow: var(--nl-shadow);
   padding: 1.5rem;
 }
 
@@ -168,7 +169,7 @@ const formatDate = (iso: string) =>
 .user-list__title {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--nl-text-1);
   margin: 0;
 }
 
@@ -186,27 +187,27 @@ const formatDate = (iso: string) =>
 .user-list__table td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--nl-border);
 }
 
 .user-list__table th {
   font-weight: 600;
-  color: #6b7280;
-  background: #f9fafb;
+  color: var(--nl-text-3);
+  background: var(--nl-surface-2);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.user-list__row:hover td { background: #f9fafb; }
-.user-list__row--inactive td { opacity: 0.55; }
+.user-list__row:hover td { background: var(--nl-surface-2); }
+.user-list__row--inactive td { color: var(--nl-text-3); }
 
 .user-list__actions { display: flex; gap: 0.25rem; }
 
 .user-list__loading,
 .user-list__empty {
   text-align: center;
-  color: #9ca3af;
+  color: var(--nl-text-3);
   padding: 2rem;
 }
 </style>

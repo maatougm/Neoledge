@@ -2,14 +2,60 @@
 
 #app {
   font-family: var(--nl-font);
+  min-height: 100vh;
+  /* Ambient Multi-Stop Gradient Mesh */
+  background: radial-gradient(circle at 15% 50%, rgba(13, 148, 136, 0.04), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(5, 150, 105, 0.04), transparent 25%);
+}
+
+.dark #app {
+  background: radial-gradient(circle at 15% 50%, rgba(13, 148, 136, 0.08), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(5, 150, 105, 0.08), transparent 25%);
 }
 
 a {
   text-decoration: none;
   color: var(--nl-accent);
-  transition: color 0.15s;
+  transition: var(--nl-transition);
 }
-
 a:hover {
   color: var(--nl-accent-hover);
+}
+
+/* ── Premium Utilities ───────────────────────────────────────────────────────── */
+.glass-panel {
+  background: var(--nl-glass-bg);
+  backdrop-filter: var(--nl-glass-blur);
+  -webkit-backdrop-filter: var(--nl-glass-blur);
+  border: 1px solid var(--nl-glass-border);
+  box-shadow: var(--nl-glass-shadow);
+}
+
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--nl-shadow-lg);
+}
+
+.glow-accent {
+  box-shadow: var(--nl-shadow-glow);
+}
+
+/* ── Vue Transitions ─────────────────────────────────────────────────────────── */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-up-enter-from, .slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }

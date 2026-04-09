@@ -36,6 +36,13 @@
             <td>{{ formatDate(tpl.createdAt) }}</td>
             <td class="td-actions">
               <NeoButton
+                label="Appliquer"
+                icon="pi pi-play"
+                size="small"
+                outlined
+                @click="openApplyDialog(tpl)"
+              />
+              <NeoButton
                 icon="pi pi-trash"
                 size="small"
                 outlined
@@ -49,7 +56,7 @@
     </div>
 
     <!-- Create dialog -->
-    <Dialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
+    <NeoDialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
       <div class="create-form">
         <NeoInputText v-model="form.name" label="Nom du modèle" placeholder="Ex : Modèle NeoLeadge standard" class="w-full" />
         <NeoInputText v-model="form.description" label="Description (optionnel)" placeholder="Description courte" class="w-full" />
@@ -59,7 +66,7 @@
             <span class="fields-block-title">Champs du modèle</span>
             <NeoButton label="Ajouter un champ" icon="pi pi-plus" outlined size="small" @click="addRow" />
           </div>
-          <div v-for="(row, idx) in form.fields" :key="idx" class="field-row">
+          <div v-for="(row, idx) in form.fields" :key="row.uid" class="field-row">
             <NeoInputText v-model="row.label" placeholder="Libellé" class="flex-2" />
             <NeoSelect
               v-model="row.fieldType"
@@ -68,7 +75,6 @@
               optionValue="value"
               style="min-width:120px"
             />
-            <NeoCheckbox :modelValue="(row.isRequired as unknown as any[])" @update:modelValue="v => row.isRequired = (v as unknown as boolean)" binary />
             <button class="remove-row-btn" @click="removeRow(idx)" title="Supprimer">
               <i class="pi pi-times" />
             </button>
@@ -80,22 +86,57 @@
         <NeoButton label="Annuler" severity="secondary" outlined @click="showCreateDialog = false" />
         <NeoButton label="Créer" :loading="saving" :disabled="!form.name.trim()" @click="handleCreate" />
       </template>
-    </Dialog>
+    </NeoDialog>
+
+    <!-- Apply to project dialog -->
+    <NeoDialog v-model:visible="showApplyDialog" header="Appliquer le modèle" :modal="true" style="width: 480px">
+      <div class="apply-form">
+        <p class="apply-hint">
+          Sélectionnez un projet pour y ajouter les champs du modèle
+          <strong>{{ applyTarget?.name }}</strong>.
+        </p>
+        <NeoSelect
+          v-model="selectedProjectId"
+          :options="projectOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Sélectionner un projet"
+          class="w-full"
+        />
+      </div>
+      <template #footer>
+        <NeoButton label="Annuler" severity="secondary" outlined @click="showApplyDialog = false" />
+        <NeoButton
+          label="Appliquer"
+          icon="pi pi-check"
+          :loading="applying"
+          :disabled="!selectedProjectId"
+          @click="handleApply"
+        />
+      </template>
+    </NeoDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import Dialog from 'primevue/dialog'
-import { NeoButton, NeoInputText, NeoSelect, NeoCheckbox, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { NeoButton, NeoInputText, NeoSelect, NeoDialog, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { useTemplateStore } from '@/stores/templateStore'
 import { useProjectStore } from '@/stores/projectStore'
+import type { ProjectTemplateSummary } from '@/types/project.types'
 
-const store   = useProjectStore()
-const toast   = useNeoToast()
-const confirm = useNeoConfirm()
+const store        = useTemplateStore()
+const projectStore = useProjectStore()
+const toast        = useNeoToast()
+const confirm      = useNeoConfirm()
 
 const showCreateDialog = ref(false)
-const saving = ref(false)
+const showApplyDialog  = ref(false)
+const saving           = ref(false)
+const applying         = ref(false)
+
+const applyTarget       = ref<ProjectTemplateSummary | null>(null)
+const selectedProjectId = ref<string | null>(null)
 
 const fieldTypeOptions = [
   { value: 'Text',     label: 'Texte' },
@@ -105,14 +146,28 @@ const fieldTypeOptions = [
   { value: 'Checkbox', label: 'Case à cocher' },
 ]
 
-const emptyForm = () => ({ name: '', description: '', fields: [] as Array<{ label: string; fieldType: string; isRequired: boolean }> })
+interface FieldRow { uid: string; label: string; fieldType: string; isRequired: boolean }
+const emptyForm = (): { name: string; description: string; fields: FieldRow[] } => ({
+  name: '', description: '', fields: [],
+})
 const form = reactive(emptyForm())
 
-onMounted(() => store.fetchTemplates())
+const projectOptions = computed(() =>
+  projectStore.projects.map((p) => ({
+    value: p.id,
+    label: `${p.name} — ${p.clientName}`,
+  })),
+)
+
+onMounted(() => {
+  store.fetchTemplates()
+  if (projectStore.projects.length === 0) projectStore.fetchAll()
+})
 
 function addRow() {
-  form.fields.push({ label: '', fieldType: 'Text', isRequired: false })
+  form.fields.push({ uid: crypto.randomUUID(), label: '', fieldType: 'Text', isRequired: false })
 }
+
 function removeRow(idx: number) {
   form.fields.splice(idx, 1)
 }
@@ -125,7 +180,7 @@ async function handleCreate() {
   if (!form.name.trim()) return
   saving.value = true
   try {
-    await store.createTemplate({
+    const result = await store.createTemplate({
       name: form.name.trim(),
       description: form.description.trim() || null,
       fields: form.fields.map((f, i) => ({
@@ -133,15 +188,17 @@ async function handleCreate() {
         fieldType: f.fieldType,
         category: 'Custom',
         isRequired: f.isRequired,
-        displayOrder: i + 1,
+        displayOrder: i,
         options: null,
       })),
     })
-    toast.add({ severity: 'success', detail: `Modèle « ${form.name} » créé.`, life: 3000 })
-    showCreateDialog.value = false
-    Object.assign(form, emptyForm())
-  } catch {
-    toast.add({ severity: 'error', detail: 'Erreur lors de la création du modèle.', life: 4000 })
+    if (result) {
+      toast.add({ severity: 'success', detail: `Modèle « ${form.name} » créé.`, life: 3000 })
+      showCreateDialog.value = false
+      Object.assign(form, emptyForm())
+    } else {
+      toast.add({ severity: 'error', detail: store.error ?? 'Erreur lors de la création du modèle.', life: 4000 })
+    }
   } finally {
     saving.value = false
   }
@@ -160,59 +217,89 @@ function handleDelete(id: string, name: string) {
     },
   })
 }
+
+function openApplyDialog(tpl: ProjectTemplateSummary) {
+  applyTarget.value = tpl
+  selectedProjectId.value = null
+  showApplyDialog.value = true
+}
+
+async function handleApply() {
+  if (!applyTarget.value || !selectedProjectId.value) return
+  applying.value = true
+  try {
+    await store.applyToProject(applyTarget.value.id, selectedProjectId.value)
+    const projectName = projectStore.projects.find((p) => p.id === selectedProjectId.value)?.name ?? ''
+    toast.add({
+      severity: 'success',
+      detail: `Modèle « ${applyTarget.value.name} » appliqué au projet « ${projectName} ».`,
+      life: 3000,
+    })
+    showApplyDialog.value = false
+  } catch {
+    toast.add({ severity: 'error', detail: "Erreur lors de l'application du modèle.", life: 4000 })
+  } finally {
+    applying.value = false
+  }
+}
 </script>
 
 <style scoped>
 .templates-section { display: flex; flex-direction: column; gap: 1.5rem; }
 
 .section-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-.section-title  { font-size: 1.25rem; font-weight: 800; color: #111827; margin: 0; }
-.section-sub    { font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0; }
+.section-title  { font-size: 1.25rem; font-weight: 800; color: var(--nl-text-1); margin: 0; }
+.section-sub    { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.25rem 0 0; }
 
 .loading-state, .empty-state {
   display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
   padding: 3rem; color: #94a3b8; font-size: 0.875rem; text-align: center;
 }
 
-.table-wrap { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+.table-wrap { background: var(--nl-surface); border: 1px solid var(--nl-border); border-radius: 10px; overflow: hidden; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .data-table th {
-  background: #f9fafb; padding: 0.75rem 1rem;
+  background: var(--nl-surface-2); padding: 0.75rem 1rem;
   text-align: left; font-size: 0.78rem; font-weight: 600;
-  color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;
-  border-bottom: 1px solid #e5e7eb;
+  color: var(--nl-text-3); text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--nl-border);
 }
-.data-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.data-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--nl-surface-2); color: var(--nl-text-2); }
 .data-table tr:last-child td { border-bottom: none; }
-.td-name { font-weight: 600; color: #111827; }
-.td-desc { color: #6b7280; max-width: 240px; }
-.td-actions { text-align: right; }
+.td-name { font-weight: 600; color: var(--nl-text-1); }
+.td-desc { color: var(--nl-text-3); max-width: 240px; }
+.td-actions { text-align: right; display: flex; gap: 0.5rem; justify-content: flex-end; }
 
 .create-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }
 
 .fields-block {
-  border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--nl-border); border-radius: var(--nl-radius); overflow: hidden;
 }
 .fields-block-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0.75rem 1rem; background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+  padding: 0.75rem 1rem; background: var(--nl-surface-2); border-bottom: 1px solid var(--nl-border);
 }
-.fields-block-title { font-size: 0.875rem; font-weight: 600; color: #374151; }
+.fields-block-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); }
 
 .field-row {
   display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.6rem 1rem; border-bottom: 1px solid #f3f4f6; flex-wrap: wrap;
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--nl-surface-2); flex-wrap: wrap;
 }
 .field-row:last-child { border-bottom: none; }
 .flex-2 { flex: 2; min-width: 120px; }
 
 .remove-row-btn {
-  background: none; border: none; color: #ef4444; cursor: pointer;
+  background: none; border: none; color: var(--nl-danger); cursor: pointer;
   padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.8rem;
   transition: background 0.15s;
 }
 .remove-row-btn:hover { background: #fee2e2; }
 
-.no-fields { padding: 1rem; text-align: center; color: #9ca3af; font-size: 0.875rem; }
+.no-fields { padding: 1rem; text-align: center; color: var(--nl-text-3); font-size: 0.875rem; }
+
+.apply-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }
+.apply-hint { font-size: 0.875rem; color: var(--nl-text-2); margin: 0; }
+
+.w-full { width: 100%; }
 </style>

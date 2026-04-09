@@ -120,9 +120,22 @@ export interface AssignManagerPayload {
 export interface ProjectActivity {
   id: string
   userName: string | null
+  userId: string | null
+  userRole: string | null
   action: string
   detail: string | null
-  createdAt: string
+  timestamp: string
+  projectId: string | null
+  projectName: string | null
+  projectClientName: string | null
+  /** @deprecated use timestamp */
+  createdAt?: string
+}
+
+export interface ActivityStats {
+  totalToday: number
+  totalThisWeek: number
+  mostActiveProject: { id: string; name: string; count: number } | null
 }
 
 export const ACTIVITY_ACTION_LABELS: Record<string, string> = {
@@ -149,6 +162,18 @@ export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {
   Custom: 'Personnalisé',
 }
 
+// ─── Trash ────────────────────────────────────────────────────────────────────
+
+export interface DeletedProjectSummary {
+  id: string
+  name: string
+  clientName: string
+  projectManagerName: string | null
+  status: ProjectStatus
+  deletedAt: string
+  deletedByName: string | null
+}
+
 // ─── Project Templates ─────────────────────────────────────────────────────────
 
 export interface ProjectTemplateSummary {
@@ -170,4 +195,27 @@ export interface CreateTemplatePayload {
     displayOrder: number
     options: string | null
   }>
+}
+
+export interface TemplateField {
+  id: string
+  label: string
+  type: string
+  category: string
+  isRequired: boolean
+  displayOrder: number
+  options: string | null
+}
+
+export interface ProjectTemplate {
+  id: string
+  name: string
+  description: string | null
+  createdAt: string
+  fields: TemplateField[]
+}
+
+export interface CreateFromProjectPayload {
+  name: string
+  description?: string
 }

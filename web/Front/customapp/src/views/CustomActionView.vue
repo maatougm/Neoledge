@@ -83,9 +83,9 @@ const onSubmit = async () => {
 }
 
 .custom-action-card {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  background: var(--nl-surface);
+  border-radius: var(--nl-radius-lg);
+  box-shadow: var(--nl-shadow);
   padding: 2rem;
   width: 100%;
   max-width: 560px;
@@ -94,13 +94,13 @@ const onSubmit = async () => {
 .custom-action-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--nl-text-1);
   margin: 0 0 0.5rem;
 }
 
 .custom-action-subtitle {
   font-size: 0.9rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   margin: 0 0 1.5rem;
 }
 

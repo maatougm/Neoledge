@@ -24,6 +24,19 @@
     </div>
 
     <template v-else-if="project">
+      <!-- Progress bar -->
+      <div class="progress-section">
+        <div class="progress-section__label">
+          Complété à <strong>{{ projectProgress }}%</strong>
+        </div>
+        <div class="progress-section__track">
+          <div
+            class="progress-section__fill"
+            :style="progressFillStyle"
+          />
+        </div>
+      </div>
+
       <!-- Inner tabs -->
       <div class="inner-tabs">
         <button
@@ -144,7 +157,7 @@
               class="add-field-select"
             />
             <div class="add-field-required">
-              <NeoCheckbox :modelValue="(newField.isRequired as unknown as any[])" @update:modelValue="v => newField.isRequired = (v as unknown as boolean)" binary />
+              <NeoCheckbox v-model="newField.isRequired" :binary="true" />
             </div>
             <NeoButton
               label="Ajouter"
@@ -159,6 +172,11 @@
       <!-- Activity feed tab -->
       <div v-if="activeTab === 'activity'" class="fields-card" style="padding: 1rem 1.5rem;">
         <ActivityFeed :activities="store.activities" />
+      </div>
+
+      <!-- Validation history tab (read-only) -->
+      <div v-if="activeTab === 'validations' && validationsLoaded" class="fields-card" style="padding: 1rem 1.5rem;">
+        <ValidationTimeline :project-id="props.projectId" />
       </div>
 
       <!-- Template picker dialog -->
@@ -185,11 +203,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoCheckbox, NeoToggleSwitch, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import { useProjectStore } from '@/stores/projectStore'
+import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import ActivityFeed from '@/components/pm/ActivityFeed.vue'
+import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, FieldType } from '@/types/project.types'
 
@@ -213,11 +232,25 @@ const project = ref(store.currentProject?.id === props.projectId ? store.current
 const loading = ref(false)
 const newField = ref({ label: '', fieldType: 'Text' as FieldType, isRequired: false })
 
-type PanelTabId = 'fields' | 'activity'
+const projectProgress = computed(() =>
+  project.value ? computeProgress(project.value) : 0,
+)
+
+const progressFillStyle = computed((): Record<string, string> => {
+  const pct = projectProgress.value
+  let color = '#E11D48' // red — < 50%
+  if (pct >= 80) color = '#059669' // green
+  else if (pct >= 50) color = '#D97706' // orange
+  return { width: `${pct}%`, background: color }
+})
+
+type PanelTabId = 'fields' | 'activity' | 'validations'
 const activeTab = ref<PanelTabId>('fields')
+const validationsLoaded = ref(false)
 const panelTabs: { id: PanelTabId; label: string; icon: string }[] = [
-  { id: 'fields',   label: 'Questionnaire', icon: 'pi-list-check' },
-  { id: 'activity', label: 'Activité',      icon: 'pi-history' },
+  { id: 'fields',      label: 'Questionnaire',           icon: 'pi-list-check' },
+  { id: 'validations', label: 'Historique validations',  icon: 'pi-clock' },
+  { id: 'activity',    label: 'Activité',                icon: 'pi-history' },
 ]
 
 const showTemplateDialog = ref(false)
@@ -226,6 +259,7 @@ const applyingTemplate   = ref(false)
 function switchTab(tab: PanelTabId) {
   activeTab.value = tab
   if (tab === 'activity') store.fetchActivity(props.projectId)
+  if (tab === 'validations') validationsLoaded.value = true
 }
 
 async function openTemplateDialog() {
@@ -305,16 +339,45 @@ const handleRemoveField = (fieldId: string, label: string) => {
 <style scoped>
 .detail-panel { display: flex; flex-direction: column; gap: 1.5rem; }
 
-.inner-tabs { display: flex; gap: 0.25rem; border-bottom: 2px solid #e5e7eb; }
+/* ── Progress section ── */
+.progress-section {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progress-section__label {
+  font-size: 0.875rem;
+  color: var(--nl-text-2);
+}
+
+.progress-section__track {
+  height: 10px;
+  background: var(--nl-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-section__fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+.inner-tabs { display: flex; gap: 0.25rem; border-bottom: 2px solid var(--nl-border); }
 .inner-tab {
   display: flex; align-items: center; gap: 0.4rem;
   background: none; border: none; border-bottom: 2px solid transparent;
   margin-bottom: -2px; padding: 0.6rem 1rem;
-  font-size: 0.875rem; font-weight: 600; color: #6b7280; cursor: pointer;
+  font-size: 0.875rem; font-weight: 600; color: var(--nl-text-3); cursor: pointer;
   transition: color 0.15s, border-color 0.15s; border-radius: 4px 4px 0 0;
 }
-.inner-tab:hover { color: #111827; }
-.inner-tab--active { color: #0d9488; border-bottom-color: #0d9488; }
+.inner-tab:hover { color: var(--nl-text-1); }
+.inner-tab--active { color: var(--nl-accent); border-bottom-color: var(--nl-accent); }
 
 .detail-header {
   display: flex;
@@ -328,13 +391,13 @@ const handleRemoveField = (fieldId: string, label: string) => {
   gap: 0.4rem;
   background: none;
   border: none;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-size: 0.875rem;
   cursor: pointer;
   padding: 0.3rem 0;
   transition: color 0.15s;
 }
-.back-btn:hover { color: #0d9488; }
+.back-btn:hover { color: var(--nl-accent); }
 
 .loading-state {
   display: flex;
@@ -344,20 +407,20 @@ const handleRemoveField = (fieldId: string, label: string) => {
 }
 
 .meta-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
   padding: 1.25rem 1.5rem;
 }
 
 .meta-row { display: flex; gap: 2rem; flex-wrap: wrap; }
 .meta-item { display: flex; flex-direction: column; gap: 0.2rem; }
-.meta-label { font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; }
-.meta-value { font-size: 0.9rem; font-weight: 600; color: #111827; }
+.meta-label { font-size: 0.75rem; color: var(--nl-text-3); text-transform: uppercase; letter-spacing: 0.5px; }
+.meta-value { font-size: 0.9rem; font-weight: 600; color: var(--nl-text-1); }
 
 .fields-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -367,13 +430,13 @@ const handleRemoveField = (fieldId: string, label: string) => {
   align-items: center;
   justify-content: space-between;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--nl-surface-2);
   flex-wrap: wrap;
   gap: 1rem;
 }
 
-.fields-title { font-size: 1rem; font-weight: 700; color: #111827; margin: 0; }
-.fields-sub   { font-size: 0.8rem; color: #6b7280; margin: 0.15rem 0 0; }
+.fields-title { font-size: 1rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.fields-sub   { font-size: 0.8rem; color: var(--nl-text-3); margin: 0.15rem 0 0; }
 
 /* Permission toggle */
 .permission-toggle {
@@ -382,7 +445,7 @@ const handleRemoveField = (fieldId: string, label: string) => {
   gap: 0.75rem;
 }
 
-.toggle-label { font-size: 0.82rem; color: #374151; max-width: 220px; line-height: 1.3; }
+.toggle-label { font-size: 0.82rem; color: var(--nl-text-2); max-width: 220px; line-height: 1.3; }
 
 /* Field list */
 .field-list {
@@ -397,22 +460,22 @@ const handleRemoveField = (fieldId: string, label: string) => {
   align-items: center;
   justify-content: space-between;
   padding: 0.6rem 0;
-  border-bottom: 1px solid #f9fafb;
+  border-bottom: 1px solid var(--nl-surface-2);
 }
 .field-row:last-child { border-bottom: none; }
 
 .field-info { display: flex; flex-direction: column; gap: 0.3rem; }
-.field-label { font-size: 0.875rem; font-weight: 500; color: #374151; }
+.field-label { font-size: 0.875rem; font-weight: 500; color: var(--nl-text-2); }
 .field-meta  { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 
 /* Add field form */
 .add-field-form {
   padding: 1.25rem 1.5rem;
-  background: #f9fafb;
-  border-top: 1px solid #f3f4f6;
+  background: var(--nl-surface-2);
+  border-top: 1px solid var(--nl-surface-2);
 }
 
-.add-field-title { font-size: 0.875rem; font-weight: 600; color: #374151; margin: 0 0 0.75rem; }
+.add-field-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); margin: 0 0 0.75rem; }
 
 .add-field-row {
   display: flex;

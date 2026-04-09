@@ -47,8 +47,36 @@
         <p>Aucun projet. Créez-en un pour commencer.</p>
       </div>
       <div v-else class="project-table-wrap">
-        <!-- Search & filter bar -->
-        <div class="filter-bar">
+        <!-- Saved filters panel -->
+        <div class="saved-filters-row">
+          <SavedFiltersPanel
+            :current-criteria="currentFilterCriteria"
+            @apply="onSavedFilterApply"
+          />
+        </div>
+
+        <!-- Advanced filter builder (collapsible) -->
+        <div class="filter-builder-row">
+          <NeoButton
+            :label="showFilterBuilder ? 'Masquer les filtres' : 'Filtres avancés'"
+            icon="pi pi-filter"
+            text
+            severity="secondary"
+            size="small"
+            @click="showFilterBuilder = !showFilterBuilder"
+          />
+          <span v-if="activeFilterCount > 0" class="filter-active-badge">{{ activeFilterCount }} actif(s)</span>
+        </div>
+        <FilterBuilder
+          v-if="showFilterBuilder"
+          ref="filterBuilderRef"
+          :model-value="currentFilterCriteria"
+          class="filter-builder-panel"
+          @change="onFilterChange"
+        />
+
+        <!-- Simple search bar (quick filter when builder is closed) -->
+        <div v-if="!showFilterBuilder" class="filter-bar">
           <NeoInputText
             v-model="searchText"
             placeholder="Rechercher par nom ou client…"
@@ -234,21 +262,50 @@ import Dialog from 'primevue/dialog'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
 import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
 import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'
+import SavedFiltersPanel from '@/components/filters/SavedFiltersPanel.vue'
+import FilterBuilder from '@/components/filters/FilterBuilder.vue'
 import { useProjectStore } from '@/stores/projectStore'
+import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
 import { useApp } from '@/stores/useApp'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+import type { FilterCriteria, SavedFilter } from '@/types/filter.types'
 
-const store   = useProjectStore()
-const app     = useApp()
-const toast   = useNeoToast()
-const confirm = useNeoConfirm()
+const store        = useProjectStore()
+const filtersStore = useSavedFiltersStore()
+const app          = useApp()
+const toast        = useNeoToast()
+const confirm      = useNeoConfirm()
 
 const showForm          = ref(false)
 const selectedProjectId = ref<string | null>(null)
 const showAssign        = ref(false)
 const assignId          = ref('')
 const assignName        = ref('')
+
+// ─── Advanced filter state ────────────────────────────────────────────────────
+const showFilterBuilder       = ref(false)
+const filterBuilderRef        = ref<InstanceType<typeof FilterBuilder> | null>(null)
+const currentFilterCriteria   = ref<FilterCriteria>({})
+const activeFilterCount       = computed(() => {
+  const c = currentFilterCriteria.value
+  let n = 0
+  if (c.search) n++
+  if (c.status?.length) n++
+  if (c.priority?.length) n++
+  if (c.assignedToMe) n++
+  if (c.dateRange?.from || c.dateRange?.to) n++
+  return n
+})
+
+const onFilterChange = (criteria: FilterCriteria): void => {
+  currentFilterCriteria.value = { ...criteria }
+}
+
+const onSavedFilterApply = (filter: SavedFilter): void => {
+  currentFilterCriteria.value = { ...filter.filters }
+  showFilterBuilder.value = true
+}
 
 // ─── Search & filter ──────────────────────────────────────────────────────────
 const searchText   = ref('')
@@ -260,8 +317,25 @@ const statusFilterOptions = [
 ]
 
 const filteredProjects = computed(() => {
-  const q   = searchText.value.trim().toLowerCase()
-  const s   = statusFilter.value
+  const c = currentFilterCriteria.value
+
+  // When advanced filter builder is open, use its criteria
+  if (showFilterBuilder.value) {
+    return store.projects.filter((p) => {
+      if (c.search) {
+        const q = c.search.toLowerCase()
+        if (!p.name.toLowerCase().includes(q) && !p.clientName.toLowerCase().includes(q)) return false
+      }
+      if (c.status && c.status.length > 0 && !c.status.includes(p.status)) return false
+      if (c.dateRange?.from && p.startDate && new Date(p.startDate) < new Date(c.dateRange.from)) return false
+      if (c.dateRange?.to && p.endDate && new Date(p.endDate) > new Date(c.dateRange.to)) return false
+      return true
+    })
+  }
+
+  // Simple bar fallback
+  const q = searchText.value.trim().toLowerCase()
+  const s = statusFilter.value
   return store.projects.filter((p) => {
     const matchText = !q || p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q)
     const matchStatus = !s || p.status === s
@@ -455,8 +529,8 @@ const handleBulkArchive = () => {
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .loading-state,
 .empty-state {
@@ -465,7 +539,7 @@ const handleBulkArchive = () => {
   align-items: center;
   gap: 0.75rem;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
 .empty-state i { font-size: 2.5rem; }
 
@@ -504,7 +578,7 @@ const handleBulkArchive = () => {
   gap: 0.75rem;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   padding: 0.6rem 1rem;
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
@@ -523,36 +597,61 @@ const handleBulkArchive = () => {
   font-size: 0.875rem;
 }
 .data-table th {
-  background: #f9fafb;
+  background: var(--nl-surface-2);
   padding: 0.65rem 1rem;
   text-align: left;
   font-weight: 600;
-  color: #374151;
-  border-bottom: 2px solid #e5e7eb;
+  color: var(--nl-text-2);
+  border-bottom: 2px solid var(--nl-border);
   white-space: nowrap;
 }
 .data-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f3f4f6;
-  color: #374151;
+  border-bottom: 1px solid var(--nl-surface-2);
+  color: var(--nl-text-2);
   vertical-align: middle;
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #f9fafb; }
+.data-table tr:hover td { background: var(--nl-surface-2); }
 
 .col-check { width: 2.5rem; text-align: center; }
-.row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: #0d9488; }
+.row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: var(--nl-accent); }
 
 .row--selected td { background: #f0fdfa !important; }
 
-.cell-name { font-weight: 600; color: #111827; }
-.cell-date { white-space: nowrap; color: #6b7280; font-size: 0.8rem; }
+.cell-name { font-weight: 600; color: var(--nl-text-1); }
+.cell-date { white-space: nowrap; color: var(--nl-text-3); font-size: 0.8rem; }
 
 .action-row { display: flex; gap: 0.4rem; }
 
 /* ── Duplicate dialog ────────────────────────────────────────────────────────── */
 .dialog-body { display: flex; flex-direction: column; gap: 1rem; padding: 0.25rem 0; }
-.dialog-hint { margin: 0; font-size: 0.85rem; color: #6b7280; }
+.dialog-hint { margin: 0; font-size: 0.85rem; color: var(--nl-text-3); }
 .field-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-.field-label { font-size: 0.82rem; color: #6b7280; font-weight: 500; }
+.field-label { font-size: 0.82rem; color: var(--nl-text-3); font-weight: 500; }
+
+/* ── Saved filters & builder ─────────────────────────────────────────────────── */
+.saved-filters-row {
+  margin-bottom: 0.75rem;
+}
+
+.filter-builder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.filter-active-badge {
+  background: #0d9488;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.filter-builder-panel {
+  margin-bottom: 0.75rem;
+}
 </style>

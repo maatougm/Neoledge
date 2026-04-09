@@ -36,8 +36,10 @@
           v-model="values[field.id]"
           :placeholder="field.label"
           :disabled="readonly"
+          maxlength="500"
           class="w-full"
           @input="dirty = true"
+          @blur="validateField(field.id, field.isRequired)"
         />
 
         <!-- Number -->
@@ -47,7 +49,9 @@
           :placeholder="field.label"
           :disabled="readonly"
           class="w-full"
+          type="number"
           @input="dirty = true"
+          @blur="validateField(field.id, field.isRequired)"
         />
 
         <!-- Date -->
@@ -57,7 +61,7 @@
           dateFormat="dd/mm/yy"
           :disabled="readonly"
           class="w-full"
-          @update:modelValue="dirty = true"
+          @update:modelValue="() => { dirty = true; validateField(field.id, field.isRequired) }"
         />
 
         <!-- Select -->
@@ -67,7 +71,7 @@
           :options="parseOptions(field.options)"
           :disabled="readonly"
           class="w-full"
-          @update:modelValue="dirty = true"
+          @update:modelValue="() => { dirty = true; validateField(field.id, field.isRequired) }"
         />
 
         <!-- Checkbox -->
@@ -77,8 +81,12 @@
           :label="field.label"
           :disabled="readonly"
           :binary="true"
-          @update:modelValue="dirty = true"
+          @update:modelValue="() => { dirty = true; validateField(field.id, field.isRequired) }"
         />
+
+        <small v-if="validationErrors[field.id]" class="field-error">
+          {{ validationErrors[field.id] }}
+        </small>
       </div>
     </div>
 
@@ -95,7 +103,7 @@
           optionValue="value"
           style="min-width: 130px"
         />
-        <NeoCheckbox :modelValue="(newField.isRequired as unknown as any[])" @update:modelValue="v => newField.isRequired = (v as unknown as boolean)" binary />
+        <NeoCheckbox v-model="newField.isRequired" :binary="true" />
         <NeoButton label="Ajouter" icon="pi pi-check" :loading="store.saving" :disabled="!newField.label.trim()" @click="handleAddField" />
         <NeoButton label="Annuler" severity="secondary" outlined @click="showAddField = false" />
       </div>
@@ -113,7 +121,8 @@ const props = defineProps<{ project: ProjectDetail; readonly?: boolean }>()
 const store = usePmStore()
 const toast = useNeoToast()
 
-const values: Record<string, any> = reactive({})
+const values: Record<string, string | number | boolean | null> = reactive({})
+const validationErrors: Record<string, string> = reactive({})
 const dirty       = ref(false)
 const saved       = ref(false)
 const showAddField = ref(false)
@@ -140,7 +149,37 @@ const parseOptions = (opt: string | null): string[] => {
   try { return JSON.parse(opt) } catch { return opt.split(',').map(s => s.trim()) }
 }
 
+const validateField = (fieldId: string, isRequired: boolean): void => {
+  if (!isRequired) {
+    delete validationErrors[fieldId]
+    return
+  }
+  const val = values[fieldId]
+  if (val === undefined || val === null || val === '') {
+    validationErrors[fieldId] = 'Ce champ est obligatoire.'
+  } else {
+    delete validationErrors[fieldId]
+  }
+}
+
+const validateAllRequired = (): boolean => {
+  let valid = true
+  for (const field of props.project.fields) {
+    if (field.isRequired) {
+      validateField(field.id, true)
+      if (validationErrors[field.id]) {
+        valid = false
+      }
+    }
+  }
+  return valid
+}
+
 const handleSave = async () => {
+  if (!validateAllRequired()) {
+    toast.add({ severity: 'warn', detail: 'Veuillez remplir tous les champs obligatoires.', life: 4000 })
+    return
+  }
   const payload = {
     fieldValues: Object.entries(values).map(([projectFieldId, value]) => ({
       projectFieldId,
@@ -185,24 +224,25 @@ const handleAddField = async () => {
   flex-wrap: wrap;
   gap: 0.75rem;
 }
-.q-title { font-size: 1rem; font-weight: 700; color: #111827; margin: 0; }
+.q-title { font-size: 1rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
 .q-actions { display: flex; gap: 0.5rem; }
 
 .field-list { display: flex; flex-direction: column; gap: 1rem; }
 
 .field-item { display: flex; flex-direction: column; gap: 0.3rem; }
 
-.field-label { font-size: 0.85rem; font-weight: 500; color: #374151; }
-.required { color: #ef4444; margin-left: 2px; }
+.field-label { font-size: 0.85rem; font-weight: 500; color: var(--nl-text-2); }
+.required { color: var(--nl-danger); margin-left: 2px; }
+.field-error { font-size: 0.75rem; color: var(--nl-danger); margin-top: 0.15rem; }
 
 .add-field-box {
-  background: #f9fafb;
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
+  background: var(--nl-surface-2);
+  border: 1px dashed var(--nl-border-strong);
+  border-radius: var(--nl-radius);
   padding: 1rem 1.25rem;
   margin-top: 0.5rem;
 }
-.add-field-title { font-size: 0.875rem; font-weight: 600; color: #374151; margin: 0 0 0.75rem; }
+.add-field-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); margin: 0 0 0.75rem; }
 .add-field-row { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
 .mb-3 { margin-bottom: 0.75rem; }
 </style>

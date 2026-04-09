@@ -17,7 +17,35 @@
     <div class="profile-grid">
       <!-- ── Left column: identity card ───────────────────── -->
       <aside class="identity-card" aria-label="Identité">
-        <div class="avatar" aria-hidden="true">{{ initials }}</div>
+        <!-- Avatar with upload -->
+        <div class="avatar-wrap">
+          <img
+            v-if="avatarUrl"
+            :src="avatarUrl"
+            class="avatar avatar--img"
+            alt="Photo de profil"
+            @error="avatarUrl = null"
+          />
+          <div v-else class="avatar" aria-hidden="true">{{ initials }}</div>
+          <button
+            class="avatar-change-btn"
+            :disabled="uploadingAvatar"
+            title="Changer la photo"
+            aria-label="Changer la photo de profil"
+            @click="triggerFileInput"
+          >
+            <i v-if="!uploadingAvatar" class="pi pi-camera" aria-hidden="true" />
+            <i v-else class="pi pi-spin pi-spinner" aria-hidden="true" />
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            class="avatar-file-input"
+            aria-label="Sélectionner une photo"
+            @change="onFileSelected"
+          />
+        </div>
         <div class="identity-name">{{ fullName || 'Utilisateur' }}</div>
         <NeoTag :value="roleLabel" severity="info" class="role-tag" />
         <div class="identity-email">
@@ -156,6 +184,9 @@
           </div>
         </section>
 
+        <!-- Panel 3: Two-factor authentication -->
+        <SecuritySection />
+
       </div>
     </div>
 
@@ -164,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import {
@@ -174,6 +205,7 @@ import {
 import { useApp } from '@/stores/useApp'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
+import SecuritySection from '@/components/admin/sections/SecuritySection.vue'
 
 interface JwtPayload {
   sub?: string
@@ -203,6 +235,11 @@ const currentPassword = ref('')
 const newPassword     = ref('')
 const confirmPassword = ref('')
 
+// ── Avatar ─────────────────────────────────────────────────────────────────────
+const avatarUrl       = ref<string | null>(null)
+const uploadingAvatar = ref(false)
+const fileInputRef    = ref<HTMLInputElement | null>(null)
+
 // ── Loading / error state ──────────────────────────────────────────────────────
 const savingInfo = ref(false)
 const savingPw   = ref(false)
@@ -230,7 +267,7 @@ const infoChanged = computed(() =>
 )
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-onMounted(() => {
+onMounted(async () => {
   if (!app.jwt) return
   try {
     const payload = JSON.parse(atob(app.jwt.split('.')[1])) as JwtPayload
@@ -244,7 +281,66 @@ onMounted(() => {
       payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? ''
     ) as UserRole | ''
   } catch { /* JWT decode failed — ignore */ }
+
+  // Load avatar URL if user has one
+  if (userId.value) {
+    avatarUrl.value = `${app.apiUrl}/api/userprofile/avatar/${userId.value}`
+  }
 })
+
+// ── Avatar upload ──────────────────────────────────────────────────────────────
+const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_BYTES = 2 * 1024 * 1024
+
+function triggerFileInput(): void {
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file  = input.files?.[0]
+  input.value = '' // reset so same file can be re-selected
+
+  if (!file) return
+
+  if (!ALLOWED_TYPES.has(file.type)) {
+    toast.add({ severity: 'error', detail: 'Format non supporté. Utilisez JPG, PNG ou WebP.', life: 4000 })
+    return
+  }
+  if (file.size > MAX_BYTES) {
+    toast.add({ severity: 'error', detail: 'L\'image dépasse 2 Mo.', life: 4000 })
+    return
+  }
+
+  uploadingAvatar.value = true
+  try {
+    const base64 = await toBase64(file)
+    const ext    = `.${file.name.split('.').pop()?.toLowerCase() ?? 'jpg'}`
+    const { data } = await axios.post<string>(
+      `${app.apiUrl}/api/userprofile/avatar`,
+      { base64Image: base64, fileExtension: ext },
+      { headers: app.authHeader() },
+    )
+    // Force browser to reload the image by appending a cache-bust
+    avatarUrl.value = `${app.apiUrl}/api/userprofile/avatar/${userId.value}?t=${Date.now()}`
+    void nextTick() // let Vue re-render before showing the toast
+    void data // satisfies TS — path returned from backend, not used directly
+    toast.add({ severity: 'success', detail: 'Photo de profil mise à jour.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Erreur lors du téléchargement de la photo.', life: 4000 })
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
+
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve((reader.result as string).split(',')[1])
+    reader.onerror = () => reject(new Error('Lecture du fichier échouée'))
+    reader.readAsDataURL(file)
+  })
+}
 
 // ── Back navigation ────────────────────────────────────────────────────────────
 function goBack(): void {
@@ -339,12 +435,12 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   background: none;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--nl-border);
   color: #475569;
   font-size: 0.875rem;
   font-weight: 500;
   padding: 0.45rem 0.875rem;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   flex-shrink: 0;
@@ -357,7 +453,7 @@ async function savePassword(): Promise<void> {
 }
 
 .back-btn:focus-visible {
-  outline: 2px solid #0d9488;
+  outline: 2px solid var(--nl-accent);
   outline-offset: 2px;
 }
 
@@ -380,9 +476,9 @@ async function savePassword(): Promise<void> {
 
 /* ── Identity card (left column) ──────────────────────────────────────────────── */
 .identity-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   padding: 2rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -392,11 +488,18 @@ async function savePassword(): Promise<void> {
   top: 2rem;
 }
 
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .avatar {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
+  background: linear-gradient(135deg, var(--nl-accent), #0891b2);
   color: #fff;
   font-size: 1.75rem;
   font-weight: 700;
@@ -405,6 +508,45 @@ async function savePassword(): Promise<void> {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
+}
+
+.avatar--img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
+}
+
+.avatar-change-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--nl-accent);
+  color: #fff;
+  border: 2px solid var(--nl-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.avatar-change-btn:hover { background: #0891b2; }
+.avatar-change-btn:focus-visible { outline: 2px solid var(--nl-accent); outline-offset: 2px; }
+.avatar-change-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.avatar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
 }
 
 .identity-name {
@@ -444,7 +586,7 @@ async function savePassword(): Promise<void> {
   color: #64748b;
 }
 
-.meta-row .pi { color: #0d9488; }
+.meta-row .pi { color: var(--nl-accent); }
 
 /* ── Settings panels (right column) ───────────────────────────────────────────── */
 .settings-panels {
@@ -454,9 +596,9 @@ async function savePassword(): Promise<void> {
 }
 
 .settings-panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   overflow: hidden;
 }
 
@@ -471,7 +613,7 @@ async function savePassword(): Promise<void> {
 
 .panel-icon {
   font-size: 1rem;
-  color: #0d9488;
+  color: var(--nl-accent);
 }
 
 .panel-title {
@@ -504,7 +646,7 @@ async function savePassword(): Promise<void> {
 .field-label {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--nl-text-2);
 }
 
 .field-input { width: 100%; }
@@ -514,19 +656,19 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.5rem;
   background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--nl-border);
   border-radius: 6px;
   padding: 0.55rem 0.875rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-size: 0.875rem;
 }
 
-.readonly-icon { color: #9ca3af; font-size: 0.85rem; }
+.readonly-icon { color: var(--nl-text-3); font-size: 0.85rem; }
 
 .field-hint {
   margin: 0;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
 
 .section-description {

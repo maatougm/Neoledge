@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ─── Enums (stored as VARCHAR) ────────────────────────────────────────────────
+//
+// UserRole:           Admin | ProjectManager | SpecificationTeam | RealizationTeam | DeploymentTeam | Viewer
+// ProjectStatus:      Draft | InProgress | SpecificationValidation | Realization | DeploymentValidation | Completed | Archived
+// ProjectPriority:    Low | Medium | High | Critical
+// FieldType:          Text | Number | Date | Select | Checkbox
+// FieldCategory:      Static | Dynamic | Custom
+// AttachmentCategory: Document | Specification | Contract | Screenshot | Image | Report | Other
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model AppUser {
+  id                  String    @id @default(uuid())
+  firstName           String    @db.VarChar(100)
+  lastName            String    @db.VarChar(100)
+  email               String    @unique @db.VarChar(256)
+  passwordHash        String
+  role                String    @default("Viewer") @db.VarChar(50)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  lastLoginAt         DateTime?
+  mustChangePassword  Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  avatarPath          String?   @db.VarChar(500)
+  jobTitle            String?   @db.VarChar(100)
+  phoneNumber         String?   @db.VarChar(50)
+  department          String?   @db.VarChar(100)
+  preferences         String?   @db.LongText
+  totpSecret          String?   @db.VarChar(100)
+  totpEnabled         Boolean   @default(false)
+  totpVerifiedAt      DateTime?
+
+  // Relations
+  managedProjects  Project[]          @relation("ProjectManager")
+  createdProjects  Project[]          @relation("ProjectCreator")
+  deletedProjects  Project[]          @relation("ProjectDeleter")
+  comments         ProjectComment[]
+  attachments      ProjectAttachment[]
+  activities       ProjectActivity[]
+  validations      ProjectValidation[]
+  templates        ProjectTemplate[]
+  notifications    Notification[]
+  checkedItems     PhaseChecklist[]
+
+  auditLogs AuditLog[]
+
+  @@map("AppUsers")
+}
+
+model Project {
+  id                       String   @id @default(uuid())
+  name                     String   @db.VarChar(200)
+  clientName               String   @db.VarChar(200)
+  startDate                DateTime
+  endDate                  DateTime
+  projectManagerId         String?
+  status                   String   @default("Draft") @db.VarChar(50)
+  priority                 String   @default("Medium") @db.VarChar(50)
+  allowManagerCustomFields Boolean  @default(false)
+  createdByAdminId         String
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  aiOutput                 String?  @db.Text
+  isDeleted                Boolean  @default(false)
+  deletedAt                DateTime?
+  deletedByUserId          String?
+  tags                     String?  @db.VarChar(500)
+  budget                   Decimal?
+
+  // Relations
+  projectManager AppUser?         @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdByAdmin AppUser          @relation("ProjectCreator", fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deletedByUser  AppUser?         @relation("ProjectDeleter", fields: [deletedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fields         ProjectField[]
+  fieldValues    ProjectFieldValue[]
+  validations    ProjectValidation[]
+  activities     ProjectActivity[]
+  comments       ProjectComment[]
+  attachments    ProjectAttachment[]
+  transcripts    MeetingTranscript[]
+  notifications  Notification[]
+  checklists     PhaseChecklist[]
+
+  @@index([status])
+  @@index([projectManagerId])
+  @@index([isDeleted])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([isDeleted, status])
+  @@map("Projects")
+}
+
+model ProjectField {
+  id            String  @id @default(uuid())
+  projectId     String
+  label         String  @db.VarChar(200)
+  fieldType     String  @default("Text") @db.VarChar(50)
+  isRequired    Boolean @default(false)
+  defaultValue  String? @db.VarChar(500)
+  orderIndex    Int     @default(0)
+  fieldCategory String  @default("Dynamic") @db.VarChar(50)
+  options       String? @db.Text
+
+  // Relations
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values  ProjectFieldValue[]
+
+  @@map("ProjectFields")
+}
+
+model ProjectFieldValue {
+  id             String  @id @default(uuid())
+  projectId      String
+  projectFieldId String
+  value          String? @db.Text
+
+  // Relations
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  field   ProjectField @relation(fields: [projectFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, projectFieldId])
+  @@map("ProjectFieldValues")
+}
+
+model ProjectValidation {
+  id                String   @id @default(uuid())
+  projectId         String
+  validatedByUserId String
+  validatedByRole   String   @db.VarChar(50)
+  phase             String   @db.VarChar(50)
+  isApproved        Boolean
+  comment           String?  @db.Text
+  validatedAt       DateTime
+
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  validatedBy AppUser @relation(fields: [validatedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId, phase])
+  @@map("ProjectValidations")
+}
+
+model ProjectActivity {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String?
+  action    String   @db.VarChar(100)
+  detail    String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  // Relations
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("ProjectActivities")
+}
+
+model ProjectTemplate {
+  id               String   @id @default(uuid())
+  name             String   @db.VarChar(200)
+  description      String?  @db.Text
+  createdByAdminId String
+  createdAt        DateTime @default(now())
+
+  // Relations
+  createdByAdmin AppUser                @relation(fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fields         ProjectTemplateField[]
+
+  @@map("ProjectTemplates")
+}
+
+model ProjectTemplateField {
+  id           String  @id @default(uuid())
+  templateId   String
+  label        String  @db.VarChar(200)
+  type         String  @db.VarChar(50)
+  category     String  @default("Custom") @db.VarChar(50)
+  isRequired   Boolean @default(false)
+  displayOrder Int     @default(0)
+  options      String? @db.Text
+
+  // Relations
+  template ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("ProjectTemplateFields")
+}
+
+model ProjectComment {
+  id              String    @id @default(uuid())
+  projectId       String
+  userId          String
+  content         String    @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime?
+  isDeleted       Boolean   @default(false)
+  parentCommentId String?
+  mentions        String?   @db.VarChar(500)
+
+  // Relations
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          AppUser          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parentComment ProjectComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies       ProjectComment[] @relation("CommentReplies")
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ProjectComments")
+}
+
+model ProjectAttachment {
+  id               String   @id @default(uuid())
+  projectId        String
+  uploadedByUserId String
+  fileName         String   @db.VarChar(255)
+  fileExtension    String   @db.VarChar(20)
+  contentType      String   @db.VarChar(100)
+  fileSize         BigInt
+  storagePath      String   @db.VarChar(500)
+  description      String?  @db.VarChar(500)
+  category         String   @default("Document") @db.VarChar(50)
+  uploadedAt       DateTime @default(now())
+  isDeleted        Boolean  @default(false)
+
+  // Relations
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy AppUser @relation(fields: [uploadedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([uploadedByUserId])
+  @@index([uploadedAt])
+  @@index([category])
+  @@map("ProjectAttachments")
+}
+
+model MeetingTranscript {
+  id                String   @id @default(uuid())
+  projectId         String
+  title             String   @db.VarChar(200)
+  originalFileName  String?  @db.VarChar(500)
+  durationSeconds   Int      @default(0)
+  detectedLanguages String   @default("") @db.VarChar(50)
+  recordedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  // Relations
+  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments TranscriptSegment[]
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("MeetingTranscripts")
+}
+
+model TranscriptSegment {
+  id           String @id @default(uuid())
+  transcriptId String
+  speaker      String @default("Unknown") @db.VarChar(100)
+  text         String @default("") @db.LongText
+  startTime    Float
+  endTime      Float
+  language     String @default("") @db.VarChar(10)
+  confidence   Float  @default(0)
+
+  // Relations
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@map("TranscriptSegments")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(200)
+  message   String   @db.VarChar(500)
+  projectId String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user    AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("Notifications")
+}
+
+model PhaseChecklist {
+  id         String    @id @default(uuid())
+  projectId  String
+  phase      String    @db.VarChar(50)
+  label      String    @db.VarChar(300)
+  isChecked  Boolean   @default(false)
+  checkedBy  String?
+  checkedAt  DateTime?
+  orderIndex Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  checker AppUser? @relation(fields: [checkedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId, phase])
+  @@map("PhaseChecklists")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String   @db.VarChar(50)
+  entityId   String   @db.VarChar(36)
+  action     String   @db.VarChar(50)
+  userId     String?
+  changes    String?  @db.LongText
+  metadata   String?  @db.VarChar(1000)
+  createdAt  DateTime @default(now())
+
+  user AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("AuditLogs")
+}

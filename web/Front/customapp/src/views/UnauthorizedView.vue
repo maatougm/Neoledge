@@ -31,7 +31,7 @@ const Unauthorized = defineAsyncComponent(() => import('@/assets/svg/unauthorize
   max-width: 70vw;
   text-align: center;
   font-size: 1rem;
-  color: #374151;
+  color: var(--nl-text-2);
 }
 
 svg#freepik_stories-security-on:not(.animated) .animable { opacity: 0; }

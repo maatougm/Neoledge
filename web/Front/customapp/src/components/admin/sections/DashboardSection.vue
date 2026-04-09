@@ -74,7 +74,7 @@
             <span class="legend-dot" :style="{ background: STATUS_COLORS[s] }" />
             <span class="legend-lbl">{{ PROJECT_STATUS_LABELS[s] }}</span>
             <span class="legend-bar-wrap">
-              <span class="legend-bar" :style="{ width: barWidth(statusCount(s)), background: STATUS_COLORS[s] + '40' }" />
+              <span class="legend-bar" :style="{ width: barWidth(statusCount(s)), background: STATUS_COLORS[s], opacity: 0.25 }" />
             </span>
             <span class="legend-count">{{ statusCount(s) }}</span>
           </div>
@@ -225,10 +225,6 @@ const barWidth = (count: number): string => {
   return total === 0 ? '0%' : `${Math.round((count / total) * 100)}%`
 }
 
-const barPct = (count: number): string => {
-  const total = projectStore.projects.length
-  return total === 0 ? '0%' : `${Math.round((count / total) * 100)}%`
-}
 
 // ── Completion ring (circumference of r=40 ≈ 251) ─────────────────────────────
 const completionPct = computed(() => {

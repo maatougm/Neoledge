@@ -24,3 +24,42 @@ export interface SubmitValidationPayload {
   isApproved: boolean
   comment: string | null
 }
+
+// ─── Meeting Transcription ────────────────────────────────────────────────────
+
+export interface TranscriptSegment {
+  id: string
+  speaker: string
+  text: string
+  startTime: number
+  endTime: number
+  language: string
+  confidence: number
+}
+
+export interface MeetingTranscriptSummary {
+  id: string
+  title: string
+  durationSeconds: number
+  detectedLanguages: string
+  segmentCount: number
+  recordedAt: string
+  createdAt: string
+}
+
+export interface MeetingTranscriptDetail {
+  id: string
+  projectId: string
+  title: string
+  durationSeconds: number
+  detectedLanguages: string
+  recordedAt: string
+  createdAt: string
+  segments: TranscriptSegment[]
+}
+
+export interface SpeakerRange {
+  start: number
+  end: number
+  speaker: string
+}
