@@ -85,7 +85,7 @@
             <span class="toggle-label">
               Autoriser le chef de projet à ajouter des champs
             </span>
-            <NeoToggleSwitch
+            <ToggleSwitch
               :modelValue="project.allowManagerCustomFields"
               @update:modelValue="handleToggle"
               :title="project.allowManagerCustomFields ? 'Révoquer la permission' : 'Accorder la permission'"
@@ -205,7 +205,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import Dialog from 'primevue/dialog'
-import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoCheckbox, NeoToggleSwitch, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoCheckbox, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import ToggleSwitch from 'primevue/toggleswitch'
 import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import ActivityFeed from '@/components/pm/ActivityFeed.vue'
 import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'

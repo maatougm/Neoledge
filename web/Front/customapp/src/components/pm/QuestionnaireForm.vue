@@ -43,7 +43,7 @@
         />
 
         <!-- Number -->
-        <NeoInputNumber
+        <NeoInputText
           v-else-if="field.fieldType === 'Number'"
           v-model="values[field.id]"
           :placeholder="field.label"
@@ -113,7 +113,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
-import { NeoInputText, NeoInputNumber, NeoSelect, NeoDatePicker, NeoCheckbox, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
+import { NeoInputText, NeoSelect, NeoDatePicker, NeoCheckbox, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import type { ProjectDetail, FieldType } from '@/types/project.types'
 
