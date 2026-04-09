@@ -127,6 +127,7 @@ const notificationStore  = useNotificationStore()
 const notifSocket        = useNotificationSocket()
 
 onMounted(() => {
+  if (store.projects.length === 0) store.fetchTeamProjects()
   notificationStore.startPolling()
   if (app.jwt && app.apiUrl) void darkMode.loadFromBackend(app.jwt, app.apiUrl)
   if (app.apiUrl && app.jwt) notifSocket.connect(app.apiUrl, app.jwt)

@@ -129,4 +129,11 @@ export class AuthController {
     await this.authService.disableTotp(user.userId, dto.code);
     return { message: '2FA désactivée avec succès.' };
   }
+
+  /** No-op logout endpoint — JWT is stateless; client already cleared the token. */
+  @Get('hook/logout')
+  @HttpCode(HttpStatus.OK)
+  hookLogout() {
+    return { ok: true };
+  }
 }

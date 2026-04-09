@@ -57,6 +57,14 @@ export class PmController {
     return result.value;
   }
 
+  /** All active projects — used by team-member roles who are not project managers */
+  @Get('team-projects')
+  async getTeamProjects() {
+    const result = await this.service.getProjectsPaged(0, 200);
+    if (result.isFailure) return [];
+    return (result.value as { items: unknown[] }).items;
+  }
+
   @Post('projects/:id/validations')
   async submitValidation(
     @Param('id') id: string,

@@ -35,6 +35,19 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
+  const fetchTeamProjects = async () => {
+    loading.value = true
+    error.value   = null
+    try {
+      const { data } = await axios.get<ProjectSummary[]>(`${apiBase()}/team-projects`, { headers: authHeader() })
+      projects.value = [...data]
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
+    } finally {
+      loading.value = false
+    }
+  }
+
   const fetchProject = async (id: string) => {
     loading.value = true
     error.value   = null
@@ -193,7 +206,7 @@ export const usePmStore = defineStore('pm', () => {
 
   return {
     projects, currentProject, validations, activities, meetings, currentTranscript, loading, saving, error,
-    fetchMyProjects, fetchProject, saveQuestionnaire, addCustomField, submitValidation, fetchActivity,
+    fetchMyProjects, fetchTeamProjects, fetchProject, saveQuestionnaire, addCustomField, submitValidation, fetchActivity,
     fetchMeetings, fetchTranscript, uploadMeeting, deleteMeeting, renameSpeaker,
   }
 })
