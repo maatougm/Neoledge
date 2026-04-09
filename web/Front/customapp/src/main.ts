@@ -17,9 +17,9 @@ import { NeoLibraryThemePlugin } from '@neolibrary/components'
 import '@neolibrary/components/style.css'
 import 'primeicons/primeicons.css'
 
-// Restore dark mode preference before first render
+// Restore dark mode preference before first render (both our tokens + PrimeVue)
 if (localStorage.getItem('darkMode') === 'true') {
-  document.documentElement.classList.add('dark')
+  document.documentElement.classList.add('dark', 'p-dark')
 }
 
 const app = createApp(App)

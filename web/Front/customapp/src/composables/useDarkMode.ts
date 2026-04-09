@@ -21,7 +21,10 @@ let _apiBase = ''
 function applyDark(value: boolean): void {
   isDark.value = value
   localStorage.setItem('darkMode', String(value))
+  // .dark    → our CSS custom-property tokens (base.css)
+  // .p-dark  → NeoLibrary/PrimeVue dark-mode selector
   document.documentElement.classList.toggle('dark', value)
+  document.documentElement.classList.toggle('p-dark', value)
 }
 
 async function savePreference(): Promise<void> {
