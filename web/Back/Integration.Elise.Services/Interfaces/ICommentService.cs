@@ -25,8 +25,8 @@ public interface ICommentService
     /// <summary>Creates a new comment on a project.</summary>
     Task<Result<ProjectCommentDto>> CreateCommentAsync(Guid projectId, Guid userId, CreateCommentDto dto, CancellationToken ct = default);
 
-    /// <summary>Updates an existing comment (only by the author).</summary>
-    Task<Result<ProjectCommentDto>> UpdateCommentAsync(Guid commentId, Guid userId, UpdateCommentDto dto, CancellationToken ct = default);
+    /// <summary>Updates an existing comment (only by the author or admin).</summary>
+    Task<Result<ProjectCommentDto>> UpdateCommentAsync(Guid commentId, Guid userId, bool isAdmin, UpdateCommentDto dto, CancellationToken ct = default);
 
     /// <summary>Soft-deletes a comment (only by the author or admin).</summary>
     Task<Result> DeleteCommentAsync(Guid commentId, Guid userId, bool isAdmin, CancellationToken ct = default);

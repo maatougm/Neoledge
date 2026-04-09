@@ -56,7 +56,7 @@
     </div>
 
     <!-- Create dialog -->
-    <NeoDialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
+    <Dialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
       <div class="create-form">
         <NeoInputText v-model="form.name" label="Nom du modèle" placeholder="Ex : Modèle NeoLeadge standard" class="w-full" />
         <NeoInputText v-model="form.description" label="Description (optionnel)" placeholder="Description courte" class="w-full" />
@@ -86,10 +86,10 @@
         <NeoButton label="Annuler" severity="secondary" outlined @click="showCreateDialog = false" />
         <NeoButton label="Créer" :loading="saving" :disabled="!form.name.trim()" @click="handleCreate" />
       </template>
-    </NeoDialog>
+    </Dialog>
 
     <!-- Apply to project dialog -->
-    <NeoDialog v-model:visible="showApplyDialog" header="Appliquer le modèle" :modal="true" style="width: 480px">
+    <Dialog v-model:visible="showApplyDialog" header="Appliquer le modèle" :modal="true" style="width: 480px">
       <div class="apply-form">
         <p class="apply-hint">
           Sélectionnez un projet pour y ajouter les champs du modèle
@@ -114,13 +114,14 @@
           @click="handleApply"
         />
       </template>
-    </NeoDialog>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { NeoButton, NeoInputText, NeoSelect, NeoDialog, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import Dialog from 'primevue/dialog'
 import { useTemplateStore } from '@/stores/templateStore'
 import { useProjectStore } from '@/stores/projectStore'
 import type { ProjectTemplateSummary } from '@/types/project.types'

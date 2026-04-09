@@ -93,7 +93,7 @@
     </ul>
 
     <!-- Save dialog -->
-    <NeoDialog
+    <Dialog
       v-model:visible="showSaveDialog"
       header="Sauvegarder le filtre"
       modal
@@ -121,10 +121,10 @@
           @click="handleSave"
         />
       </template>
-    </NeoDialog>
+    </Dialog>
 
     <!-- Edit dialog -->
-    <NeoDialog
+    <Dialog
       v-model:visible="showEditDialog"
       header="Renommer le filtre"
       modal
@@ -152,7 +152,7 @@
           @click="handleEdit"
         />
       </template>
-    </NeoDialog>
+    </Dialog>
   </div>
 </template>
 
@@ -165,7 +165,8 @@ function toTagSeverity(val: string | undefined): NeoTagSeverity {
 }
 
 import { ref } from 'vue'
-import { NeoButton, NeoTag, NeoDialog, NeoInputText } from '@neolibrary/components'
+import { NeoButton, NeoTag, NeoInputText } from '@neolibrary/components'
+import Dialog from 'primevue/dialog'
 import { useNeoToast } from '@neolibrary/components'
 import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
 import { PROJECT_STATUS_LABELS } from '@/types/project.types'

@@ -78,7 +78,7 @@ public class CommentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateComment(Guid projectId, Guid commentId, [FromBody] UpdateCommentDto dto, CancellationToken ct)
     {
-        var result = await _commentService.UpdateCommentAsync(commentId, CurrentUserId, dto, ct);
+        var result = await _commentService.UpdateCommentAsync(commentId, CurrentUserId, IsAdmin, dto, ct);
         if (!result.IsSuccess)
         {
             if (result.Error?.Contains("not found") == true)

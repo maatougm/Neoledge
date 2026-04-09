@@ -53,6 +53,12 @@ public class ApplicationDbContext : DbContext
     /// <summary>Project file attachments.</summary>
     public DbSet<ProjectAttachment> ProjectAttachments => Set<ProjectAttachment>();
 
+    /// <summary>Meeting audio transcripts.</summary>
+    public DbSet<MeetingTranscript> MeetingTranscripts => Set<MeetingTranscript>();
+
+    /// <summary>Individual transcript segments.</summary>
+    public DbSet<TranscriptSegment> TranscriptSegments => Set<TranscriptSegment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -298,6 +304,40 @@ public class ApplicationDbContext : DbContext
 
             // Global query filter for soft delete
             e.HasQueryFilter(a => !a.IsDeleted);
+        });
+
+        // ── MeetingTranscript ─────────────────────────────────────────────────
+        modelBuilder.Entity<MeetingTranscript>(e =>
+        {
+            e.ToTable("MeetingTranscripts");
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Title).IsRequired().HasMaxLength(200);
+            e.Property(t => t.OriginalFileName).HasMaxLength(500);
+            e.Property(t => t.DetectedLanguages).HasMaxLength(50);
+            e.Property(t => t.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            e.HasOne(t => t.Project)
+             .WithMany()
+             .HasForeignKey(t => t.ProjectId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasMany(t => t.Segments)
+             .WithOne(s => s.Transcript)
+             .HasForeignKey(s => s.TranscriptId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(t => t.ProjectId);
+            e.HasIndex(t => t.CreatedAt);
+        });
+
+        // ── TranscriptSegment ─────────────────────────────────────────────────
+        modelBuilder.Entity<TranscriptSegment>(e =>
+        {
+            e.ToTable("TranscriptSegments");
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Speaker).IsRequired().HasMaxLength(20);
+            e.Property(s => s.Language).HasMaxLength(10);
+            e.Property(s => s.Text).HasMaxLength(5000);
         });
     }
 }

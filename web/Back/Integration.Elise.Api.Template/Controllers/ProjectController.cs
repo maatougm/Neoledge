@@ -21,7 +21,7 @@ namespace Integration.Elise.Api.Controllers;
 /// All endpoints require a valid JWT.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin")]
 [Route("admin/[controller]")]
 public class ProjectController : ControllerBase
 {
@@ -39,12 +39,21 @@ public class ProjectController : ControllerBase
             ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new UnauthorizedAccessException());
 
-    /// <summary>Returns all projects (summary).</summary>
+    /// <summary>
+    /// Returns projects with optional search, status filter, and pagination.
+    /// When no query parameters are provided the response is backward-compatible
+    /// (returns all projects as a flat list).
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<ProjectSummaryDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    [ProducesResponseType(typeof(PaginatedResult<ProjectSummaryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        CancellationToken ct = default)
     {
-        var result = await _projectService.GetAllProjectsAsync(ct);
+        var result = await _projectService.GetProjectsPagedAsync(skip, take, search, status, ct);
         return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
     }
 

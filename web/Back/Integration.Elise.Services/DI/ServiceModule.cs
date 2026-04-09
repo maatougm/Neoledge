@@ -48,6 +48,10 @@ public class ServiceModule : Module
         builder.RegisterType<UserProfileService>().As<IUserProfileService>().InstancePerLifetimeScope();
         builder.RegisterType<AttachmentService>().As<IAttachmentService>().InstancePerLifetimeScope();
         builder.RegisterType<ExportService>().As<IExportService>().InstancePerLifetimeScope();
+        builder.RegisterType<MeetingTranscriptionService>().As<IMeetingTranscriptionService>().InstancePerLifetimeScope();
+
+        // ── HttpClient (singleton, used by MeetingTranscriptionService) ───────
+        builder.Register(_ => new HttpClient()).AsSelf().SingleInstance();
 
         // ── AutoMapper ────────────────────────────────────────────────────────
         builder.Register(_ => new MapperConfiguration(cfg =>

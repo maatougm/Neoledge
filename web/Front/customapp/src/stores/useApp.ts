@@ -6,15 +6,16 @@ import router from '@/router'
 import type { SampleRequest, SampleResponse } from '@/types'
 
 axios.interceptors.response.use(null, (error) => {
-  if (error.response?.status === 401) {
-    router.push({ name: 'unauthorized' })
+  const url: string = error.config?.url ?? ''
+  const isAuthEndpoint = url.includes('/auth/login') || url.includes('/hook/auth')
+  if (error.response?.status === 401 && !isAuthEndpoint) {
+    router.push({ name: 'login' })
   }
   return Promise.reject(error)
 })
 
 axios.interceptors.request.use(
   (config) => {
-    if (import.meta.env.DEV) config.withCredentials = true
     return config
   },
   (error) => {
@@ -31,7 +32,7 @@ export const useApp = defineStore('App', () => {
 
   const fetchApiUrl = async () => {
     const { data } = await axios.get(import.meta.env.BASE_URL + 'config.json?_=' + Date.now())
-    apiUrl.value = (data.GLB_API_URL as string).replace(//+$/, '')
+    apiUrl.value = (data.GLB_API_URL as string).replace(/\/+$/, '')
     eliseUrl.value = data.GLB_ELISE_URL
   }
   const fetchJwt = async (guid: string) => {

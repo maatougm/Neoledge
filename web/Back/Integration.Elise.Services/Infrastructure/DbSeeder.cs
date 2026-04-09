@@ -54,7 +54,10 @@ public static class DbSeeder
                 Email        = "admin@neoleadge.com",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
                 Role         = UserRole.Admin,
-                IsActive     = true
+                IsActive     = true,
+                JobTitle     = "System Administrator",
+                Department   = "IT Operations",
+                PhoneNumber  = "+33 1 23 45 67 89"
             };
 
             var pmUser = new AppUser
@@ -64,7 +67,10 @@ public static class DbSeeder
                 Email        = "pm@neoleadge.com",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Pm@123"),
                 Role         = UserRole.ProjectManager,
-                IsActive     = true
+                IsActive     = true,
+                JobTitle     = "Senior Project Manager",
+                Department   = "Consulting",
+                PhoneNumber  = "+33 6 12 34 56 78"
             };
 
             var pmUser2 = new AppUser
@@ -74,7 +80,9 @@ public static class DbSeeder
                 Email        = "pm2@neoleadge.com",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Pm2@123"),
                 Role         = UserRole.ProjectManager,
-                IsActive     = true
+                IsActive     = true,
+                JobTitle     = "Project Manager",
+                Department   = "Consulting"
             };
 
             var validUser = new AppUser
@@ -146,6 +154,9 @@ public static class DbSeeder
                 ProjectManagerId = pmUser.Id,
                 CreatedByAdminId = adminUser.Id,
                 AllowManagerCustomFields = true,
+                Budget = 450000.00m,
+                Priority = ProjectPriority.High,
+                Tags = "GED,Public,HauteDispo",
                 AiOutput = "Analyse préliminaire: projet complexe nécessitant une architecture haute disponibilité. Recommandation: déploiement en cluster avec réplication de base de données."
             };
 
@@ -158,7 +169,10 @@ public static class DbSeeder
                 Status = ProjectStatus.SpecificationValidation,
                 ProjectManagerId = pmUser.Id,
                 CreatedByAdminId = adminUser.Id,
-                AllowManagerCustomFields = false
+                AllowManagerCustomFields = false,
+                Budget = 120000.00m,
+                Priority = ProjectPriority.High,
+                Tags = "Migration,Sante"
             };
 
             var project3 = new Project
@@ -170,7 +184,10 @@ public static class DbSeeder
                 Status = ProjectStatus.Draft,
                 ProjectManagerId = pmUser2.Id,
                 CreatedByAdminId = adminUser.Id,
-                AllowManagerCustomFields = true
+                AllowManagerCustomFields = true,
+                Budget = 85000.00m,
+                Priority = ProjectPriority.Medium,
+                Tags = "BPM,Finance"
             };
 
             var project4 = new Project

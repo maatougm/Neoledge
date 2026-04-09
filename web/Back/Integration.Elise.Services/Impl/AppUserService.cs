@@ -7,11 +7,13 @@
  */
 
 using AutoMapper;
+using Integration.Elise.Services.Infrastructure;
 using Integration.Elise.Services.Interfaces;
 using Integration.Elise.Services.Models;
 using Integration.Elise.Services.Models.Domain;
 using Integration.Elise.Services.Models.DTOs;
 using Integration.Elise.Services.Models.Enums;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 namespace Integration.Elise.Services.Impl;
@@ -22,12 +24,14 @@ public class AppUserService : IAppUserService
     private readonly IAppUserRepository _repo;
     private readonly IMapper _mapper;
     private readonly ILogger _logger;
+    private readonly ApplicationDbContext _db;
 
-    public AppUserService(IAppUserRepository repo, IMapper mapper, ILogger logger)
+    public AppUserService(IAppUserRepository repo, IMapper mapper, ILogger logger, ApplicationDbContext db)
     {
         _repo = repo;
         _mapper = mapper;
         _logger = logger;
+        _db = db;
     }
 
     /// <inheritdoc/>
@@ -156,6 +160,47 @@ public class AppUserService : IAppUserService
         await _repo.UpdateAsync(user, ct);
         _logger.Information("Reactivate — reactivated user {Id}", id);
         return Result.Ok();
+    }
+
+    // ── Pagination ───────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<Result<PaginatedResult<UserResponseDto>>> GetUsersPagedAsync(
+        int skip, int take, string? search, string? role, CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 100);
+        if (skip < 0) skip = 0;
+
+        var query = _db.AppUsers.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.ToLower();
+            query = query.Where(u =>
+                u.FirstName.ToLower().Contains(term) ||
+                u.LastName.ToLower().Contains(term) ||
+                u.Email.ToLower().Contains(term));
+        }
+
+        if (!string.IsNullOrWhiteSpace(role)
+            && Enum.TryParse<UserRole>(role, ignoreCase: true, out var parsedRole))
+        {
+            query = query.Where(u => u.Role == parsedRole);
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderBy(u => u.LastName)
+            .ThenBy(u => u.FirstName)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        var dtos = _mapper.Map<List<UserResponseDto>>(items);
+
+        return Result<PaginatedResult<UserResponseDto>>.Ok(
+            new PaginatedResult<UserResponseDto>(dtos, total, skip, take));
     }
 
     private static string GenerateTemporaryPassword()

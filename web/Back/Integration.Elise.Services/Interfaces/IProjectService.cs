@@ -102,4 +102,11 @@ public interface IProjectService
 
     /// <summary>Updates project tags.</summary>
     Task<Result> UpdateProjectTagsAsync(Guid projectId, string tags, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a paginated, optionally filtered list of projects.
+    /// Filters by name/client name search and status enum.
+    /// </summary>
+    Task<Result<PaginatedResult<ProjectSummaryDto>>> GetProjectsPagedAsync(
+        int skip, int take, string? search, string? status, CancellationToken ct = default);
 }

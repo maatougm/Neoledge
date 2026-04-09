@@ -21,7 +21,7 @@ namespace Integration.Elise.Api.Controllers;
 /// All endpoints require a valid JWT and the <c>Admin</c> role.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin")]
 [Route("admin/[controller]")]
 public class AppUserController : ControllerBase
 {
@@ -39,13 +39,22 @@ public class AppUserController : ControllerBase
             ?? User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? Guid.Empty.ToString());
 
-    /// <summary>Returns all users.</summary>
+    /// <summary>
+    /// Returns users with optional search, role filter, and pagination.
+    /// When no query parameters are provided the response is backward-compatible
+    /// (returns all users wrapped in a paginated envelope).
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<UserResponseDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    [ProducesResponseType(typeof(PaginatedResult<UserResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50,
+        [FromQuery] string? search = null,
+        [FromQuery] string? role = null,
+        CancellationToken ct = default)
     {
-        var result = await _userService.GetAllUsersAsync(ct);
-        return result.IsSuccess ? Ok(result.Value) : NotFound(result.Error);
+        var result = await _userService.GetUsersPagedAsync(skip, take, search, role, ct);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(result.Error);
     }
 
     /// <summary>Returns a single user by id.</summary>

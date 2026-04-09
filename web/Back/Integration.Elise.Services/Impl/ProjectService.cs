@@ -695,5 +695,46 @@ public class ProjectService : IProjectService
 
         return Result.Ok();
     }
+
+    // ── Pagination ───────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task<Result<PaginatedResult<ProjectSummaryDto>>> GetProjectsPagedAsync(
+        int skip, int take, string? search, string? status, CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 100);
+        if (skip < 0) skip = 0;
+
+        var query = _db.Projects
+            .Include(p => p.ProjectManager)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.ToLower();
+            query = query.Where(p =>
+                p.Name.ToLower().Contains(term) ||
+                p.ClientName.ToLower().Contains(term));
+        }
+
+        if (!string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse<ProjectStatus>(status, ignoreCase: true, out var parsedStatus))
+        {
+            query = query.Where(p => p.Status == parsedStatus);
+        }
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        var dtos = _mapper.Map<List<ProjectSummaryDto>>(items);
+
+        return Result<PaginatedResult<ProjectSummaryDto>>.Ok(
+            new PaginatedResult<ProjectSummaryDto>(dtos, total, skip, take));
+    }
 }
 

@@ -41,4 +41,11 @@ public interface IAppUserService
 
     /// <summary>Reactivates a previously deactivated user.</summary>
     Task<Result> ReactivateAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a paginated, optionally filtered list of users.
+    /// Filters by first name, last name, or email search and role enum.
+    /// </summary>
+    Task<Result<PaginatedResult<UserResponseDto>>> GetUsersPagedAsync(
+        int skip, int take, string? search, string? role, CancellationToken ct = default);
 }

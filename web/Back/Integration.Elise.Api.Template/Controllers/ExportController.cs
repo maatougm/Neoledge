@@ -17,7 +17,7 @@ namespace Integration.Elise.Api.Controllers;
 /// Provides project data export in CSV and JSON formats.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Admin,ProjectManager")]
 [Route("api/[controller]")]
 public class ExportController : ControllerBase
 {
@@ -37,7 +37,7 @@ public class ExportController : ControllerBase
     [HttpGet("projects/csv")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ExportProjectsCsv(
-        [FromQuery] List<Guid>? ids, CancellationToken ct)
+        [FromQuery] List<Guid> ids, CancellationToken ct)
     {
         var result = await _exportService.ExportToCsvAsync(ids ?? new List<Guid>(), ct);
         if (result.IsFailure) return BadRequest(new { error = result.Error });
@@ -52,7 +52,7 @@ public class ExportController : ControllerBase
     [HttpGet("projects/json")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> ExportProjectsJson(
-        [FromQuery] List<Guid>? ids, CancellationToken ct)
+        [FromQuery] List<Guid> ids, CancellationToken ct)
     {
         var request = new ExportProjectsRequestDto(
             ids ?? new List<Guid>(),

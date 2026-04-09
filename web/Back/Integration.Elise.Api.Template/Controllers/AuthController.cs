@@ -30,8 +30,8 @@ public class AuthController : ControllerBase
     private readonly IUserProfileService _profileService;
     private readonly IAuthService _authService;
 
-    // Hardcoded test users — keyed by email (lowercase)
-    // MustChangePassword = true is set on the 4th test user to simulate a first-login forced change
+#if DEBUG
+    // Fallback: hardcoded test users — ONLY active in Debug builds
     private static readonly Dictionary<string, (string Password, string Role, string FirstName, string LastName, bool MustChangePassword)> TestUsers = new()
     {
         ["admin@neoleadge.com"]   = ("Admin@123",  "Admin",          "Admin",  "NeoLeadge",   false),
@@ -40,6 +40,7 @@ public class AuthController : ControllerBase
         ["valid@neoleadge.com"]   = ("Valid@123",  "DeploymentTeam", "Equipe", "Validation",  false),
         ["newuser@neoleadge.com"] = ("Temp@123",   "Viewer",         "Nouvel", "Utilisateur", true),
     };
+#endif
 
     // TODO: Replace with DB-backed tracking when auth is wired to DB
     // In-memory store of failed login attempts per email: (Attempts, LockedUntil)
@@ -90,6 +91,7 @@ public class AuthController : ControllerBase
             // DB unavailable — fall through to hardcoded test users
         }
 
+#if DEBUG
         // ── Fallback: hardcoded test users (dev only) ─────────────────────────
         if (!TestUsers.TryGetValue(email, out var fallbackUser) || fallbackUser.Password != dto.Password)
         {
@@ -110,6 +112,20 @@ public class AuthController : ControllerBase
         var fallbackToken = GenerateJwt(Guid.NewGuid(), email, fallbackUser.Role,
                                         fallbackUser.FirstName, fallbackUser.LastName);
         return Ok(new { jwt = fallbackToken, mustChangePassword = fallbackUser.MustChangePassword });
+#else
+        // In Release builds, DB is the only auth path — if it failed, reject
+        _failedLoginTracker.AddOrUpdate(
+            email,
+            addValue: (1, null),
+            updateValueFactory: (_, existing) =>
+            {
+                var newAttempts = existing.Attempts + 1;
+                var locked      = newAttempts >= 5 ? DateTime.UtcNow.AddMinutes(15) : (DateTime?)null;
+                return (newAttempts, locked);
+            });
+
+        return Unauthorized(new { error = "Email ou mot de passe incorrect." });
+#endif
     }
 
     /// <summary>

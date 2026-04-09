@@ -17,6 +17,7 @@ import { MailModule } from './mail/mail.module.js';
 import { SavedFiltersModule } from './filters/saved-filters.module.js';
 import { ChecklistsModule } from './checklists/checklists.module.js';
 import { AuditModule } from './audit/audit.module.js';
+import { SystemStatusModule } from './system-status/system-status.module.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AuditModule } from './audit/audit.module.js';
     DeadlinesModule,
     SavedFiltersModule,
     ChecklistsModule,
+    SystemStatusModule,
   ],
 })
 export class AppModule {}

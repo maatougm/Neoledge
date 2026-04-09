@@ -4,6 +4,7 @@ using Integration.Elise.Services.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Integration.Elise.Services.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260401113805_UpdateSchema_Automated")]
+    partial class UpdateSchema_Automated
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -101,49 +104,6 @@ namespace Integration.Elise.Services.Migrations
                     b.HasIndex("IsActive");
 
                     b.ToTable("AppUsers", (string)null);
-                });
-
-            modelBuilder.Entity("Integration.Elise.Services.Models.Domain.MeetingTranscript", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<string>("DetectedLanguages")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int>("DurationSeconds")
-                        .HasColumnType("int");
-
-                    b.Property<string>("OriginalFileName")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("MeetingTranscripts", (string)null);
                 });
 
             modelBuilder.Entity("Integration.Elise.Services.Models.Domain.Project", b =>
@@ -579,57 +539,6 @@ namespace Integration.Elise.Services.Migrations
                     b.ToTable("ProjectValidations", (string)null);
                 });
 
-            modelBuilder.Entity("Integration.Elise.Services.Models.Domain.TranscriptSegment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<double>("Confidence")
-                        .HasColumnType("float");
-
-                    b.Property<double>("EndTime")
-                        .HasColumnType("float");
-
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.Property<string>("Speaker")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<double>("StartTime")
-                        .HasColumnType("float");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(5000)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("TranscriptId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TranscriptId");
-
-                    b.ToTable("TranscriptSegments", (string)null);
-                });
-
-            modelBuilder.Entity("Integration.Elise.Services.Models.Domain.MeetingTranscript", b =>
-                {
-                    b.HasOne("Integration.Elise.Services.Models.Domain.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("Integration.Elise.Services.Models.Domain.Project", b =>
                 {
                     b.HasOne("Integration.Elise.Services.Models.Domain.AppUser", "CreatedByAdmin")
@@ -789,17 +698,6 @@ namespace Integration.Elise.Services.Migrations
                     b.Navigation("ValidatedBy");
                 });
 
-            modelBuilder.Entity("Integration.Elise.Services.Models.Domain.TranscriptSegment", b =>
-                {
-                    b.HasOne("Integration.Elise.Services.Models.Domain.MeetingTranscript", "Transcript")
-                        .WithMany("Segments")
-                        .HasForeignKey("TranscriptId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Transcript");
-                });
-
             modelBuilder.Entity("Integration.Elise.Services.Models.Domain.AppUser", b =>
                 {
                     b.Navigation("Attachments");
@@ -807,11 +705,6 @@ namespace Integration.Elise.Services.Migrations
                     b.Navigation("Comments");
 
                     b.Navigation("ManagedProjects");
-                });
-
-            modelBuilder.Entity("Integration.Elise.Services.Models.Domain.MeetingTranscript", b =>
-                {
-                    b.Navigation("Segments");
                 });
 
             modelBuilder.Entity("Integration.Elise.Services.Models.Domain.Project", b =>

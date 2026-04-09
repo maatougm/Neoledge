@@ -86,13 +86,13 @@ public class CommentService : ICommentService
     }
 
     /// <inheritdoc />
-    public async Task<Result<ProjectCommentDto>> UpdateCommentAsync(Guid commentId, Guid userId, UpdateCommentDto dto, CancellationToken ct = default)
+    public async Task<Result<ProjectCommentDto>> UpdateCommentAsync(Guid commentId, Guid userId, bool isAdmin, UpdateCommentDto dto, CancellationToken ct = default)
     {
         var comment = await _db.ProjectComments.FindAsync(new object[] { commentId }, ct);
         if (comment == null)
             return Result<ProjectCommentDto>.Fail("Comment not found");
 
-        if (comment.UserId != userId)
+        if (comment.UserId != userId && !isAdmin)
             return Result<ProjectCommentDto>.Fail("You can only edit your own comments");
 
         comment.Content = dto.Content;

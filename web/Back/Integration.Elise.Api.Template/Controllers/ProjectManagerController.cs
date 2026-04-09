@@ -81,7 +81,7 @@ public class ProjectManagerController : ControllerBase
         var project = await _projectService.GetProjectByIdAsync(id, ct);
         if (!project.IsSuccess) return NotFound(project.Error);
 
-        if (project.Value!.ProjectManagerId != CurrentUserId)
+        if (project.Value!.ProjectManager?.Id != CurrentUserId)
             return Forbid();
 
         var pairs = dto.FieldValues.Select(fv => (fv.ProjectFieldId, fv.Value));
@@ -100,7 +100,7 @@ public class ProjectManagerController : ControllerBase
         var project = await _projectService.GetProjectByIdAsync(id, ct);
         if (!project.IsSuccess) return NotFound(project.Error);
 
-        if (project.Value!.ProjectManagerId != CurrentUserId)
+        if (project.Value!.ProjectManager?.Id != CurrentUserId)
             return Forbid();
 
         if (!project.Value.AllowManagerCustomFields)
@@ -139,7 +139,7 @@ public class ProjectManagerController : ControllerBase
         var project = await _projectService.GetProjectByIdAsync(id, ct);
         if (!project.IsSuccess) return NotFound(project.Error);
 
-        if (project.Value!.ProjectManagerId != CurrentUserId)
+        if (project.Value!.ProjectManager?.Id != CurrentUserId)
             return Forbid();
 
         var result = await _projectService.GetActivityAsync(id, ct);
