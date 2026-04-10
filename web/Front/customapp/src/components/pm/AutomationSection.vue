@@ -13,41 +13,33 @@
     </div>
 
     <div v-else class="rules-list">
-      <NeoCard v-for="rule in store.automationRules" :key="rule.id" class="rule-card">
-        <template #content>
-          <div class="rule-row">
-            <div class="rule-info">
-              <span class="rule-name">{{ rule.name }}</span>
-              <div class="rule-badges">
-                <NeoTag :value="triggerLabel(rule.triggerEvent)" severity="info" />
-                <NeoTag :value="actionLabel(rule.actionType)" severity="secondary" />
-              </div>
-              <span class="rule-meta">
-                {{ rule.executionCount }} exécution(s)
-                <template v-if="rule.lastExecutedAt">
-                  · Dernière: {{ formatDate(rule.lastExecutedAt) }}
-                </template>
-              </span>
-            </div>
-            <div class="rule-actions">
-              <NeoButton
-                :label="rule.isActive ? 'Actif' : 'Inactif'"
-                outlined
-                :severity="rule.isActive ? undefined : 'secondary'"
-                size="small"
-                @click="toggleRule(rule)"
-              />
-              <NeoButton
-                icon="pi pi-trash"
-                severity="danger"
-                outlined
-                size="small"
-                @click="confirmDelete(rule)"
-              />
-            </div>
+      <div v-for="rule in store.automationRules" :key="rule.id" class="rule-card">
+        <div class="rule-status-dot" :class="rule.isActive ? 'rule-status-dot--active' : 'rule-status-dot--inactive'" />
+        <div class="rule-info">
+          <span class="rule-name">{{ rule.name }}</span>
+          <div class="rule-badges">
+            <span class="rule-badge rule-badge--trigger">{{ triggerLabel(rule.triggerEvent) }}</span>
+            <span class="rule-badge rule-badge--action">{{ actionLabel(rule.actionType) }}</span>
           </div>
-        </template>
-      </NeoCard>
+          <span class="rule-exec-count">{{ rule.executionCount }} exécution(s)<template v-if="rule.lastExecutedAt"> · {{ formatDate(rule.lastExecutedAt) }}</template></span>
+        </div>
+        <div class="rule-actions">
+          <NeoButton
+            :label="rule.isActive ? 'Actif' : 'Inactif'"
+            outlined
+            :severity="rule.isActive ? undefined : 'secondary'"
+            size="small"
+            @click="toggleRule(rule)"
+          />
+          <NeoButton
+            icon="pi pi-trash"
+            severity="danger"
+            outlined
+            size="small"
+            @click="confirmDelete(rule)"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Logs panel -->
@@ -58,18 +50,30 @@
         <span class="logs-count">({{ store.automationLogs.length }})</span>
       </button>
 
-      <div v-if="logsExpanded" class="logs-list">
+      <div v-if="logsExpanded" class="logs-table-wrap">
         <div v-if="store.automationLogs.length === 0" class="logs-empty">
           Aucune exécution enregistrée.
         </div>
-        <div v-for="log in store.automationLogs.slice(0, 20)" :key="log.id" class="log-row">
-          <NeoTag
-            :value="logStatusLabel(log.status)"
-            :severity="logStatusSeverity(log.status)"
-          />
-          <span class="log-detail">{{ log.detail ?? '—' }}</span>
-          <span class="log-date">{{ formatDate(log.executedAt) }}</span>
-        </div>
+        <table v-else class="logs-table">
+          <thead>
+            <tr>
+              <th>Statut</th>
+              <th>Détail</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="log in store.automationLogs.slice(0, 20)" :key="log.id">
+              <td>
+                <span :class="['log-status-chip', `log-status-chip--${log.status}`]">
+                  {{ logStatusLabel(log.status) }}
+                </span>
+              </td>
+              <td class="log-detail-cell">{{ log.detail ?? '—' }}</td>
+              <td class="log-date-cell">{{ formatDate(log.executedAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -329,43 +333,80 @@ onMounted(async () => {
   opacity: 0.4;
 }
 
+/* Rule cards */
 .rules-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.rule-card :deep(.p-card-content) {
-  padding: 0.75rem 1rem;
-}
-
-.rule-row {
+.rule-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  background: var(--nl-surface);
+  transition: box-shadow 0.15s;
 }
+
+.rule-card:hover {
+  box-shadow: var(--nl-shadow-md, var(--nl-shadow));
+}
+
+/* Active/Inactive status dot */
+.rule-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rule-status-dot--active  { background: #16A34A; }
+.rule-status-dot--inactive { background: var(--nl-text-3); }
 
 .rule-info {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .rule-name {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: var(--nl-text-1);
 }
 
 .rule-badges {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
-.rule-meta {
-  font-size: 0.8rem;
+.rule-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.rule-badge--trigger {
+  background: #EFF4FF;
+  color: #0F62FE;
+}
+
+.rule-badge--action {
+  background: #F0FDF4;
+  color: #16A34A;
+}
+
+.rule-exec-count {
+  font-size: 11px;
   color: var(--nl-text-3);
 }
 
@@ -376,6 +417,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+/* Logs panel */
 .logs-panel {
   border-top: 1px solid var(--nl-border);
   padding-top: 0.75rem;
@@ -393,20 +435,16 @@ onMounted(async () => {
   padding: 0;
 }
 
-.logs-toggle:hover {
-  color: var(--nl-text-1);
-}
+.logs-toggle:hover { color: var(--nl-text-1); }
 
 .logs-count {
   color: var(--nl-text-3);
   font-size: 0.8rem;
 }
 
-.logs-list {
+.logs-table-wrap {
   margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  overflow-x: auto;
 }
 
 .logs-empty {
@@ -415,24 +453,57 @@ onMounted(async () => {
   padding: 0.5rem 0;
 }
 
-.log-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.85rem;
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
 }
 
-.log-detail {
-  flex: 1;
+.logs-table th {
+  text-align: left;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nl-text-3);
+  border-bottom: 1px solid var(--nl-border);
+}
+
+.logs-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--nl-border);
+  vertical-align: middle;
+}
+
+.logs-table tr:last-child td { border-bottom: none; }
+
+.log-status-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.log-status-chip--success { background: #F0FDF4; color: #16A34A; }
+.log-status-chip--failed  { background: #FEF2F2; color: #DC2626; }
+.log-status-chip--skipped { background: var(--nl-surface-2); color: var(--nl-text-3); }
+
+.log-detail-cell {
   color: var(--nl-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 320px;
 }
 
-.log-date {
+.log-date-cell {
   color: var(--nl-text-3);
   white-space: nowrap;
+  font-size: 0.75rem;
 }
 
 .dialog-form {

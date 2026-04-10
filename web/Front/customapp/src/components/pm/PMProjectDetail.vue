@@ -4,17 +4,19 @@
       <button class="back-btn" @click="emit('close')">
         <i class="pi pi-arrow-left" /> Mes projets
       </button>
-      <NeoTag
-        :value="PROJECT_STATUS_LABELS[project.status]"
-        :severity="statusSeverity(project.status)"
-      />
-      <NeoButton
-        label="Exporter PDF"
-        icon="pi pi-file-pdf"
-        outlined
-        size="small"
-        @click="exportPdf"
-      />
+      <div class="detail-header-right">
+        <NeoTag
+          :value="PROJECT_STATUS_LABELS[project.status]"
+          :severity="statusSeverity(project.status)"
+        />
+        <NeoButton
+          label="Exporter PDF"
+          icon="pi pi-file-pdf"
+          outlined
+          size="small"
+          @click="exportPdf"
+        />
+      </div>
     </div>
 
     <!-- Hidden print area -->
@@ -43,7 +45,7 @@
     <div class="detail-meta">
       <div>
         <h2 class="detail-name">{{ project.name }}</h2>
-        <p class="detail-client">Client : <strong>{{ project.clientName }}</strong></p>
+        <p class="detail-client">{{ project.clientName }}</p>
       </div>
     </div>
 
@@ -181,9 +183,20 @@ function exportPdf(): void {
 </script>
 
 <style scoped>
-.pm-detail { display: flex; flex-direction: column; gap: 1.25rem; }
+.pm-detail { display: flex; flex-direction: column; gap: 24px; }
 
-.detail-header { display: flex; align-items: center; gap: 1rem; }
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.detail-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
 
 .back-btn {
   display: flex; align-items: center; gap: 0.4rem;
@@ -195,11 +208,17 @@ function exportPdf(): void {
 
 .detail-meta { display: flex; align-items: flex-start; justify-content: space-between; }
 .detail-name { font-size: 1.4rem; font-weight: 800; color: var(--nl-text-1); margin: 0; }
-.detail-client { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.25rem 0 0; }
+.detail-client {
+  font-size: 0.8125rem;
+  color: var(--nl-text-3);
+  margin: 0.3rem 0 0;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
 
 .inner-tabs {
   display: flex;
-  gap: 0.25rem;
+  gap: 0;
   border-bottom: 2px solid var(--nl-border);
 }
 
@@ -208,19 +227,23 @@ function exportPdf(): void {
   background: none; border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
-  padding: 0.6rem 1rem;
-  font-size: 0.875rem; font-weight: 600;
+  padding: 10px 16px;
+  font-size: 13px; font-weight: 500;
   color: var(--nl-text-3); cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
-  border-radius: 4px 4px 0 0;
+  white-space: nowrap;
 }
 .inner-tab:hover { color: var(--nl-text-1); }
-.inner-tab--active { color: var(--nl-accent); border-bottom-color: var(--nl-accent); }
+.inner-tab--active {
+  color: var(--nl-accent);
+  border-bottom: 2px solid var(--nl-accent);
+  font-weight: 600;
+}
 
 .tab-body {
   background: var(--nl-surface);
   border: 1px solid var(--nl-border);
-  border-radius: 10px;
-  padding: 1.5rem;
+  border-radius: var(--nl-radius-lg);
+  padding: 24px;
 }
 </style>

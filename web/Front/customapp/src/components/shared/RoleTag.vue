@@ -1,15 +1,16 @@
 <!--
   @file     RoleTag.vue
   @module   NeoLeadge — Deployment Manager
-  @desc     Maps UserRole to NeoTag severity + French label
+  @desc     Pill-shaped role badge with per-role color mapping
 -->
 <template>
-  <NeoTag :value="label" :severity="severity" />
+  <span :class="['role-tag', colorClass]" :aria-label="label">
+    {{ label }}
+  </span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NeoTag } from '@neolibrary/components'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 
@@ -19,21 +20,55 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const ROLE_SEVERITY: Record<UserRole, string> = {
-  Admin:             'danger',
-  ProjectManager:    'info',
-  SpecificationTeam: 'success',
-  RealizationTeam:   'warn',
-  DeploymentTeam:    'secondary',
-  Viewer:            'contrast',
-}
-
 const label = computed(
   () => USER_ROLE_LABELS[props.role as UserRole] ?? props.role,
 )
 
-type NeoTagSeverity = 'primary' | 'secondary' | 'success' | 'info' | 'warn' | 'danger' | 'contrast'
-const severity = computed(
-  () => (ROLE_SEVERITY[props.role as UserRole] ?? 'secondary') as NeoTagSeverity,
-)
+const colorClass = computed(() => {
+  const map: Record<string, string> = {
+    Admin:             'role-tag--admin',
+    ProjectManager:    'role-tag--pm',
+    SpecificationTeam: 'role-tag--team',
+    RealizationTeam:   'role-tag--team',
+    DeploymentTeam:    'role-tag--team',
+    Viewer:            'role-tag--viewer',
+  }
+  return map[props.role] ?? 'role-tag--viewer'
+})
 </script>
+
+<style scoped>
+/* ── Base pill ──────────────────────────────────────────────────────────────── */
+.role-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--nl-radius-pill, 9999px);
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  font-family: var(--nl-font, Inter, system-ui, sans-serif);
+}
+
+/* ── Color variants ─────────────────────────────────────────────────────────── */
+.role-tag--admin {
+  background: #EFF4FF;
+  color: #0F62FE;
+}
+
+.role-tag--pm {
+  background: #F5F3FF;
+  color: #7C3AED;
+}
+
+.role-tag--team {
+  background: #F0FDF4;
+  color: #16A34A;
+}
+
+.role-tag--viewer {
+  background: #F4F4F5;
+  color: #71717A;
+}
+</style>

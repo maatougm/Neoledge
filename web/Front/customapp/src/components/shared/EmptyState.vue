@@ -1,7 +1,7 @@
 <!--
   @file     EmptyState.vue
   @module   NeoLeadge — Deployment Manager
-  @desc     Centered empty state with icon, title, description and optional action button
+  @desc     Centered empty state with icon, title, description and optional CTA button
 -->
 <template>
   <div class="empty-state" role="status">
@@ -47,17 +47,17 @@ const emit = defineEmits<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
+  gap: 12px;
   min-height: 200px;
-  padding: 2.5rem 1.5rem;
+  padding: 48px 24px;
   text-align: center;
-  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -66,10 +66,10 @@ const emit = defineEmits<{
 }
 
 .empty-state__icon-wrap {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--nl-accent) 12%, transparent);
+  background: var(--nl-surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -77,26 +77,27 @@ const emit = defineEmits<{
 }
 
 .empty-state__icon {
-  font-size: 1.5rem;
-  color: var(--nl-accent);
+  font-size: 20px;
+  color: var(--nl-text-3);
 }
 
 .empty-state__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--nl-text-1);
+  color: var(--nl-text-2);
+  line-height: 1.3;
 }
 
 .empty-state__description {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 13px;
   color: var(--nl-text-3);
   line-height: 1.6;
-  max-width: 360px;
+  max-width: 320px;
 }
 
 .empty-state__action {
-  margin-top: 0.25rem;
+  margin-top: 4px;
 }
 </style>

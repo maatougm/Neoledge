@@ -65,26 +65,25 @@ function navigate(): void {
   gap: 10px;
   width: 100%;
   min-height: 40px;
+  /* 2px transparent left border so layout doesn't shift on active */
   padding: 0 0 0 16px;
   border: none;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--nl-nav-text);
   text-decoration: none;
   cursor: pointer;
   border-radius: 0 var(--nl-radius) var(--nl-radius) 0;
-  transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  margin: 2px 8px 2px 0;
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin: 1px 8px 1px 0;
   outline: none;
 }
 
 .nav-item:hover {
   background: var(--nl-nav-item-hover-bg);
   color: var(--nl-nav-text-active);
-  transform: translateX(3px);
 }
 
 .nav-item:focus-visible {
@@ -93,13 +92,13 @@ function navigate(): void {
 }
 
 .nav-item--active {
-  border-left-color: var(--nl-accent);
+  border-left: 2px solid var(--nl-nav-active-border);
   background: var(--nl-nav-item-active-bg);
   color: var(--nl-nav-text-active);
 }
 
 .nav-item--active:hover {
-  transform: none;
+  background: var(--nl-nav-item-active-bg);
 }
 
 /* Icon wrapper */

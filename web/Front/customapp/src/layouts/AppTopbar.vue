@@ -97,6 +97,8 @@ const breadcrumbLabel = computed<string>(() => {
   justify-content: space-between;
   padding: 0 1.5rem;
   background: var(--nl-topbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--nl-topbar-border);
   z-index: 50;
   flex-shrink: 0;

@@ -8,21 +8,13 @@
           :presence-list="collab.presenceList.value"
           class="q-presence"
         />
-        <div v-if="!readonly" class="q-actions">
+        <div v-if="!readonly && canAddFields" class="q-actions">
           <NeoButton
-            v-if="canAddFields"
             label="Ajouter un champ"
             icon="pi pi-plus"
             outlined
             size="small"
             @click="showAddField = true"
-          />
-          <NeoButton
-            label="Enregistrer"
-            icon="pi pi-check"
-            :loading="store.saving"
-            :disabled="!dirty"
-            @click="handleSave"
           />
         </div>
       </div>
@@ -30,6 +22,7 @@
 
     <NeoMessage v-if="saved" severity="success" text="Questionnaire enregistré." class="mb-3" />
 
+    <div class="field-group-card">
     <div class="field-list">
       <div
         v-for="field in project.fields"
@@ -40,6 +33,14 @@
           ? { borderLeft: `3px solid ${getRemoteEditor(field.id)!.color}` }
           : {}"
       >
+        <!-- Collaborative editor avatar chip -->
+        <div v-if="getRemoteEditor(field.id) !== null" class="field-editor-chip">
+          <span
+            class="editor-avatar"
+            :style="{ background: getRemoteEditor(field.id)!.color }"
+          >{{ getRemoteEditor(field.id)!.name.charAt(0).toUpperCase() }}</span>
+          <span class="editor-name">{{ getRemoteEditor(field.id)!.name }}</span>
+        </div>
         <label class="field-label">
           {{ field.label }}
           <span v-if="field.isRequired" class="required">*</span>
@@ -125,6 +126,8 @@
       </div>
     </div>
 
+    </div><!-- end field-group-card -->
+
     <!-- Add custom field inline form -->
     <div v-if="showAddField" class="add-field-box">
       <h4 class="add-field-title">Nouveau champ personnalisé</h4>
@@ -142,6 +145,17 @@
         <NeoButton label="Ajouter" icon="pi pi-check" :loading="store.saving" :disabled="!newField.label.trim()" @click="handleAddField" />
         <NeoButton label="Annuler" severity="secondary" outlined @click="showAddField = false" />
       </div>
+    </div>
+    <!-- Sticky save bar -->
+    <div v-if="!readonly" class="sticky-save-bar">
+      <span v-if="dirty" class="save-hint">Modifications non enregistrées</span>
+      <NeoButton
+        label="Enregistrer"
+        icon="pi pi-check"
+        :loading="store.saving"
+        :disabled="!dirty"
+        @click="handleSave"
+      />
     </div>
   </div>
 </template>
@@ -351,20 +365,34 @@ const handleAddField = async () => {
   flex-wrap: wrap;
 }
 
-.q-presence {
-  flex-shrink: 0;
-}
-
+.q-presence { flex-shrink: 0; }
 .q-actions { display: flex; gap: 0.5rem; }
 
-.field-list { display: flex; flex-direction: column; gap: 1rem; }
+/* Field group card */
+.field-group-card {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
+  padding: 20px;
+}
+
+/* Two-column grid */
+.field-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .field-list { grid-template-columns: 1fr; }
+}
 
 .field-item {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  padding-left: 0.5rem;
   border-left: 3px solid transparent;
+  padding-left: 0.5rem;
   transition: border-color 0.2s ease;
 }
 
@@ -373,7 +401,41 @@ const handleAddField = async () => {
   background: rgba(0, 0, 0, 0.02);
 }
 
-.field-label { font-size: 0.85rem; font-weight: 500; color: var(--nl-text-2); }
+/* Editor avatar chip */
+.field-editor-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.2rem;
+}
+
+.editor-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.editor-name {
+  font-size: 0.7rem;
+  color: var(--nl-text-3);
+  font-style: italic;
+}
+
+/* Field label: uppercase, muted, small caps style */
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nl-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 .required { color: var(--nl-danger); margin-left: 2px; }
 .field-error { font-size: 0.75rem; color: var(--nl-danger); margin-top: 0.15rem; }
 
@@ -384,6 +446,15 @@ const handleAddField = async () => {
   margin-top: 0.1rem;
 }
 
+/* Input focus ring via global :deep selector */
+.field-item :deep(input:focus),
+.field-item :deep(.p-inputtext:focus),
+.field-item :deep(.p-select:focus-within) {
+  border-color: var(--nl-accent) !important;
+  box-shadow: 0 0 0 3px rgba(15, 98, 254, 0.12) !important;
+}
+
+/* Add field box */
 .add-field-box {
   background: var(--nl-surface-2);
   border: 1px dashed var(--nl-border-strong);
@@ -394,4 +465,27 @@ const handleAddField = async () => {
 .add-field-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); margin: 0 0 0.75rem; }
 .add-field-row { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
 .mb-3 { margin-bottom: 0.75rem; }
+
+/* Sticky save bar */
+.sticky-save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  background: var(--nl-glass-bg, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--nl-border);
+  padding: 12px 20px;
+  margin: 0 -24px -24px;
+  border-radius: 0 0 var(--nl-radius-lg) var(--nl-radius-lg);
+  z-index: 10;
+}
+
+.save-hint {
+  font-size: 0.8125rem;
+  color: var(--nl-text-3);
+  font-style: italic;
+}
 </style>

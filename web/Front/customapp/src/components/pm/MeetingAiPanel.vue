@@ -43,8 +43,11 @@
     <div v-if="expanded" class="ai-body">
       <!-- Processing state -->
       <div v-if="results?.aiStatus === 'processing'" class="ai-processing">
-        <i class="pi pi-spin pi-spinner" />
-        <span>Analyse en cours... Cela peut prendre quelques secondes.</span>
+        <i class="pi pi-spin pi-spinner ai-processing-spinner" />
+        <div class="ai-processing-text">
+          <span>Analyse en cours...</span>
+          <span class="processing-dots"><span /><span /><span /></span>
+        </div>
       </div>
 
       <!-- Error state -->
@@ -79,7 +82,7 @@
 
         <!-- Tab: Summary (Compte-rendu) -->
         <div v-if="activeTab === 'summary'" class="tab-panel">
-          <pre v-if="results.aiSummary" class="ai-summary">{{ results.aiSummary }}</pre>
+          <div v-if="results.aiSummary" class="ai-summary-prose" v-html="renderSummary(results.aiSummary)" />
           <p v-else class="empty-state">Aucun compte-rendu disponible.</p>
           <p class="ai-meta">
             Généré par <strong>{{ results.aiModel }}</strong>
@@ -87,50 +90,55 @@
           </p>
         </div>
 
-        <!-- Tab: Action items -->
+        <!-- Tab: Action items — card per item -->
         <div v-if="activeTab === 'actions'" class="tab-panel">
           <div v-if="results.actionItems.length === 0" class="empty-state">
             Aucune action identifiée.
           </div>
-          <table v-else class="ai-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th>Assigné à</th>
-                <th>Échéance</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in results.actionItems" :key="item.id">
-                <td class="action-desc">{{ item.description }}</td>
-                <td class="action-assignee">{{ item.assigneeName ?? '—' }}</td>
-                <td class="action-due">{{ item.dueDate ? formatShortDate(item.dueDate) : '—' }}</td>
-                <td class="action-status">
-                  <NeoTag
-                    :value="item.isCompleted ? 'Fait' : 'À faire'"
-                    :severity="item.isCompleted ? 'success' : 'warning'"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div v-else class="action-cards">
+            <div
+              v-for="item in results.actionItems"
+              :key="item.id"
+              class="action-card"
+              :class="{ 'action-card--done': item.isCompleted }"
+            >
+              <div class="action-card-left">
+                <span class="action-checkbox" :class="{ 'action-checkbox--checked': item.isCompleted }">
+                  <i v-if="item.isCompleted" class="pi pi-check" />
+                </span>
+              </div>
+              <div class="action-card-body">
+                <span class="action-desc" :class="{ 'action-desc--done': item.isCompleted }">
+                  {{ item.description }}
+                </span>
+                <div class="action-card-meta">
+                  <span v-if="item.assigneeName" class="assignee-chip">
+                    <span class="assignee-avatar">{{ item.assigneeName.charAt(0).toUpperCase() }}</span>
+                    {{ item.assigneeName }}
+                  </span>
+                  <span v-if="item.dueDate" :class="['due-badge', dueDateClass(item.dueDate)]">
+                    <i class="pi pi-calendar" />
+                    {{ formatShortDate(item.dueDate) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Tab: Decisions & risks -->
+        <!-- Tab: Decisions & risks — two column -->
         <div v-if="activeTab === 'decisions'" class="tab-panel">
           <div v-if="results.decisions.length === 0" class="empty-state">
             Aucune décision ou risque identifié.
           </div>
-          <ul v-else class="decision-list">
-            <li v-for="d in results.decisions" :key="d.id" class="decision-item">
-              <NeoTag
-                :value="d.category === 'risk' ? 'Risque' : 'Décision'"
-                :severity="d.category === 'risk' ? 'warning' : 'info'"
-              />
+          <div v-else class="decision-grid">
+            <div v-for="d in results.decisions" :key="d.id" class="decision-item">
+              <span :class="['decision-category-badge', d.category === 'risk' ? 'decision-category-badge--risk' : 'decision-category-badge--decision']">
+                {{ d.category === 'risk' ? 'Risque' : 'Décision' }}
+              </span>
               <span class="decision-desc">{{ d.description }}</span>
-            </li>
-          </ul>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -206,6 +214,39 @@ async function handleAnalyze() {
   } finally {
     triggering.value = false
   }
+}
+
+/**
+ * Converts plain-text summary with Markdown-like headings and lists
+ * into safe HTML for prose rendering. No external lib required.
+ */
+function renderSummary(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .split('\n')
+    .map((line) => {
+      if (/^## (.+)/.test(line)) return `<h2 class="prose-h2">${line.replace(/^## /, '')}</h2>`
+      if (/^# (.+)/.test(line))  return `<h1 class="prose-h1">${line.replace(/^# /, '')}</h1>`
+      if (/^- (.+)/.test(line))  return `<li class="prose-li">${line.replace(/^- /, '')}</li>`
+      if (/^\* (.+)/.test(line)) return `<li class="prose-li">${line.replace(/^\* /, '')}</li>`
+      if (line.trim() === '')    return '<br />'
+      return `<p class="prose-p">${line}</p>`
+    })
+    .join('')
+}
+
+/**
+ * Returns a CSS class based on how soon a due date is.
+ */
+function dueDateClass(iso: string): string {
+  const now = Date.now()
+  const due = new Date(iso).getTime()
+  const diff = due - now
+  if (diff < 0) return 'due-badge--overdue'
+  if (diff < 3 * 24 * 60 * 60 * 1000) return 'due-badge--soon'
+  return 'due-badge--ok'
 }
 
 function formatDate(iso: string): string {
@@ -341,15 +382,26 @@ onUnmounted(() => {
 
 .ai-processing {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
   color: var(--nl-text-2);
   font-size: 0.875rem;
-  padding: 0.5rem 0;
 }
 
-.ai-processing .pi-spin {
+.ai-processing-spinner {
+  font-size: 2rem;
   color: var(--nl-accent);
+}
+
+.ai-processing-text {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9375rem;
+  color: var(--nl-text-2);
 }
 
 .ai-error-block {
@@ -379,11 +431,11 @@ onUnmounted(() => {
   font-size: 0.875rem;
 }
 
-/* Tabs */
+/* Tabs — underline style */
 .ai-tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--nl-border);
+  border-bottom: 2px solid var(--nl-border);
   margin-bottom: 1rem;
 }
 
@@ -391,13 +443,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--nl-text-3);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   white-space: nowrap;
@@ -407,7 +460,8 @@ onUnmounted(() => {
 
 .ai-tab--active {
   color: var(--nl-accent);
-  border-bottom-color: var(--nl-accent);
+  border-bottom: 2px solid var(--nl-accent);
+  font-weight: 600;
 }
 
 .tab-badge {
@@ -428,18 +482,43 @@ onUnmounted(() => {
   min-height: 4rem;
 }
 
-/* Summary */
-.ai-summary {
+/* Summary prose */
+.ai-summary-prose {
   font-size: 0.875rem;
   line-height: 1.7;
   color: var(--nl-text-1);
-  white-space: pre-wrap;
-  font-family: inherit;
   margin: 0 0 0.75rem 0;
   background: var(--nl-surface-2);
   padding: 1rem;
   border-radius: var(--nl-radius);
   overflow-x: auto;
+}
+
+.ai-summary-prose :deep(.prose-h1) {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--nl-text-1);
+  margin: 1rem 0 0.5rem;
+}
+
+.ai-summary-prose :deep(.prose-h2) {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--nl-text-1);
+  margin: 0.875rem 0 0.4rem;
+}
+
+.ai-summary-prose :deep(.prose-p) {
+  margin: 0 0 0.5rem;
+  line-height: 1.7;
+}
+
+.ai-summary-prose :deep(.prose-li) {
+  display: list-item;
+  list-style-type: disc;
+  margin-left: 1.25rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.6;
 }
 
 .ai-meta {
@@ -448,52 +527,164 @@ onUnmounted(() => {
   margin: 0;
 }
 
-/* Action items table */
-.ai-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
-
-.ai-table th {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  font-weight: 700;
-  color: var(--nl-text-2);
-  border-bottom: 2px solid var(--nl-border);
-}
-
-.ai-table td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--nl-border);
-  color: var(--nl-text-1);
-  vertical-align: top;
-}
-
-.ai-table tr:last-child td { border-bottom: none; }
-
-.action-desc { max-width: 320px; }
-.action-assignee { white-space: nowrap; }
-.action-due { white-space: nowrap; }
-
-/* Decisions list */
-.decision-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Action item cards */
+.action-cards {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
 }
 
-.decision-item {
+.action-card {
   display: flex;
   align-items: flex-start;
-  gap: 0.6rem;
-  padding: 0.6rem 0.75rem;
+  gap: 0.75rem;
+  padding: 12px 16px;
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius);
-  background: var(--nl-surface-1);
+  background: var(--nl-surface);
+  transition: box-shadow 0.15s;
+}
+
+.action-card:hover {
+  box-shadow: var(--nl-shadow-md, var(--nl-shadow));
+}
+
+.action-card--done {
+  opacity: 0.65;
+}
+
+.action-card-left {
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.action-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--nl-border);
+  background: var(--nl-surface);
+  font-size: 10px;
+  color: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.action-checkbox--checked {
+  background: #16A34A;
+  border-color: #16A34A;
+  color: #fff;
+}
+
+.action-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.action-desc {
+  font-size: 0.875rem;
+  color: var(--nl-text-1);
+  line-height: 1.5;
+}
+
+.action-desc--done {
+  text-decoration: line-through;
+  color: var(--nl-text-3);
+}
+
+.action-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.assignee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--nl-text-2);
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
+  border-radius: 99px;
+  padding: 2px 8px 2px 4px;
+}
+
+.assignee-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--nl-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.due-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.due-badge--overdue { background: #FEF2F2; color: #DC2626; }
+.due-badge--soon    { background: #FFF7ED; color: #D97706; }
+.due-badge--ok      { background: #F0FDF4; color: #16A34A; }
+
+/* Decisions two-column grid */
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .decision-grid { grid-template-columns: 1fr; }
+}
+
+.decision-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  background: var(--nl-surface);
+}
+
+.decision-category-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  align-self: flex-start;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.decision-category-badge--decision {
+  background: #EFF4FF;
+  color: #0F62FE;
+}
+
+.decision-category-badge--risk {
+  background: #FFF7ED;
+  color: #D97706;
 }
 
 .decision-desc {

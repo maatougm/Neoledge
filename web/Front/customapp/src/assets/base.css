@@ -1,126 +1,99 @@
-/* ── NeoLeadge Premium Design System ─────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ── NeoLeadge Design System — Rocketlane blue + Linear precision ─────────── */
 :root {
-  /* Elegant Zinc & Teal Palettes */
-  --nl-bg:            #F8FAFC;         /* Soft slate-50 */
+  /* Primary accent — Rocketlane blue */
+  --nl-accent:        #0F62FE;
+  --nl-accent-hover:  #0043CE;
+  --nl-accent-light:  #EFF4FF;
+  --nl-accent-glow:   rgba(15, 98, 254, 0.15);
+
+  /* Backgrounds */
+  --nl-bg:            #F7F7F8;
   --nl-surface:       #FFFFFF;
-  --nl-surface-2:     #F1F5F9;         /* slate-100 */
-  --nl-border:        #E2E8F0;         /* slate-200 */
-  --nl-border-strong: #CBD5E1;         /* slate-300 */
-  --nl-text-1:        #0F172A;         /* slate-900 */
-  --nl-text-2:        #334155;         /* slate-700 */
-  --nl-text-3:        #64748B;         /* slate-500 */
+  --nl-surface-2:     #F0F0F2;
+  --nl-border:        #E5E5E5;
+  --nl-border-strong: #D4D4D8;
 
-  /* Premium Accents */
-  --nl-accent:        #0D9488;         /* Teal-600 */
-  --nl-accent-hover:  #0F766E;         /* Teal-700 */
-  --nl-accent-light:  #F0FDFA;         /* Teal-50 */
-  --nl-accent-glow:   rgba(13, 148, 136, 0.4);
+  /* Text — Linear-style near-black */
+  --nl-text-1:        #0A0A0B;
+  --nl-text-2:        #3F3F46;
+  --nl-text-3:        #71717A;
 
-  /* Status Colors */
-  --nl-danger:        #E11D48;         /* Rose-600 */
-  --nl-danger-light:  #FFF1F2;         /* Rose-50 */
-  --nl-warning:       #D97706;         /* Amber-600 */
-  --nl-warning-light: #FFFBEB;         /* Amber-50 */
-  --nl-success:       #059669;         /* Emerald-600 */
-  --nl-success-light: #ECFDF5;         /* Emerald-50 */
-  
-  /* Layout & Nav */
-  --nl-sidebar-bg:    #020617;         /* slate-950 */
-  --nl-radius:        8px;
-  --nl-radius-lg:     16px;
+  /* Status */
+  --nl-danger:        #DC2626;
+  --nl-danger-light:  #FEF2F2;
+  --nl-warning:       #D97706;
+  --nl-warning-light: #FFFBEB;
+  --nl-success:       #16A34A;
+  --nl-success-light: #F0FDF4;
 
-  /* Topbar */
-  --nl-topbar-height:      48px;
-  --nl-topbar-bg:          #FFFFFF;
-  --nl-topbar-border:      #E2E8F0;
-
-  /* Nav Rail */
+  /* Sidebar — Linear dark rail */
+  --nl-sidebar-bg:    #0F0F11;
   --nl-rail-width:          56px;
   --nl-rail-expanded-width: 240px;
-  --nl-nav-bg:              #020617;
-  --nl-nav-text:            rgba(148, 163, 184, 0.85);   /* slate-400 at 85% */
+  --nl-nav-bg:              #0F0F11;
+  --nl-nav-text:            rgba(161, 161, 170, 0.9);
   --nl-nav-text-active:     #FFFFFF;
-  --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.06);
-  --nl-nav-item-active-bg:  rgba(13, 148, 136, 0.16);
+  --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.07);
+  --nl-nav-item-active-bg:  rgba(15, 98, 254, 0.12);
+  --nl-nav-active-border:   #0F62FE;
   --nl-nav-separator:       rgba(255, 255, 255, 0.06);
-  
-  /* Multi-layered Soft Shadows (Apple-style) */
-  --nl-shadow:        0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
-  --nl-shadow-lg:     0 10px 30px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
-  --nl-shadow-glow:   0 0 20px rgba(13, 148, 136, 0.15);
 
-  /* Glassmorphism Tokens */
-  --nl-glass-bg:      rgba(255, 255, 255, 0.7);
-  --nl-glass-border:  rgba(255, 255, 255, 0.4);
-  --nl-glass-shadow:  0 8px 32px rgba(15, 23, 42, 0.06);
+  /* Topbar */
+  --nl-topbar-height:  56px;
+  --nl-topbar-bg:      rgba(255, 255, 255, 0.85);
+  --nl-topbar-border:  #E5E5E5;
+
+  /* Shadows — blue-tinted like Rocketlane */
+  --nl-shadow:        0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --nl-shadow-md:     0 4px 12px rgba(15, 98, 254, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --nl-shadow-lg:     0 10px 30px rgba(15, 98, 254, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --nl-shadow-glow:   0 0 20px rgba(15, 98, 254, 0.2);
+
+  /* Glass */
+  --nl-glass-bg:      rgba(255, 255, 255, 0.75);
+  --nl-glass-border:  rgba(255, 255, 255, 0.5);
+  --nl-glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.05);
   --nl-glass-blur:    blur(16px);
 
-  /* Overlay & Interactive Opacity Tokens */
-  --nl-overlay-bg:    rgba(248, 250, 252, 0.85);
-  --nl-hover-bg:      rgba(255, 255, 255, 0.04);
-  --nl-hover-bg-2:    rgba(255, 255, 255, 0.08);
-  --nl-sidebar-border: rgba(255, 255, 255, 0.05);
-  --nl-sidebar-border-2: rgba(255, 255, 255, 0.06);
+  /* Radius */
+  --nl-radius:        8px;
+  --nl-radius-sm:     6px;
+  --nl-radius-lg:     12px;
+  --nl-radius-pill:   999px;
 
-  /* Typography */
-  --nl-font:          'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --nl-transition:    all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Typography — Inter like Linear */
+  --nl-font: 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --nl-transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Dark Mode Tokens */
+/* Dark mode */
 .dark {
-  /* Backgrounds & Surfaces */
-  --nl-bg:            #020617;
-  --nl-surface:       #0F172A;
-  --nl-surface-2:     #1E293B;
-  --nl-border:        #334155;
-  --nl-border-strong: #475569;
-
-  /* Text */
-  --nl-text-1:        #F8FAFC;
-  --nl-text-2:        #CBD5E1;
-  --nl-text-3:        #94A3B8;
-
-  /* Accent (brighter teal for dark bg readability) */
-  --nl-accent:        #14B8A6;
-  --nl-accent-hover:  #0D9488;
-  --nl-accent-light:  rgba(13, 148, 136, 0.18);
-  --nl-accent-glow:   rgba(13, 148, 136, 0.3);
-
-  /* Status — lighter tones for dark backgrounds */
-  --nl-danger:        #FB7185;
-  --nl-danger-light:  rgba(225, 29, 72, 0.18);
+  --nl-bg:            #111113;
+  --nl-surface:       #1C1C1F;
+  --nl-surface-2:     #252528;
+  --nl-border:        #2E2E32;
+  --nl-border-strong: #3F3F46;
+  --nl-text-1:        #FAFAFA;
+  --nl-text-2:        #D4D4D8;
+  --nl-text-3:        #71717A;
+  --nl-accent:        #4B8BFE;
+  --nl-accent-hover:  #3B7BEE;
+  --nl-accent-light:  rgba(15, 98, 254, 0.15);
+  --nl-danger:        #F87171;
+  --nl-danger-light:  rgba(220, 38, 38, 0.15);
   --nl-warning:       #FCD34D;
-  --nl-warning-light: rgba(217, 119, 6, 0.18);
-  --nl-success:       #34D399;
-  --nl-success-light: rgba(5, 150, 105, 0.18);
-
-  /* Layout */
-  --nl-sidebar-bg:    #020617;
-  --nl-overlay-bg:    rgba(2, 6, 23, 0.85);
-
-  /* Topbar (dark) */
-  --nl-topbar-bg:          #0F172A;
-  --nl-topbar-border:      #1E293B;
-
-  /* Nav Rail (unchanged — already dark) */
-  --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.08);
-  --nl-nav-item-active-bg:  rgba(20, 184, 166, 0.18);
-
-  /* Interactive */
-  --nl-hover-bg:      rgba(255, 255, 255, 0.04);
-  --nl-hover-bg-2:    rgba(255, 255, 255, 0.08);
-
-  /* Shadows (stronger on dark) */
-  --nl-shadow:        0 1px 2px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.25);
+  --nl-warning-light: rgba(217, 119, 6, 0.15);
+  --nl-success:       #4ADE80;
+  --nl-success-light: rgba(22, 163, 74, 0.15);
+  --nl-topbar-bg:     rgba(28, 28, 31, 0.9);
+  --nl-topbar-border: #2E2E32;
+  --nl-shadow:        0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --nl-shadow-md:     0 4px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
   --nl-shadow-lg:     0 10px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
-  --nl-shadow-glow:   0 0 20px rgba(13, 148, 136, 0.25);
-
-  /* Glassmorphism */
-  --nl-glass-bg:      rgba(15, 23, 42, 0.75);
-  --nl-glass-border:  rgba(255, 255, 255, 0.08);
-  --nl-glass-shadow:  0 8px 32px rgba(0, 0, 0, 0.4);
-  --nl-glass-blur:    blur(16px);
+  --nl-glass-bg:      rgba(28, 28, 31, 0.8);
+  --nl-glass-border:  rgba(255, 255, 255, 0.07);
 }
 
 *, *::before, *::after {
@@ -156,4 +129,3 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--nl-border-strong); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--nl-text-3); }
-

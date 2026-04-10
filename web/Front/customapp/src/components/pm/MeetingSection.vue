@@ -38,8 +38,19 @@
     />
 
     <!-- File upload view -->
-    <div v-else-if="view === 'upload'" class="upload-form">
-      <p class="upload-filename">
+    <div
+      v-else-if="view === 'upload'"
+      class="upload-form"
+      :class="{ 'upload-form--drag': isDragOver }"
+      @dragover.prevent="isDragOver = true"
+      @dragleave.prevent="isDragOver = false"
+      @drop.prevent="onDrop"
+    >
+      <div class="upload-drop-hint" v-if="!uploadFile">
+        <i class="pi pi-cloud-upload upload-drop-icon" />
+        <span>Glissez un fichier audio ici ou cliquez pour choisir</span>
+      </div>
+      <p v-else class="upload-filename">
         <i class="pi pi-file-audio" /> {{ uploadFile?.name }}
       </p>
       <NeoInputText
@@ -79,13 +90,22 @@
           :key="meeting.id"
           class="meeting-row"
         >
+          <!-- Left: icon -->
+          <div class="meeting-icon-wrap">
+            <i class="pi pi-volume-up meeting-icon" />
+          </div>
+
+          <!-- Middle: info -->
           <div class="meeting-info">
             <span class="meeting-title">{{ meeting.title }}</span>
             <span class="meeting-meta">
-              {{ formatDate(meeting.recordedAt) }} ·
-              {{ formatDuration(meeting.durationSeconds) }} ·
-              {{ meeting.segmentCount }} segments
+              {{ formatDate(meeting.recordedAt) }}
             </span>
+          </div>
+
+          <!-- Right side: badges + actions -->
+          <div class="meeting-right">
+            <span class="duration-badge">{{ formatDuration(meeting.durationSeconds) }}</span>
             <div class="meeting-langs">
               <NeoTag
                 v-for="lang in parseLangs(meeting.detectedLanguages)"
@@ -94,22 +114,35 @@
                 severity="secondary"
               />
             </div>
-          </div>
-          <div class="meeting-actions">
-            <NeoButton
-              label="Voir"
-              icon="pi pi-eye"
-              size="small"
-              outlined
-              @click="openMeeting(meeting.id)"
-            />
-            <NeoButton
-              icon="pi pi-trash"
-              size="small"
-              severity="danger"
-              outlined
-              @click="removeMeeting(meeting.id)"
-            />
+            <!-- AI status badge -->
+            <span v-if="meeting.aiStatus === 'processing'" class="ai-badge ai-badge--processing">
+              <i class="pi pi-spin pi-spinner" />
+              En cours
+            </span>
+            <span v-else-if="meeting.aiStatus === 'completed'" class="ai-badge ai-badge--completed">
+              <i class="pi pi-check-circle" />
+              IA complété
+            </span>
+            <span v-else-if="meeting.aiStatus === 'failed'" class="ai-badge ai-badge--failed">
+              <i class="pi pi-times-circle" />
+              IA échouée
+            </span>
+            <div class="meeting-actions">
+              <NeoButton
+                label="Voir"
+                icon="pi pi-eye"
+                size="small"
+                outlined
+                @click="openMeeting(meeting.id)"
+              />
+              <NeoButton
+                icon="pi pi-trash"
+                size="small"
+                severity="danger"
+                outlined
+                @click="removeMeeting(meeting.id)"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -139,6 +172,7 @@ const uploadFile = ref<File | null>(null)
 const uploadTitle = ref('')
 const uploadError = ref('')
 const uploading = ref(false)
+const isDragOver = ref(false)
 
 onMounted(() => {
   store.fetchMeetings(props.projectId)
@@ -164,6 +198,15 @@ function onFileSelected(e: Event) {
   }
   // Reset input so same file can be re-selected
   if (fileInput.value) fileInput.value.value = ''
+}
+
+function onDrop(e: DragEvent) {
+  isDragOver.value = false
+  const file = e.dataTransfer?.files?.[0] ?? null
+  if (file) {
+    uploadFile.value = file
+    uploadTitle.value = file.name.replace(/\.[^.]+$/, '')
+  }
 }
 
 async function submitFileUpload() {
@@ -255,8 +298,31 @@ function parseLangs(raw: string): string[] {
   gap: 1rem;
   padding: 1.5rem;
   background: var(--nl-surface);
-  border: 1px solid var(--nl-border);
+  border: 2px dashed var(--nl-border);
   border-radius: var(--nl-radius-lg);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.upload-form--drag {
+  border-color: var(--nl-accent);
+  background: rgba(15, 98, 254, 0.04);
+}
+
+.upload-drop-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  color: var(--nl-text-3);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.upload-drop-icon {
+  font-size: 2rem;
+  color: var(--nl-accent);
+  opacity: 0.7;
 }
 
 .upload-filename {
@@ -322,9 +388,9 @@ function parseLangs(raw: string): string[] {
 .meeting-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  padding: 0.85rem 1rem;
+  min-height: 56px;
+  padding: 0 1rem;
   border: 1px solid var(--nl-border);
   border-radius: var(--nl-radius);
   background: var(--nl-surface);
@@ -332,14 +398,33 @@ function parseLangs(raw: string): string[] {
 }
 
 .meeting-row:hover {
-  box-shadow: var(--nl-shadow);
+  box-shadow: var(--nl-shadow-md, var(--nl-shadow));
 }
 
+/* Left icon */
+.meeting-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(15, 98, 254, 0.08);
+  flex-shrink: 0;
+}
+
+.meeting-icon {
+  color: var(--nl-accent);
+  font-size: 1rem;
+}
+
+/* Info block */
 .meeting-info {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.15rem;
   min-width: 0;
+  flex: 1;
 }
 
 .meeting-title {
@@ -356,10 +441,56 @@ function parseLangs(raw: string): string[] {
   color: var(--nl-text-3);
 }
 
+/* Right cluster */
+.meeting-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.duration-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--nl-text-2);
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
 .meeting-langs {
   display: flex;
   gap: 0.25rem;
-  margin-top: 0.15rem;
+}
+
+/* AI status badges */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.ai-badge--processing {
+  background: #FFF7ED;
+  color: #D97706;
+}
+
+.ai-badge--completed {
+  background: #F0FDF4;
+  color: #16A34A;
+}
+
+.ai-badge--failed {
+  background: #FEF2F2;
+  color: #DC2626;
 }
 
 .meeting-actions {

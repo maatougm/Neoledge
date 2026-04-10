@@ -1,7 +1,7 @@
 <!--
   @file     PageHeader.vue
   @module   NeoLeadge — Deployment Manager
-  @desc     Page-level header with title, description, icon and an actions slot
+  @desc     Page-level header with title, subtitle and right-aligned actions slot
 -->
 <template>
   <header class="page-header">
@@ -37,23 +37,23 @@ defineProps<Props>()
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 1rem;
-  margin-bottom: 1.5rem;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
   border-bottom: 1px solid var(--nl-border);
 }
 
 .page-header__left {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
+  gap: 12px;
   min-width: 0;
 }
 
 .page-header__icon-wrap {
-  width: 42px;
-  height: 42px;
-  border-radius: var(--nl-radius);
-  background: color-mix(in srgb, var(--nl-accent) 12%, transparent);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--nl-radius, 8px);
+  background: color-mix(in srgb, var(--nl-accent) 10%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -61,23 +61,24 @@ defineProps<Props>()
 }
 
 .page-header__icon {
-  font-size: 1.125rem;
+  font-size: 1rem;
   color: var(--nl-accent);
 }
 
 .page-header__text {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 3px;
   min-width: 0;
 }
 
 .page-header__title {
   margin: 0;
-  font-size: 1.375rem;
+  font-size: 20px;
   font-weight: 700;
   color: var(--nl-text-1);
   line-height: 1.2;
+  letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -85,7 +86,7 @@ defineProps<Props>()
 
 .page-header__description {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 13px;
   color: var(--nl-text-3);
   line-height: 1.4;
 }
@@ -93,7 +94,7 @@ defineProps<Props>()
 .page-header__actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
   flex-shrink: 0;
 }
 </style>

@@ -1,0 +1,251 @@
+<!--
+  @file     ProjectTableRow.vue
+  @module   NeoLeadge — Deployment Manager
+  @desc     Single project table row — used inside ProjectList.vue
+-->
+<template>
+  <tr
+    class="ptr"
+    :class="{ 'ptr--selected': selected }"
+  >
+    <!-- Checkbox -->
+    <td class="ptr__td-check">
+      <input
+        type="checkbox"
+        :checked="selected"
+        @change="emit('toggle-select')"
+        class="ptr__checkbox"
+        :aria-label="`Sélectionner ${project.name}`"
+      />
+    </td>
+
+    <!-- Name -->
+    <td class="ptr__name" @click="emit('view')">{{ project.name }}</td>
+
+    <!-- Client -->
+    <td class="ptr__muted">{{ project.clientName }}</td>
+
+    <!-- PM -->
+    <td>
+      <div v-if="project.projectManagerName" class="ptr__pm">
+        <span class="ptr__avatar">{{ initials(project.projectManagerName) }}</span>
+        <span class="ptr__pm-name">{{ project.projectManagerName }}</span>
+      </div>
+      <NeoButton
+        v-else
+        label="Assigner"
+        severity="secondary"
+        text
+        size="small"
+        @click="emit('assign-manager')"
+      />
+    </td>
+
+    <!-- Status -->
+    <td>
+      <span :class="['ptr__badge', statusBadgeClass(project.status)]">
+        {{ statusLabel(project.status) }}
+      </span>
+    </td>
+
+    <!-- Progress -->
+    <td class="ptr__progress-cell">
+      <span v-if="!progress" class="ptr__muted">—</span>
+      <template v-else>
+        <div class="ptr__progress-track">
+          <div class="ptr__progress-fill" :style="progressFillStyle" />
+        </div>
+        <span class="ptr__progress-label">{{ progress }}%</span>
+      </template>
+    </td>
+
+    <!-- Start / End -->
+    <td class="ptr__muted">{{ formatDate(project.startDate) }}</td>
+    <td class="ptr__muted">{{ formatDate(project.endDate) }}</td>
+
+    <!-- Actions -->
+    <td class="ptr__actions-cell">
+      <div class="ptr__action-menu">
+        <NeoButton icon="pi pi-eye"       severity="secondary" text size="small" title="Voir"      @click="emit('view')" />
+        <NeoButton icon="pi pi-pencil"    severity="secondary" text size="small" title="Modifier"  @click="emit('edit')" />
+        <NeoButton icon="pi pi-user-plus" severity="secondary" text size="small" title="Assigner"  @click="emit('assign-manager')" />
+        <NeoButton icon="pi pi-trash"     severity="danger"    text size="small" title="Supprimer" @click="emit('delete')" />
+      </div>
+    </td>
+  </tr>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { NeoButton } from '@neolibrary/components'
+import { PROJECT_STATUS_LABELS } from '@/types/project.types'
+import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+
+const props = defineProps<{
+  project: ProjectSummary
+  selected: boolean
+  progress: number
+}>()
+
+const emit = defineEmits<{
+  'toggle-select': []
+  view: []
+  edit: []
+  delete: []
+  'assign-manager': []
+}>()
+
+const statusLabel = (s: ProjectStatus) => PROJECT_STATUS_LABELS[s] ?? s
+
+function statusBadgeClass(s: ProjectStatus): string {
+  const map: Record<string, string> = {
+    Draft: 'ptr__badge--draft',
+    InProgress: 'ptr__badge--inprogress',
+    SpecificationValidation: 'ptr__badge--spec',
+    Realization: 'ptr__badge--realization',
+    DeploymentValidation: 'ptr__badge--deploy',
+    Completed: 'ptr__badge--completed',
+  }
+  return map[s] ?? ''
+}
+
+function initials(name: string): string {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
+}
+
+const progressFillStyle = computed(() => {
+  const pct = props.progress
+  const color = pct >= 80 ? 'var(--nl-success)' : pct >= 50 ? 'var(--nl-warning)' : 'var(--nl-danger)'
+  return { width: `${pct}%`, background: color }
+})
+
+const formatDate = (iso: string) =>
+  iso ? new Date(iso).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: '2-digit' }) : '—'
+</script>
+
+<style scoped>
+/* ── Row base ─────────────────────────────────────────────────────────────── */
+.ptr {
+  position: relative;
+  transition: background 0.12s;
+}
+
+.ptr::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--nl-accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.ptr td {
+  padding: 0 1rem;
+  height: 48px;
+  border-bottom: 1px solid var(--nl-border);
+  vertical-align: middle;
+  color: var(--nl-text-2);
+}
+
+.ptr:hover td { background: var(--nl-surface-2); }
+.ptr:hover::before { opacity: 1; }
+.ptr--selected td { background: var(--nl-accent-light); }
+
+/* ── Checkbox ─────────────────────────────────────────────────────────────── */
+.ptr__td-check { width: 2.5rem; padding: 0 0.5rem 0 1rem; }
+
+.ptr__checkbox {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--nl-accent);
+}
+
+/* ── Name cell ─────────────────────────────────────────────────────────────── */
+.ptr__name {
+  font-weight: 600;
+  color: var(--nl-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ptr__name:hover { text-decoration: underline; }
+
+/* ── Muted cells ───────────────────────────────────────────────────────────── */
+.ptr__muted { color: var(--nl-text-3); font-size: 0.8125rem; white-space: nowrap; }
+
+/* ── PM ────────────────────────────────────────────────────────────────────── */
+.ptr__pm { display: flex; align-items: center; gap: 0.5rem; }
+
+.ptr__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--nl-accent-light);
+  color: var(--nl-accent);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ptr__pm-name { font-size: 0.8125rem; color: var(--nl-text-2); white-space: nowrap; }
+
+/* ── Status pill ───────────────────────────────────────────────────────────── */
+.ptr__badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--nl-radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ptr__badge--draft       { background: var(--nl-surface-2);    color: var(--nl-text-3); }
+.ptr__badge--inprogress  { background: var(--nl-accent-light);  color: var(--nl-accent); }
+.ptr__badge--spec        { background: #F5F3FF;                 color: #7C3AED; }
+.ptr__badge--realization { background: #FFF7ED;                 color: var(--nl-warning); }
+.ptr__badge--deploy      { background: #EFF6FF;                 color: #2563EB; }
+.ptr__badge--completed   { background: var(--nl-success-light); color: var(--nl-success); }
+
+/* ── Progress ─────────────────────────────────────────────────────────────── */
+.ptr__progress-cell { display: flex; align-items: center; gap: 0.5rem; min-width: 110px; }
+
+.ptr__progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--nl-border);
+  border-radius: var(--nl-radius-pill);
+  overflow: hidden;
+}
+
+.ptr__progress-fill {
+  height: 100%;
+  border-radius: var(--nl-radius-pill);
+  transition: width 0.3s ease;
+}
+
+.ptr__progress-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--nl-text-2);
+  white-space: nowrap;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ── Action menu ───────────────────────────────────────────────────────────── */
+.ptr__actions-cell { text-align: right; }
+
+.ptr__action-menu {
+  display: flex;
+  gap: 0.125rem;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ptr:hover .ptr__action-menu { opacity: 1; }
+</style>

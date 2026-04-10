@@ -124,7 +124,8 @@ onUnmounted(() => {
   min-width: 0;
   /* Leave space for the collapsed rail */
   margin-left: var(--nl-rail-width);
-  transition: margin-left 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: margin-left 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--nl-bg);
 }
 
 /* When sidebar is pinned (always expanded), push main further right */
