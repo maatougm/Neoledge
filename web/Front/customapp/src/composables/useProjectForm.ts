@@ -78,6 +78,7 @@ export function useProjectForm() {
         ...form,
         startDate: toISODate(form.startDate),
         endDate: toISODate(form.endDate),
+        projectManagerId: form.projectManagerId || undefined,
       })
       if (result) {
         toast.add({ severity: 'success', detail: `Projet « ${result.name} » créé avec succès.`, life: 3000 })

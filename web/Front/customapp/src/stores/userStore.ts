@@ -44,7 +44,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<UserResponse[]>(`/admin/AppUser/by-role/${role}`)
+      const { data } = await api.get<UserResponse[]>(`/admin/appuser/by-role/${role}`)
       return data
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur.'
@@ -58,7 +58,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.post<UserResponse>('/admin/AppUser', payload)
+      const { data } = await api.post<UserResponse>('/admin/appuser', payload)
       users.value = [...users.value, data]
       return data
     } catch (e: unknown) {
@@ -76,7 +76,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.put<UserResponse>(`/admin/AppUser/${id}`, payload)
+      const { data } = await api.put<UserResponse>(`/admin/appuser/${id}`, payload)
       users.value = users.value.map((u) => (u.id === id ? { ...data } : u))
       return data
     } catch (e: unknown) {
@@ -92,7 +92,7 @@ export const useUserStore = defineStore('users', () => {
     error.value = null
     try {
       const { data } = await api.post<{ temporaryPassword: string }>(
-        `/admin/AppUser/${id}/reset-password`,
+        `/admin/appuser/${id}/reset-password`,
         {},
       )
       return data.temporaryPassword
@@ -108,7 +108,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/AppUser/${id}/deactivate`, {})
+      await api.post(`/admin/appuser/${id}/deactivate`, {})
       users.value = users.value.map((u) => (u.id === id ? { ...u, isActive: false } : u))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la désactivation.'
@@ -121,7 +121,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/AppUser/${id}/reactivate`, {})
+      await api.post(`/admin/appuser/${id}/reactivate`, {})
       users.value = users.value.map((u) => (u.id === id ? { ...u, isActive: true } : u))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la réactivation.'

@@ -62,7 +62,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>('/admin/Project')
+      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>('/admin/project')
       const items = Array.isArray(data) ? data : (data.items ?? [])
       projects.value = [...items]
       totalProjects.value = Array.isArray(data) ? data.length : (data.total ?? items.length)
@@ -90,8 +90,8 @@ export const useProjectStore = defineStore('projects', () => {
       if (params.skip !== undefined) queryParams.set('skip', String(params.skip))
       if (params.take !== undefined) queryParams.set('take', String(params.take))
       const url = queryParams.toString()
-        ? `/admin/Project?${queryParams.toString()}`
-        : '/admin/Project'
+        ? `/admin/project?${queryParams.toString()}`
+        : '/admin/project'
       const { data } = await api.get<{ items: ProjectSummary[]; total: number }>(url)
       const items = Array.isArray(data) ? data : (data.items ?? [])
       projects.value = [...items]
@@ -107,7 +107,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<ProjectDetail>(`/admin/Project/${id}`)
+      const { data } = await api.get<ProjectDetail>(`/admin/project/${id}`)
       currentProject.value = { ...data }
       return data
     } catch (e: unknown) {
@@ -122,7 +122,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.post<ProjectDetail>('/admin/Project', payload)
+      const { data } = await api.post<ProjectDetail>('/admin/project', payload)
       currentProject.value = { ...data }
       await fetchAll()
       return data
@@ -141,7 +141,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.put<ProjectDetail>(`/admin/Project/${id}`, payload)
+      const { data } = await api.put<ProjectDetail>(`/admin/project/${id}`, payload)
       currentProject.value = { ...data }
       projects.value = projects.value.map((p) =>
         p.id === id
@@ -161,7 +161,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.delete(`/admin/Project/${id}`)
+      await api.delete(`/admin/project/${id}`)
       projects.value = projects.value.filter((p) => p.id !== id)
       if (currentProject.value?.id === id) currentProject.value = null
     } catch (e: unknown) {
@@ -175,7 +175,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/Project/${projectId}/assign-manager`, payload)
+      await api.post(`/admin/project/${projectId}/assign-manager`, payload)
       await fetchAll()
     } catch (e: unknown) {
       error.value =
@@ -189,7 +189,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/Project/${projectId}/status`, { status })
+      await api.post(`/admin/project/${projectId}/status`, { status })
       projects.value = projects.value.map((p) => (p.id === projectId ? { ...p, status } : p))
       if (currentProject.value?.id === projectId) {
         currentProject.value = { ...currentProject.value, status }
@@ -205,7 +205,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.patch(`/admin/Project/${projectId}/archive`, null)
+      await api.patch(`/admin/project/${projectId}/archive`, null)
       projects.value = projects.value.map((p) =>
         p.id === projectId ? { ...p, status: 'Archived' as ProjectStatus } : p,
       )
@@ -223,7 +223,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.post<ProjectField>(`/admin/Project/${projectId}/fields`, payload)
+      const { data } = await api.post<ProjectField>(`/admin/project/${projectId}/fields`, payload)
       if (currentProject.value?.id === projectId) {
         currentProject.value = {
           ...currentProject.value,
@@ -243,7 +243,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.delete(`/admin/Project/${projectId}/fields/${fieldId}`)
+      await api.delete(`/admin/project/${projectId}/fields/${fieldId}`)
       if (currentProject.value?.id === projectId) {
         currentProject.value = {
           ...currentProject.value,
@@ -261,7 +261,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.patch(`/admin/Project/${projectId}/toggle-manager-fields`, { allow })
+      await api.patch(`/admin/project/${projectId}/toggle-manager-fields`, { allow })
       if (currentProject.value?.id === projectId) {
         currentProject.value = { ...currentProject.value, allowManagerCustomFields: allow }
       }
@@ -297,7 +297,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post('/admin/Project/bulk-archive', { ids })
+      await api.post('/admin/project/bulk-archive', { projectIds: ids })
       await fetchAll()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'archivage en masse."
@@ -310,7 +310,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post('/admin/Project/bulk-status', { ids, status })
+      await api.post('/admin/project/bulk-status', { projectIds: ids, status })
       await fetchAll()
     } catch (e: unknown) {
       error.value =
@@ -324,7 +324,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post('/admin/Project/bulk-assign-manager', { ids, managerId })
+      await api.post('/admin/project/bulk-assign-manager', { projectIds: ids, managerId })
       await fetchAll()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'assignation en masse."
@@ -339,7 +339,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<DeletedProjectSummary[]>('/admin/Project/deleted')
+      const { data } = await api.get<DeletedProjectSummary[]>('/admin/project/deleted')
       deletedProjects.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la corbeille.'
@@ -352,7 +352,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/Project/${id}/restore`, null)
+      await api.post(`/admin/project/${id}/restore`, null)
       deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
       await fetchAll()
     } catch (e: unknown) {
@@ -366,7 +366,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await api.delete(`/admin/Project/${id}/hard-delete`)
+      await api.delete(`/admin/project/${id}/hard-delete`)
       deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression définitive.'
@@ -380,7 +380,7 @@ export const useProjectStore = defineStore('projects', () => {
   const fetchActivity = async (projectId: string) => {
     try {
       const { data } = await api.get<ProjectActivity[]>(
-        `/admin/Project/${projectId}/activity`,
+        `/admin/project/${projectId}/activity`,
       )
       activities.value = [...data]
     } catch {
