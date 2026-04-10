@@ -123,8 +123,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { NeoButton, NeoSelect } from '@neolibrary/components'
-import axios from 'axios'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import type { ProjectActivity, ActivityStats } from '@/types/project.types'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -133,8 +132,6 @@ const PAGE_SIZE = 20
 const REFRESH_INTERVAL_MS = 60_000
 
 // ── State ──────────────────────────────────────────────────────────────────────
-
-const app        = useApp()
 const activities = ref<ProjectActivity[]>([])
 const stats      = ref<ActivityStats | null>(null)
 const loading    = ref(false)
@@ -166,10 +163,9 @@ async function fetchAll(): Promise<void> {
   loading.value = true
   error.value   = null
   try {
-    const headers = { Authorization: `Bearer ${app.jwt}` }
     const [activityRes, statsRes] = await Promise.all([
-      axios.get<ProjectActivity[]>(`${app.apiUrl}/api/dashboard/recent-activity?count=200`, { headers }),
-      axios.get<ActivityStats>(`${app.apiUrl}/api/dashboard/activity-stats`, { headers }),
+      api.get<ProjectActivity[]>('/api/dashboard/recent-activity?count=200'),
+      api.get<ActivityStats>('/api/dashboard/activity-stats'),
     ])
     activities.value = activityRes.data
     stats.value      = statsRes.data

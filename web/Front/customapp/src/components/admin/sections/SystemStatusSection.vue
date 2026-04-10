@@ -74,9 +74,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoButton, NeoTag } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus } from '@/types/project.types'
 
@@ -88,22 +87,13 @@ interface SystemStatus {
   projectByStatus: Record<string, number>
 }
 
-const app     = useApp()
 const status  = ref<SystemStatus | null>(null)
 const loading = ref(false)
-
-const authHeader = () => {
-  const jwt = app.jwt
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-}
 
 const load = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get<SystemStatus>(
-      `${app.apiUrl}/admin/SystemStatus`,
-      { headers: authHeader() },
-    )
+    const { data } = await api.get<SystemStatus>('/admin/SystemStatus')
     status.value = data
   } finally {
     loading.value = false

@@ -52,9 +52,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoTag } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import type { ProjectValidation } from '@/types/pm.types'
 import type { ProjectStatus } from '@/types/project.types'
 
@@ -100,12 +99,8 @@ const formatDate = (iso: string): string => {
 onMounted(async () => {
   loading.value = true
   try {
-    const appStore = useApp()
-    const jwt = appStore.jwt
-    const headers = jwt ? { Authorization: `Bearer ${jwt}` } : {}
-    const { data } = await axios.get<ProjectValidation[]>(
-      `${appStore.apiUrl}/pm/projects/${props.projectId}/validations`,
-      { headers },
+    const { data } = await api.get<ProjectValidation[]>(
+      `/pm/projects/${props.projectId}/validations`,
     )
     validations.value = [...data]
   } catch {

@@ -48,15 +48,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
 import Dialog from 'primevue/dialog'
 import { NeoPassword, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 
 const props = defineProps<{ visible: boolean }>()
 const emit  = defineEmits<{ (e: 'update:visible', v: boolean): void }>()
 
-const app     = useApp()
 const toast   = useNeoToast()
 const current = ref('')
 const newPass = ref('')
@@ -78,11 +76,7 @@ async function submit() {
   }
   loading.value = true
   try {
-    await axios.post(
-      `${app.apiUrl}/auth/change-password`,
-      { currentPassword: current.value, newPassword: newPass.value },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/change-password', { currentPassword: current.value, newPassword: newPass.value })
     toast.add({ severity: 'success', detail: 'Mot de passe modifié avec succès.', life: 3000 })
     emit('update:visible', false)
     reset()

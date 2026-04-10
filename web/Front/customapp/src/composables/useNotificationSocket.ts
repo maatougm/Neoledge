@@ -10,13 +10,15 @@ import type { Notification } from '@/stores/notificationStore'
 
 // ─── Type guard ───────────────────────────────────────────────────────────────
 
-function isNotification(payload: Record<string, unknown>): payload is Notification {
+function isNotification(payload: unknown): payload is Notification {
+  if (typeof payload !== 'object' || payload === null) return false
+  const p = payload as Record<string, unknown>
   return (
-    typeof payload['id'] === 'string' &&
-    typeof payload['type'] === 'string' &&
-    typeof payload['title'] === 'string' &&
-    typeof payload['message'] === 'string' &&
-    typeof payload['isRead'] === 'boolean'
+    typeof p['id'] === 'string' &&
+    typeof p['type'] === 'string' &&
+    typeof p['title'] === 'string' &&
+    typeof p['message'] === 'string' &&
+    typeof p['isRead'] === 'boolean'
   )
 }
 
@@ -51,7 +53,7 @@ export function useNotificationSocket() {
       connected.value = false
     })
 
-    socket.on('notification', (payload: Record<string, unknown>) => {
+    socket.on('notification', (payload: unknown) => {
       // Lazy import to avoid circular dependency at module init time
       import('@/stores/notificationStore')
         .then(({ useNotificationStore }) => {
@@ -68,8 +70,8 @@ export function useNotificationSocket() {
           const toast = useNeoToast()
           toast.add({
             severity: 'info',
-            summary: String(payload['title'] ?? 'Notification'),
-            detail: String(payload['message'] ?? ''),
+            summary: String((payload as Record<string, unknown>)['title'] ?? 'Notification'),
+            detail: String((payload as Record<string, unknown>)['message'] ?? ''),
             life: 5000,
           })
         })

@@ -49,7 +49,7 @@
           </div>
           <NeoTag
             :value="formatDeadline(p.endDate)"
-            :severity="isOverdue(p.endDate) ? 'danger' : 'warning'"
+            :severity="isOverdue(p.endDate) ? 'danger' : 'warn'"
           />
         </li>
       </ul>
@@ -101,10 +101,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
 import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
 import {
   PROJECT_STATUS_LABELS,
@@ -119,8 +119,8 @@ interface Props {
 }
 
 
-type NeoTagSeverity = 'success' | 'info' | 'warn' | 'warning' | 'danger' | 'secondary' | 'contrast'
-const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'warning', 'danger', 'secondary', 'contrast'])
+type NeoTagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'primary'
+const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'danger', 'secondary', 'contrast', 'primary'])
 function toTagSeverity(val: string | undefined): NeoTagSeverity {
   return (val !== undefined && VALID_SEVERITIES.has(val) ? val : 'secondary') as NeoTagSeverity
 }
@@ -132,14 +132,9 @@ const emit = defineEmits<{
 }>()
 
 // ─── Store & Toast ────────────────────────────────────────────────────────────
-const app = useApp()
+const authStore = useAuthStore()
 const filtersStore = useSavedFiltersStore()
 const toast = useNeoToast()
-
-const authHeader = () => {
-  const jwt = app.jwt
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-}
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const myProjects = ref<ProjectSummary[]>([])
@@ -148,9 +143,9 @@ const projectsLoaded = ref(false)
 
 // ─── Derived ──────────────────────────────────────────────────────────────────
 const displayName = computed<string>(() => {
-  if (!app.jwt) return 'Utilisateur'
+  if (!authStore.jwt) return 'Utilisateur'
   try {
-    const p = JSON.parse(atob(app.jwt.split('.')[1]))
+    const p = JSON.parse(atob(authStore.jwt.split('.')[1]))
     return [p.given_name, p.family_name].filter(Boolean).join(' ') || 'Utilisateur'
   } catch {
     return 'Utilisateur'
@@ -198,9 +193,8 @@ const formatTime = (dateStr: string): string => {
 // ─── Data fetch ───────────────────────────────────────────────────────────────
 const fetchMyProjects = async (): Promise<void> => {
   try {
-    const { data } = await axios.get<ProjectSummary[]>(
-      `${app.apiUrl}/admin/project/manager/${props.userId}`,
-      { headers: authHeader() },
+    const { data } = await api.get<ProjectSummary[]>(
+      `/admin/project/manager/${props.userId}`,
     )
     myProjects.value = [...data]
   } catch {
@@ -212,9 +206,8 @@ const fetchMyProjects = async (): Promise<void> => {
 
 const fetchRecentActivity = async (): Promise<void> => {
   try {
-    const { data } = await axios.get<ProjectActivity[]>(
-      `${app.apiUrl}/api/dashboard/recent-activity?count=5`,
-      { headers: authHeader() },
+    const { data } = await api.get<ProjectActivity[]>(
+      '/api/dashboard/recent-activity?count=5',
     )
     // Filter to activities related to my projects
     const myProjectIds = new Set(myProjects.value.map((p) => p.id))

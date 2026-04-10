@@ -6,8 +6,8 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
+import { useAuthStore } from './authStore'
 
 export interface CommentUser {
   id: string
@@ -34,19 +34,10 @@ export const useCommentStore = defineStore('comments', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  const apiBase = (projectId: string) =>
-    `${useApp().apiUrl}/api/projects/${projectId}/comments`
-
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ─── Getters ─────────────────────────────────────────────────────────────────
   /** Decode the current user's ID from the JWT `sub` claim. */
   const currentUserId = computed<string | null>(() => {
-    const jwt = useApp().jwt
+    const jwt = useAuthStore().jwt
     if (!jwt) return null
     try {
       const payload = JSON.parse(atob(jwt.split('.')[1]))
@@ -62,9 +53,7 @@ export const useCommentStore = defineStore('comments', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<Comment[]>(apiBase(projectId), {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<Comment[]>(`/api/projects/${projectId}/comments`)
       comments.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des commentaires.'
@@ -75,11 +64,7 @@ export const useCommentStore = defineStore('comments', () => {
 
   const addComment = async (projectId: string, content: string): Promise<void> => {
     try {
-      const { data } = await axios.post<Comment>(
-        apiBase(projectId),
-        { content },
-        { headers: authHeader() },
-      )
+      const { data } = await api.post<Comment>(`/api/projects/${projectId}/comments`, { content })
       comments.value = [data, ...comments.value]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'ajout du commentaire."
@@ -93,10 +78,9 @@ export const useCommentStore = defineStore('comments', () => {
     content: string,
   ): Promise<void> => {
     try {
-      const { data } = await axios.post<Comment>(
-        `${apiBase(projectId)}/${commentId}/replies`,
+      const { data } = await api.post<Comment>(
+        `/api/projects/${projectId}/comments/${commentId}/replies`,
         { content },
-        { headers: authHeader() },
       )
       comments.value = comments.value.map((c) =>
         c.id === commentId
@@ -115,10 +99,9 @@ export const useCommentStore = defineStore('comments', () => {
     content: string,
   ): Promise<void> => {
     try {
-      const { data } = await axios.put<Comment>(
-        `${apiBase(projectId)}/${commentId}`,
+      const { data } = await api.put<Comment>(
+        `/api/projects/${projectId}/comments/${commentId}`,
         { content },
-        { headers: authHeader() },
       )
       comments.value = comments.value.map((c) => {
         if (c.id === commentId) return { ...c, ...data }
@@ -135,7 +118,7 @@ export const useCommentStore = defineStore('comments', () => {
 
   const removeComment = async (projectId: string, commentId: string): Promise<void> => {
     try {
-      await axios.delete(`${apiBase(projectId)}/${commentId}`, { headers: authHeader() })
+      await api.delete(`/api/projects/${projectId}/comments/${commentId}`)
       comments.value = comments.value
         .filter((c) => c.id !== commentId)
         .map((c) => ({

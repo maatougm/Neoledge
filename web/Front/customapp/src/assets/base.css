@@ -28,6 +28,21 @@
   --nl-sidebar-bg:    #020617;         /* slate-950 */
   --nl-radius:        8px;
   --nl-radius-lg:     16px;
+
+  /* Topbar */
+  --nl-topbar-height:      48px;
+  --nl-topbar-bg:          #FFFFFF;
+  --nl-topbar-border:      #E2E8F0;
+
+  /* Nav Rail */
+  --nl-rail-width:          56px;
+  --nl-rail-expanded-width: 240px;
+  --nl-nav-bg:              #020617;
+  --nl-nav-text:            rgba(148, 163, 184, 0.85);   /* slate-400 at 85% */
+  --nl-nav-text-active:     #FFFFFF;
+  --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.06);
+  --nl-nav-item-active-bg:  rgba(13, 148, 136, 0.16);
+  --nl-nav-separator:       rgba(255, 255, 255, 0.06);
   
   /* Multi-layered Soft Shadows (Apple-style) */
   --nl-shadow:        0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
@@ -83,6 +98,14 @@
   /* Layout */
   --nl-sidebar-bg:    #020617;
   --nl-overlay-bg:    rgba(2, 6, 23, 0.85);
+
+  /* Topbar (dark) */
+  --nl-topbar-bg:          #0F172A;
+  --nl-topbar-border:      #1E293B;
+
+  /* Nav Rail (unchanged — already dark) */
+  --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.08);
+  --nl-nav-item-active-bg:  rgba(20, 184, 166, 0.18);
 
   /* Interactive */
   --nl-hover-bg:      rgba(255, 255, 255, 0.04);

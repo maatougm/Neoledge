@@ -6,8 +6,7 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
 import type { SavedFilter, FilterCriteria } from '@/types/filter.types'
 
 export const useSavedFiltersStore = defineStore('savedFilters', () => {
@@ -17,20 +16,13 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  const apiBase = () => useApp().apiUrl + '/api/saved-filters'
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
   const fetchAll = async (): Promise<void> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<SavedFilter[]>(apiBase(), { headers: authHeader() })
+      const { data } = await api.get<SavedFilter[]>('/api/saved-filters')
       filters.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des filtres.'
@@ -43,11 +35,7 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<SavedFilter>(
-        apiBase(),
-        { name, filters: criteria },
-        { headers: authHeader() },
-      )
+      const { data } = await api.post<SavedFilter>('/api/saved-filters', { name, filters: criteria })
       filters.value = [...filters.value, data]
       return data
     } catch (e: unknown) {
@@ -65,9 +53,7 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.put<SavedFilter>(`${apiBase()}/${id}`, dto, {
-        headers: authHeader(),
-      })
+      const { data } = await api.put<SavedFilter>(`/api/saved-filters/${id}`, dto)
       filters.value = filters.value.map((f) => (f.id === id ? { ...data } : f))
       if (activeFilter.value?.id === id) {
         activeFilter.value = { ...data }
@@ -85,7 +71,7 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`${apiBase()}/${id}`, { headers: authHeader() })
+      await api.delete(`/api/saved-filters/${id}`)
       filters.value = filters.value.filter((f) => f.id !== id)
       if (activeFilter.value?.id === id) {
         activeFilter.value = null
@@ -101,7 +87,7 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.patch(`${apiBase()}/${id}/default`, {}, { headers: authHeader() })
+      await api.patch(`/api/saved-filters/${id}/default`, {})
       filters.value = filters.value.map((f) => ({ ...f, isDefault: f.id === id }))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la définition du filtre par défaut.'

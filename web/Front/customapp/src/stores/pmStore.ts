@@ -1,32 +1,47 @@
+/** @file src/stores/pmStore.ts — Pinia store for Project Manager module */
+
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
-import type { ProjectSummary, ProjectDetail, AddFieldPayload, ProjectActivity } from '@/types/project.types'
-import type { ProjectValidation, SaveQuestionnairePayload, SubmitValidationPayload, MeetingTranscriptSummary, MeetingTranscriptDetail } from '@/types/pm.types'
+import api from '@/lib/api'
+import type {
+  ProjectSummary,
+  ProjectDetail,
+  AddFieldPayload,
+  ProjectActivity,
+} from '@/types/project.types'
+import type {
+  ProjectValidation,
+  SaveQuestionnairePayload,
+  SubmitValidationPayload,
+  MeetingTranscriptSummary,
+  MeetingTranscriptDetail,
+  AiResults,
+  AutomationRule,
+  AutomationLog,
+} from '@/types/pm.types'
 
 export const usePmStore = defineStore('pm', () => {
-  const projects       = ref<ProjectSummary[]>([])
+  const projects = ref<ProjectSummary[]>([])
   const currentProject = ref<ProjectDetail | null>(null)
-  const validations    = ref<ProjectValidation[]>([])
-  const activities     = ref<ProjectActivity[]>([])
-  const meetings         = ref<MeetingTranscriptSummary[]>([])
+  const validations = ref<ProjectValidation[]>([])
+  const activities = ref<ProjectActivity[]>([])
+  const meetings = ref<MeetingTranscriptSummary[]>([])
   const currentTranscript = ref<MeetingTranscriptDetail | null>(null)
-  const loading        = ref(false)
-  const saving         = ref(false)
-  const error          = ref<string | null>(null)
+  const aiResults = ref<AiResults | null>(null)
+  const aiPolling = ref<ReturnType<typeof setInterval> | null>(null)
+  const automationRules = ref<AutomationRule[]>([])
+  const automationLogs = ref<AutomationLog[]>([])
+  const loading = ref(false)
+  const saving = ref(false)
+  const error = ref<string | null>(null)
 
-  const apiBase = () => useApp().apiUrl + '/pm'
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
+  // ─── Actions ─────────────────────────────────────────────────────────────────
 
   const fetchMyProjects = async () => {
     loading.value = true
-    error.value   = null
+    error.value = null
     try {
-      const { data } = await axios.get<ProjectSummary[]>(`${apiBase()}/projects`, { headers: authHeader() })
+      const { data } = await api.get<ProjectSummary[]>('/pm/projects')
       projects.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
@@ -37,9 +52,9 @@ export const usePmStore = defineStore('pm', () => {
 
   const fetchTeamProjects = async () => {
     loading.value = true
-    error.value   = null
+    error.value = null
     try {
-      const { data } = await axios.get<ProjectSummary[]>(`${apiBase()}/team-projects`, { headers: authHeader() })
+      const { data } = await api.get<ProjectSummary[]>('/pm/team-projects')
       projects.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
@@ -50,14 +65,14 @@ export const usePmStore = defineStore('pm', () => {
 
   const fetchProject = async (id: string) => {
     loading.value = true
-    error.value   = null
+    error.value = null
     try {
       const [{ data: detail }, { data: vals }] = await Promise.all([
-        axios.get<ProjectDetail>(`${apiBase()}/projects/${id}`, { headers: authHeader() }),
-        axios.get<ProjectValidation[]>(`${apiBase()}/projects/${id}/validations`, { headers: authHeader() }),
+        api.get<ProjectDetail>(`/pm/projects/${id}`),
+        api.get<ProjectValidation[]>(`/pm/projects/${id}/validations`),
       ])
       currentProject.value = detail
-      validations.value    = [...vals]
+      validations.value = [...vals]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement du projet.'
     } finally {
@@ -65,11 +80,14 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  const saveQuestionnaire = async (projectId: string, payload: SaveQuestionnairePayload) => {
+  const saveQuestionnaire = async (
+    projectId: string,
+    payload: SaveQuestionnairePayload,
+  ) => {
     saving.value = true
-    error.value  = null
+    error.value = null
     try {
-      await axios.patch(`${apiBase()}/projects/${projectId}/field-values`, payload, { headers: authHeader() })
+      await api.patch(`/pm/projects/${projectId}/field-values`, payload)
       return true
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la sauvegarde.'
@@ -81,9 +99,9 @@ export const usePmStore = defineStore('pm', () => {
 
   const addCustomField = async (projectId: string, payload: AddFieldPayload) => {
     saving.value = true
-    error.value  = null
+    error.value = null
     try {
-      await axios.post(`${apiBase()}/projects/${projectId}/fields`, payload, { headers: authHeader() })
+      await api.post(`/pm/projects/${projectId}/fields`, payload)
       await fetchProject(projectId)
       return true
     } catch (e: unknown) {
@@ -94,14 +112,16 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  const submitValidation = async (projectId: string, payload: SubmitValidationPayload) => {
+  const submitValidation = async (
+    projectId: string,
+    payload: SubmitValidationPayload,
+  ) => {
     saving.value = true
-    error.value  = null
+    error.value = null
     try {
-      const { data } = await axios.post<ProjectValidation>(
-        `${apiBase()}/projects/${projectId}/validations`,
+      const { data } = await api.post<ProjectValidation>(
+        `/pm/projects/${projectId}/validations`,
         payload,
-        { headers: authHeader() },
       )
       validations.value = [data, ...validations.value]
       return true
@@ -115,7 +135,7 @@ export const usePmStore = defineStore('pm', () => {
 
   const fetchActivity = async (projectId: string) => {
     try {
-      const { data } = await axios.get<ProjectActivity[]>(`${apiBase()}/projects/${projectId}/activity`, { headers: authHeader() })
+      const { data } = await api.get<ProjectActivity[]>(`/pm/projects/${projectId}/activity`)
       activities.value = [...data]
     } catch {
       activities.value = []
@@ -124,9 +144,8 @@ export const usePmStore = defineStore('pm', () => {
 
   const fetchMeetings = async (projectId: string) => {
     try {
-      const { data } = await axios.get<MeetingTranscriptSummary[]>(
-        `${apiBase()}/projects/${projectId}/meetings`,
-        { headers: authHeader() },
+      const { data } = await api.get<MeetingTranscriptSummary[]>(
+        `/pm/projects/${projectId}/meetings`,
       )
       meetings.value = [...data]
     } catch {
@@ -138,13 +157,13 @@ export const usePmStore = defineStore('pm', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<MeetingTranscriptDetail>(
-        `${apiBase()}/projects/${projectId}/meetings/${meetingId}`,
-        { headers: authHeader() },
+      const { data } = await api.get<MeetingTranscriptDetail>(
+        `/pm/projects/${projectId}/meetings/${meetingId}`,
       )
       currentTranscript.value = data
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la transcription.'
+      error.value =
+        e instanceof Error ? e.message : 'Erreur lors du chargement de la transcription.'
     } finally {
       loading.value = false
     }
@@ -154,14 +173,11 @@ export const usePmStore = defineStore('pm', () => {
     saving.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/projects/${projectId}/meetings/upload`,
-        formData,
-        { headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' } },
-      )
+      await api.post(`/pm/projects/${projectId}/meetings/upload`, formData, { timeout: 300_000 })
       return true
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : "Erreur lors de l'envoi de l'enregistrement."
+      const axiosMsg = (e as any)?.response?.data?.message
+      error.value = axiosMsg ?? (e instanceof Error ? e.message : "Erreur lors de l'envoi de l'enregistrement.")
       return false
     } finally {
       saving.value = false
@@ -170,10 +186,7 @@ export const usePmStore = defineStore('pm', () => {
 
   const deleteMeeting = async (projectId: string, meetingId: string) => {
     try {
-      await axios.delete(
-        `${apiBase()}/projects/${projectId}/meetings/${meetingId}`,
-        { headers: authHeader() },
-      )
+      await api.delete(`/pm/projects/${projectId}/meetings/${meetingId}`)
       meetings.value = meetings.value.filter((m) => m.id !== meetingId)
       return true
     } catch (e: unknown) {
@@ -182,13 +195,67 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  const renameSpeaker = async (projectId: string, meetingId: string, oldName: string, newName: string) => {
+  const stopAiPolling = () => {
+    if (aiPolling.value !== null) {
+      clearInterval(aiPolling.value)
+      aiPolling.value = null
+    }
+  }
+
+  const resumeAiPolling = (projectId: string, meetingId: string) => {
+    stopAiPolling()
+    aiPolling.value = setInterval(() => {
+      void fetchAiResults(projectId, meetingId)
+    }, 5000)
+  }
+
+  const fetchAiResults = async (projectId: string, meetingId: string) => {
     try {
-      await axios.patch(
-        `${apiBase()}/projects/${projectId}/meetings/${meetingId}/rename-speaker`,
-        { oldName, newName },
-        { headers: authHeader() },
+      const { data } = await api.get<AiResults>(
+        `/pm/projects/${projectId}/meetings/${meetingId}/ai-results`,
       )
+      aiResults.value = { ...data }
+      if (data.aiStatus === 'completed' || data.aiStatus === 'failed') {
+        stopAiPolling()
+      }
+    } catch (e: unknown) {
+      stopAiPolling()
+      error.value = e instanceof Error ? e.message : "Erreur lors du chargement des résultats IA."
+    }
+  }
+
+  const triggerAiAnalysis = async (projectId: string, meetingId: string) => {
+    try {
+      await api.post(`/pm/projects/${projectId}/meetings/${meetingId}/ai-analyze`)
+      aiResults.value = {
+        aiStatus: 'processing',
+        aiSummary: null,
+        aiError: null,
+        aiModel: null,
+        aiProcessedAt: null,
+        actionItems: [],
+        decisions: [],
+      }
+      stopAiPolling()
+      aiPolling.value = setInterval(() => {
+        void fetchAiResults(projectId, meetingId)
+      }, 5000)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : "Erreur lors du lancement de l'analyse IA."
+    }
+  }
+
+  const renameSpeaker = async (
+    projectId: string,
+    meetingId: string,
+    oldName: string,
+    newName: string,
+  ) => {
+    try {
+      await api.patch(`/pm/projects/${projectId}/meetings/${meetingId}/rename-speaker`, {
+        oldName,
+        newName,
+      })
       if (currentTranscript.value?.id === meetingId) {
         currentTranscript.value = {
           ...currentTranscript.value,
@@ -204,9 +271,108 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
+  // ─── Automation ──────────────────────────────────────────────────────────────
+
+  const fetchAutomationRules = async (projectId: string) => {
+    try {
+      const { data } = await api.get<{ success: boolean; data: AutomationRule[] }>(
+        `/pm/projects/${projectId}/automation/rules`,
+      )
+      automationRules.value = [...(data.data ?? [])]
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des règles.'
+    }
+  }
+
+  const createAutomationRule = async (projectId: string, payload: Partial<AutomationRule>) => {
+    try {
+      const { data } = await api.post<{ success: boolean; data: AutomationRule }>(
+        `/pm/projects/${projectId}/automation/rules`,
+        payload,
+      )
+      if (data.success && data.data) {
+        automationRules.value = [data.data, ...automationRules.value]
+      }
+      return data.success
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la création de la règle.'
+      return false
+    }
+  }
+
+  const toggleAutomationRule = async (projectId: string, ruleId: string, isActive: boolean) => {
+    try {
+      const { data } = await api.patch<{ success: boolean; data: AutomationRule }>(
+        `/pm/projects/${projectId}/automation/rules/${ruleId}/toggle`,
+        { isActive },
+      )
+      if (data.success && data.data) {
+        automationRules.value = automationRules.value.map((r) =>
+          r.id === ruleId ? { ...data.data } : r,
+        )
+      }
+      return data.success
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la mise à jour de la règle.'
+      return false
+    }
+  }
+
+  const deleteAutomationRule = async (projectId: string, ruleId: string) => {
+    try {
+      await api.delete(`/pm/projects/${projectId}/automation/rules/${ruleId}`)
+      automationRules.value = automationRules.value.filter((r) => r.id !== ruleId)
+      return true
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression de la règle.'
+      return false
+    }
+  }
+
+  const fetchAutomationLogs = async (projectId: string) => {
+    try {
+      const { data } = await api.get<{ success: boolean; data: AutomationLog[] }>(
+        `/pm/projects/${projectId}/automation/logs`,
+      )
+      automationLogs.value = [...(data.data ?? [])]
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des logs.'
+    }
+  }
+
   return {
-    projects, currentProject, validations, activities, meetings, currentTranscript, loading, saving, error,
-    fetchMyProjects, fetchTeamProjects, fetchProject, saveQuestionnaire, addCustomField, submitValidation, fetchActivity,
-    fetchMeetings, fetchTranscript, uploadMeeting, deleteMeeting, renameSpeaker,
+    projects,
+    currentProject,
+    validations,
+    activities,
+    meetings,
+    currentTranscript,
+    aiResults,
+    automationRules,
+    automationLogs,
+    loading,
+    saving,
+    error,
+    fetchMyProjects,
+    fetchTeamProjects,
+    fetchProject,
+    saveQuestionnaire,
+    addCustomField,
+    submitValidation,
+    fetchActivity,
+    fetchMeetings,
+    fetchTranscript,
+    uploadMeeting,
+    deleteMeeting,
+    renameSpeaker,
+    triggerAiAnalysis,
+    fetchAiResults,
+    stopAiPolling,
+    resumeAiPolling,
+    fetchAutomationRules,
+    createAutomationRule,
+    toggleAutomationRule,
+    deleteAutomationRule,
+    fetchAutomationLogs,
   }
 })

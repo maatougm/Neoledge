@@ -158,8 +158,8 @@
 
 <script setup lang="ts">
 
-type NeoTagSeverity = 'success' | 'info' | 'warn' | 'warning' | 'danger' | 'secondary' | 'contrast'
-const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'warning', 'danger', 'secondary', 'contrast'])
+type NeoTagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'primary'
+const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'danger', 'secondary', 'contrast', 'primary'])
 function toTagSeverity(val: string | undefined): NeoTagSeverity {
   return (val !== undefined && VALID_SEVERITIES.has(val) ? val : 'secondary') as NeoTagSeverity
 }
@@ -214,7 +214,7 @@ const buildChips = (criteria: FilterCriteria): Chip[] => {
   for (const p of criteria.priority ?? []) {
     chips.push({
       label: PRIORITY_LABELS[p as Priority] ?? p,
-      severity: 'warning',
+      severity: 'warn',
     })
   }
   if (criteria.assignedToMe) {

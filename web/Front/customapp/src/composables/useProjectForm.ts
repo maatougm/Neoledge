@@ -11,6 +11,21 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useNeoToast } from '@neolibrary/components'
 import type { CreateProjectPayload, UpdateProjectPayload } from '@/types/project.types'
 
+/** Convert "dd/mm/yy" or "dd/mm/yyyy" → "yyyy-mm-dd" ISO string. Pass-through if already ISO. */
+function toISODate(s: string): string {
+  if (!s) return s
+  // Already ISO format: "2026-04-09"
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  // French format: "09/04/26" or "09/04/2026"
+  const parts = s.split('/')
+  if (parts.length === 3) {
+    const [d, m, y] = parts
+    const fullYear = y.length === 2 ? `20${y}` : y
+    return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  return s
+}
+
 export function useProjectForm() {
   const store = useProjectStore()
   const toast = useNeoToast()
@@ -59,7 +74,11 @@ export function useProjectForm() {
 
     submitting.value = true
     try {
-      const result = await store.createProject({ ...form })
+      const result = await store.createProject({
+        ...form,
+        startDate: toISODate(form.startDate),
+        endDate: toISODate(form.endDate),
+      })
       if (result) {
         toast.add({ severity: 'success', detail: `Projet « ${result.name} » créé avec succès.`, life: 3000 })
         reset()
@@ -75,8 +94,13 @@ export function useProjectForm() {
 
   const submitUpdate = async (id: string, payload: UpdateProjectPayload): Promise<boolean> => {
     submitting.value = true
+    const normalized: UpdateProjectPayload = {
+      ...payload,
+      ...(payload.startDate ? { startDate: toISODate(payload.startDate) } : {}),
+      ...(payload.endDate   ? { endDate:   toISODate(payload.endDate)   } : {}),
+    }
     try {
-      const result = await store.updateProject(id, payload)
+      const result = await store.updateProject(id, normalized)
       if (result) {
         toast.add({ severity: 'success', detail: 'Projet mis à jour.', life: 3000 })
         return true

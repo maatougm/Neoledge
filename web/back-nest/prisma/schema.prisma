@@ -51,7 +51,8 @@ model AppUser {
   notifications    Notification[]
   checkedItems     PhaseChecklist[]
 
-  auditLogs AuditLog[]
+  auditLogs    AuditLog[]
+  portalTokens PortalToken[]
 
   @@map("AppUsers")
 }
@@ -88,7 +89,9 @@ model Project {
   attachments    ProjectAttachment[]
   transcripts    MeetingTranscript[]
   notifications  Notification[]
-  checklists     PhaseChecklist[]
+  checklists      PhaseChecklist[]
+  portalTokens    PortalToken[]
+  automationRules AutomationRule[]
 
   @@index([status])
   @@index([projectManagerId])
@@ -118,10 +121,12 @@ model ProjectField {
 }
 
 model ProjectFieldValue {
-  id             String  @id @default(uuid())
+  id             String    @id @default(uuid())
   projectId      String
   projectFieldId String
-  value          String? @db.Text
+  value          String?   @db.Text
+  updatedAt      DateTime? @updatedAt
+  updatedBy      String?   @db.VarChar(36)
 
   // Relations
   project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -145,6 +150,7 @@ model ProjectValidation {
   project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   validatedBy AppUser @relation(fields: [validatedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@unique([projectId, validatedByUserId, phase])
   @@index([projectId, phase])
   @@map("ProjectValidations")
 }
@@ -245,22 +251,57 @@ model ProjectAttachment {
 }
 
 model MeetingTranscript {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   projectId         String
-  title             String   @db.VarChar(200)
-  originalFileName  String?  @db.VarChar(500)
-  durationSeconds   Int      @default(0)
-  detectedLanguages String   @default("") @db.VarChar(50)
-  recordedAt        DateTime @default(now())
-  createdAt         DateTime @default(now())
+  title             String    @db.VarChar(200)
+  originalFileName  String?   @db.VarChar(500)
+  durationSeconds   Int       @default(0)
+  detectedLanguages String    @default("") @db.VarChar(50)
+  recordedAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  aiSummary         String?   @db.LongText
+  aiStatus          String    @default("none") @db.VarChar(20)
+  aiProcessedAt     DateTime?
+  aiModel           String?   @db.VarChar(50)
+  aiError           String?   @db.VarChar(500)
 
   // Relations
-  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  segments TranscriptSegment[]
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments    TranscriptSegment[]
+  actionItems MeetingActionItem[]
+  decisions   MeetingDecision[]
 
   @@index([projectId])
   @@index([createdAt])
   @@map("MeetingTranscripts")
+}
+
+model MeetingActionItem {
+  id           String    @id @default(uuid())
+  transcriptId String
+  description  String    @db.Text
+  assigneeName String?   @db.VarChar(200)
+  dueDate      DateTime?
+  isCompleted  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+  @@map("MeetingActionItems")
+}
+
+model MeetingDecision {
+  id           String   @id @default(uuid())
+  transcriptId String
+  description  String   @db.Text
+  category     String   @default("decision") @db.VarChar(50)
+  createdAt    DateTime @default(now())
+
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+  @@map("MeetingDecisions")
 }
 
 model TranscriptSegment {
@@ -317,6 +358,43 @@ model PhaseChecklist {
   @@map("PhaseChecklists")
 }
 
+model PortalToken {
+  id             String    @id @default(uuid())
+  projectId      String
+  token          String    @unique @db.VarChar(64)
+  createdById    String
+  label          String?   @db.VarChar(200)
+  expiresAt      DateTime
+  isRevoked      Boolean   @default(false)
+  lastAccessedAt DateTime?
+  accessCount    Int       @default(0)
+  createdAt      DateTime  @default(now())
+
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy AppUser         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  signoffs  PortalSignoff[]
+
+  @@index([token])
+  @@index([projectId])
+  @@map("PortalTokens")
+}
+
+model PortalSignoff {
+  id            String   @id @default(uuid())
+  portalTokenId String
+  clientName    String   @db.VarChar(200)
+  clientEmail   String?  @db.VarChar(256)
+  comment       String?  @db.Text
+  isApproved    Boolean
+  signedAt      DateTime @default(now())
+  ipAddress     String?  @db.VarChar(45)
+
+  portalToken PortalToken @relation(fields: [portalTokenId], references: [id], onDelete: Cascade)
+
+  @@index([portalTokenId])
+  @@map("PortalSignoffs")
+}
+
 model AuditLog {
   id         String   @id @default(uuid())
   entityType String   @db.VarChar(50)
@@ -333,4 +411,49 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("AuditLogs")
+}
+
+model AnalyticsCache {
+  id         String   @id @default(uuid())
+  cacheKey   String   @unique @db.VarChar(100)
+  data       String   @db.LongText
+  computedAt DateTime @default(now())
+
+  @@map("AnalyticsCache")
+}
+
+model AutomationRule {
+  id               String    @id @default(uuid())
+  projectId        String
+  name             String    @db.VarChar(200)
+  triggerEvent     String    @db.VarChar(100)
+  triggerCondition String?   @db.Text
+  actionType       String    @db.VarChar(100)
+  actionConfig     String    @db.Text
+  isActive         Boolean   @default(true)
+  executionCount   Int       @default(0)
+  lastExecutedAt   DateTime?
+  createdAt        DateTime  @default(now())
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs    AutomationLog[]
+
+  @@index([projectId])
+  @@index([triggerEvent])
+  @@map("AutomationRules")
+}
+
+model AutomationLog {
+  id         String   @id @default(uuid())
+  ruleId     String
+  projectId  String
+  status     String   @db.VarChar(20)
+  detail     String?  @db.VarChar(500)
+  executedAt DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([projectId])
+  @@map("AutomationLog")
 }

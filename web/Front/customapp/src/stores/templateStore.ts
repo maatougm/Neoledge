@@ -6,8 +6,7 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
 import type {
   ProjectTemplateSummary,
   ProjectTemplate,
@@ -22,22 +21,13 @@ export const useTemplateStore = defineStore('templates', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
-  const apiBase = () => useApp().apiUrl + '/admin/projecttemplate'
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ─── Actions ───────────────────────────────────────────────────────────────
 
   const fetchTemplates = async (): Promise<void> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<ProjectTemplateSummary[]>(apiBase(), {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<ProjectTemplateSummary[]>('/admin/projecttemplate')
       templates.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des modèles.'
@@ -51,9 +41,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<ProjectTemplate>(`${apiBase()}/${id}`, {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<ProjectTemplate>(`/admin/projecttemplate/${id}`)
       currentTemplate.value = { ...data }
       return data
     } catch (e: unknown) {
@@ -68,9 +56,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<ProjectTemplateSummary>(apiBase(), payload, {
-        headers: authHeader(),
-      })
+      const { data } = await api.post<ProjectTemplateSummary>('/admin/projecttemplate', payload)
       await fetchTemplates()
       return data
     } catch (e: unknown) {
@@ -85,7 +71,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`${apiBase()}/${id}`, { headers: authHeader() })
+      await api.delete(`/admin/projecttemplate/${id}`)
       templates.value = templates.value.filter((t) => t.id !== id)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression du modèle.'
@@ -98,11 +84,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/${templateId}/apply/${projectId}`,
-        {},
-        { headers: authHeader() },
-      )
+      await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'application du modèle."
       throw e
@@ -118,10 +100,9 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<ProjectTemplateSummary>(
-        `${apiBase()}/from-project/${projectId}`,
+      const { data } = await api.post<ProjectTemplateSummary>(
+        `/admin/projecttemplate/from-project/${projectId}`,
         payload,
-        { headers: authHeader() },
       )
       await fetchTemplates()
       return data

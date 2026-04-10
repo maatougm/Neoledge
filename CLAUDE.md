@@ -175,6 +175,95 @@ All controllers use `[Authorize]` and live in `Integration.Elise.Api.Template/Co
 3. Register in `Integration.Elise.Services/DI/ServiceModule.cs`
 4. Inject via constructor in any controller
 
+### New Backend Modules (NestJS)
+
+> **Note:** The project has been modernized with a NestJS backend (`web/back-nest/src/`). The legacy ASP.NET Core modules remain but new features are built on NestJS.
+
+#### `collaboration/` — Real-time Collaboration (WebSocket)
+
+Located in `web/back-nest/src/collaboration/`
+
+- **Gateway:** `/collaboration` namespace with JWT auth (same pattern as NotificationsGateway)
+- **Events handled:**
+  - `join-project` — user joins real-time session for a project
+  - `leave-project` — user leaves session
+  - `field-update` — collaborative field value change
+  - `field-focus` — user focusing on a field
+  - `field-blur` — user leaving a field
+- **Service:** `saveField(projectId, projectFieldId, value, userId)` — upserts `ProjectFieldValue` row
+- **Presence:** In-process Map tracking active users per project (single-instance only; not distributed)
+
+#### `ai/` — AI Meeting Assistant
+
+Located in `web/back-nest/src/ai/`
+
+- **Controller:** Inherited by `MeetingsController` (GET `/meetings/:id/ai-analysis`)
+- **Service methods:**
+  - `analyzeTranscript(transcriptId)` — sets processing status → calls AI provider → persists `actionItems` + `decisions` → sets completed/failed status
+- **Providers:** Pluggable architecture
+  - `OpenAiProvider` — uses `gpt-4o-mini` model
+  - `GeminiProvider` — uses `gemini-1.5-flash` model
+  - Factory pattern reads `AI_PROVIDER` env var (default: `openai`)
+  - Both providers have `AbortSignal.timeout(60_000)` on fetch calls
+- **Required env vars:**
+  ```
+  AI_ENABLED=true
+  AI_PROVIDER=openai|gemini
+  OPENAI_API_KEY=sk-...
+  GEMINI_API_KEY=...
+  ```
+
+#### `analytics/` — Advanced Analytics
+
+Located in `web/back-nest/src/analytics/`
+
+- **Routes:** All admin-only (`JwtAuthGuard` + role check)
+  - `GET /api/analytics/phase-velocity` — phase completion rates
+  - `GET /api/analytics/bottleneck` — resource/process bottleneck heatmap
+  - `GET /api/analytics/deadline-risk` — projects at risk of missing deadlines
+  - `GET /api/analytics/team-workload` — workload distribution by team member
+- **Cache:** `AnalyticsCacheService` with 15-minute TTL, backed by `AnalyticsCache` table
+- **Methods:**
+  - `getPhaseVelocity(dateRange)` — returns phases, completion %, trend
+  - `getBottleneckHeatmap()` — returns bottleneck zones with severity
+  - `getDeadlineRisk()` — returns projects + risk score + days until deadline
+  - `getTeamWorkload()` — returns team members + assigned task count + utilization %
+
+#### `automation/` — Workflow Automation Engine
+
+Located in `web/back-nest/src/automation/`
+
+- **Routes:** All under `/pm/projects/:id/automation/`; auth: `JwtAuthGuard` + ownership check (Admin or project manager)
+  - `GET /pm/projects/:id/automation/rules` — list all rules for project
+  - `POST /pm/projects/:id/automation/rules` — create new rule
+  - `PATCH /pm/projects/:id/automation/rules/:ruleId` — update rule
+  - `DELETE /pm/projects/:id/automation/rules/:ruleId` — delete rule
+  - `PATCH /pm/projects/:id/automation/rules/:ruleId/toggle` — enable/disable rule
+  - `GET /pm/projects/:id/automation/logs` — view execution history
+- **Core method:** `executeRulesForEvent(projectId, event, context)` — triggered by `ProjectsService` after status changes and validation submissions
+- **Supported trigger events:**
+  - `status_changed` — project status transition
+  - `validation_submitted` — field validation completed
+  - `field_updated` — field value changed
+  - `deadline_approaching` — project deadline within threshold
+- **Supported actions:**
+  - `send_notification` — creates `Notification` row (triggers websocket event to client)
+  - `update_field` — upserts `ProjectFieldValue` row
+
+#### `portal/` — Client Portal (Public Access)
+
+Located in `web/back-nest/src/portal/`
+
+- **Admin routes (JWT protected):**
+  - `POST /admin/projects/:projectId/portal-tokens` — generate new public access token
+  - `GET /admin/projects/:projectId/portal-tokens` — list active tokens
+  - `DELETE /admin/portal-tokens/:id` — revoke token
+- **Public routes (no auth):**
+  - `GET /portal/:token` — fetch project + field values (token validity checked)
+  - `POST /portal/:token/signoff` — client submits approval/sign-off
+- **Token scheme:** `crypto.randomBytes(32).toString('hex')` (64 hex chars); expiry checked on every request
+- **Sign-off model:** `PortalSignoff` — `clientName`, `clientEmail`, `comment`, `isApproved`, `ipAddress`, `signedAt`
+
 **Logs** are written to `C:\ProgramData\Archimed\logs\` (two files: app log and SOAP log).
 
 ---
@@ -279,6 +368,212 @@ base: '/Sample/Front/'                 // Must match Elise CustomAction URL
 Aliases: `@` → `src/`, `~@neoledge` → `node_modules/@neoledge`
 
 Build output: `assets/[name].js`, `assets/[name].js`, `assets/[name].[ext]` (no content hashes — required by Elise deployment).
+
+### New Frontend Features
+
+#### New Composables
+
+**`src/composables/useCollaborationSocket.ts`** — Real-time field collaboration via WebSocket
+
+- Singleton Socket.IO client for `/collaboration` namespace
+- **Methods:**
+  - `connect()` — establish connection with JWT auth
+  - `disconnect()` — close socket
+  - `joinProject(projectId)` — listen for project-specific updates
+  - `leaveProject(projectId)` — stop listening
+  - `sendFieldUpdate(projectId, fieldId, value)` — broadcast field change
+  - `sendFieldFocus(projectId, fieldId)` — indicate field focus
+  - `sendFieldBlur(projectId, fieldId)` — indicate field blur
+- **Reactive state:**
+  - `presenceList` (Ref<Array>) — currently active users in project, with initials + color
+  - `remoteFieldChange` (reactive object) — listens for incoming field updates from other users
+
+#### New Components
+
+**`src/components/common/PresenceAvatars.vue`** — Presence indicator
+
+- Props: `users` (array of active user objects)
+- Displays colored avatar circles with user initials
+- Shows up to 5 avatars; overflow badge displays remaining count
+
+**`src/components/pm/MeetingAiPanel.vue`** — AI Meeting Assistant UI
+
+- Props: `projectId`, `meetingId`
+- Three tabs:
+  1. **Compte-rendu** — markdown-rendered AI summary
+  2. **Actions** — table of generated action items with assignee, due date, status
+  3. **Décisions & Risques** — list of key decisions and identified risks
+- Polling: every 5 seconds while processing; shows loading spinner and progress indicator
+- Integrates with `pmStore` AI actions
+
+**`src/components/pm/AutomationSection.vue`** — Workflow Automation Rule Builder
+
+- Rule creation dialog with trigger selector + action selector
+- Rules list with toggle (enable/disable) and delete buttons
+- Execution logs panel showing recent rule triggers with status + timestamp
+- Integrates with `pmStore` automation CRUD actions
+
+**`src/components/admin/PortalTokenManager.vue`** — Public Portal Token Management
+
+- Generate new token button (opens dialog confirming token before display)
+- Tokens table: token (masked), created date, expiry, access count
+- Copy-to-clipboard button for each token
+- Revoke button with confirmation
+- Shows portal URL template: `https://app.example.com/portal/{token}`
+
+#### New Views
+
+**`src/views/ClientPortalView.vue`** — Public Client Sign-Off Portal
+
+- Route: `/portal/:token` (no auth required)
+- Fetches project + field values via public token endpoint
+- **Sections:**
+  1. Project phase stepper (visual progress through deployment phases)
+  2. Read-only field values display
+  3. Sign-off form with client name, email, optional comment
+- Submit sign-off button calls backend `/portal/:token/signoff` endpoint
+- Success message + redirect to thank-you view on completion
+
+#### New Store
+
+**`src/stores/analyticsStore.ts`** — Analytics Dashboard State
+
+- **State:**
+  - `phaseVelocity` — phase completion metrics
+  - `bottleneck` — bottleneck heatmap data
+  - `deadlineRisk` — at-risk projects
+  - `teamWorkload` — team member utilization
+  - `loading`, `error` — loading/error states
+- **Actions:**
+  - `fetchAll()` — runs all 4 analytics endpoints in parallel via `Promise.all()`
+  - `fetchPhaseVelocity()`
+  - `fetchBottleneck()`
+  - `fetchDeadlineRisk()`
+  - `fetchTeamWorkload()`
+- **Used by:** Admin dashboard analytics view
+
+#### Modified Stores
+
+**`src/stores/pmStore.ts`** — Project Manager Store Extensions
+
+- **New AI state:**
+  - `aiProcessing` — boolean flag
+  - `aiResults` — meeting summary, action items, decisions
+  - `aiPollingInterval` — NodeJS interval handle
+- **New AI actions:**
+  - `triggerAiAnalysis(meetingId)` — POST to trigger analysis
+  - `fetchAiResults(meetingId)` — poll for results until complete
+  - `stopAiPolling()` — clear interval
+  - `resumeAiPolling()` — restart polling
+- **New automation actions:**
+  - `fetchAutomationRules(projectId)` — GET rules list
+  - `createAutomationRule(projectId, ruleDto)` — POST rule
+  - `updateAutomationRule(projectId, ruleId, updates)` — PATCH rule
+  - `deleteAutomationRule(projectId, ruleId)` — DELETE rule
+  - `toggleAutomationRule(projectId, ruleId)` — PATCH toggle
+  - `fetchAutomationLogs(projectId)` — GET execution logs
+- Maintains immutability in all state updates
+
+#### Modified Prisma Schema
+
+**New/updated models** (`web/back-nest/prisma/schema.prisma`):
+
+```prisma
+model ProjectFieldValue {
+  // ... existing fields
+  updatedAt DateTime   @updatedAt
+  updatedBy String?    // User ID who last modified
+}
+
+model AutomationRule {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  trigger   String    // status_changed | validation_submitted | field_updated | deadline_approaching
+  action    String    // send_notification | update_field
+  config    Json      // Action parameters (fieldId, updateValue, notificationTemplate, etc.)
+  isEnabled Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model AutomationLog {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ruleId    String
+  event     String   // trigger event name
+  status    String   // success | failed
+  error     String?
+  context   Json?    // Debug context
+  createdAt DateTime @default(now())
+}
+
+model MeetingActionItem {
+  id          String   @id @default(cuid())
+  transcriptId String
+  transcript  MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  title       String
+  assignee    String?
+  dueDate     DateTime?
+  status      String   @default("open") // open | in_progress | completed
+  createdAt   DateTime @default(now())
+}
+
+model MeetingDecision {
+  id          String   @id @default(cuid())
+  transcriptId String
+  transcript  MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  description String
+  impact      String?
+  createdAt   DateTime @default(now())
+}
+
+model PortalToken {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  accessCount Int    @default(0)
+  lastAccessedAt DateTime?
+  createdAt DateTime @default(now())
+  createdBy String   // User ID
+  signoffs  PortalSignoff[]
+}
+
+model PortalSignoff {
+  id        String   @id @default(cuid())
+  tokenId   String
+  token     PortalToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  clientName String
+  clientEmail String
+  comment   String?
+  isApproved Boolean
+  ipAddress String?
+  signedAt  DateTime @default(now())
+}
+
+model AnalyticsCache {
+  id        String   @id @default(cuid())
+  metric    String   // phase_velocity | bottleneck | deadline_risk | team_workload
+  data      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model MeetingTranscript {
+  // ... existing fields
+  aiSummary    String?
+  aiStatus     String? // processing | completed | failed
+  aiProcessedAt DateTime?
+  aiModel      String? // gpt-4o-mini | gemini-1.5-flash
+  aiError      String?
+  actionItems  MeetingActionItem[]
+  decisions    MeetingDecision[]
+}
+```
 
 ---
 

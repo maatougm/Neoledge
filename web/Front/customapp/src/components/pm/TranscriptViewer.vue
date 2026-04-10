@@ -89,6 +89,9 @@
         Aucun segment disponible.
       </div>
     </div>
+
+    <!-- AI Analysis Panel -->
+    <MeetingAiPanel :project-id="projectId" :meeting-id="transcript.id" />
   </div>
 </template>
 
@@ -98,6 +101,7 @@ import { NeoTag, NeoButton, NeoInputText } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import type { MeetingTranscriptDetail } from '@/types/pm.types'
+import MeetingAiPanel from './MeetingAiPanel.vue'
 
 const props = defineProps<{ transcript: MeetingTranscriptDetail; projectId: string }>()
 const emit = defineEmits<{ renamed: [] }>()

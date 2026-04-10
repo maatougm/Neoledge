@@ -1,73 +1,96 @@
+<!--
+  @file     UnauthorizedView.vue
+  @module   NeoLeadge — Deployment Manager
+  @desc     403 Forbidden — centered full-page redesign
+-->
 <template>
-  <div class="unauth-page">
-    <Unauthorized class="unauth-illustration" />
-    <p class="unauth-message">
-      Vous n'êtes pas autorisé à accéder à cette page. Veuillez recommencer l'action depuis le début.
-    </p>
+  <div class="unauthorized-page">
+    <div class="unauthorized-card" role="main">
+      <div class="unauthorized-code" aria-hidden="true">403</div>
+
+      <div class="unauthorized-body">
+        <h1 class="unauthorized-title">Accès refusé</h1>
+        <p class="unauthorized-description">
+          Vous n'avez pas les droits nécessaires pour accéder à cette page.
+        </p>
+
+        <NeoButton
+          label="Retourner à l'accueil"
+          icon="pi pi-home"
+          class="unauthorized-btn"
+          @click="router.push('/')"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
-const Unauthorized = defineAsyncComponent(() => import('@/assets/svg/unauthorized.svg'))
+import { useRouter } from 'vue-router'
+import { NeoButton } from '@neolibrary/components'
+
+const router = useRouter()
 </script>
 
-<style>
-.unauth-page {
+<style scoped>
+.unauthorized-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nl-bg);
+  font-family: var(--nl-font);
+  padding: 2rem;
+}
+
+.unauthorized-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100vh;
   gap: 1.5rem;
-}
-
-.unauth-illustration {
-  height: 60vh;
-  max-height: 480px;
-}
-
-.unauth-message {
-  max-width: 70vw;
   text-align: center;
+  animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.unauthorized-code {
+  font-size: 10rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--nl-text-3);
+  opacity: 0.18;
+  letter-spacing: -6px;
+  user-select: none;
+}
+
+.unauthorized-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.unauthorized-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--nl-text-1);
+  letter-spacing: -0.4px;
+}
+
+.unauthorized-description {
+  margin: 0;
   font-size: 1rem;
-  color: var(--nl-text-2);
+  color: var(--nl-text-3);
+  line-height: 1.6;
+  max-width: 400px;
 }
 
-svg#freepik_stories-security-on:not(.animated) .animable { opacity: 0; }
-svg#freepik_stories-security-on.animated #freepik--Device--inject-2 {
-  animation: 1s 1 forwards cubic-bezier(0.36, -0.01, 0.5, 1.38) zoomIn;
-}
-svg#freepik_stories-security-on.animated #freepik--character-2--inject-2 {
-  animation: 1s 1 forwards cubic-bezier(0.36, -0.01, 0.5, 1.38) lightSpeedLeft,
-             1.5s Infinite linear wind;
-  animation-delay: 0s, 1s;
-}
-svg#freepik_stories-security-on.animated #freepik--character-1--inject-2 {
-  animation: 1s 1 forwards cubic-bezier(0.36, -0.01, 0.5, 1.38) lightSpeedRight,
-             1.5s Infinite linear wind;
-  animation-delay: 0s, 1s;
-}
-
-@keyframes zoomIn {
-  0%   { opacity: 0; transform: scale(0.5); }
-  100% { opacity: 1; transform: scale(1); }
-}
-@keyframes lightSpeedLeft {
-  from { transform: translate3d(-50%, 0, 0) skewX(20deg); opacity: 0; }
-  60%  { transform: skewX(-10deg); opacity: 1; }
-  80%  { transform: skewX(2deg); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-@keyframes lightSpeedRight {
-  from { transform: translate3d(50%, 0, 0) skewX(-20deg); opacity: 0; }
-  60%  { transform: skewX(10deg); opacity: 1; }
-  80%  { transform: skewX(-2deg); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
-}
-@keyframes wind {
-  0%   { transform: rotate(0deg); }
-  25%  { transform: rotate(1deg); }
-  75%  { transform: rotate(-1deg); }
+.unauthorized-btn {
+  margin-top: 0.5rem;
 }
 </style>

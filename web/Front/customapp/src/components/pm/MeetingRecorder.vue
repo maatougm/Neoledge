@@ -37,9 +37,16 @@
 
       <NeoInputText
         v-model="meetingTitle"
-        label="Titre"
-        placeholder="Titre de la réunion…"
+        label="Titre de la réunion"
+        placeholder="Ex : Réunion de lancement projet…"
         class="title-input"
+      />
+
+      <NeoMessage
+        v-if="!meetingTitle.trim()"
+        severity="info"
+        text="Entrez un titre pour activer la transcription."
+        class="title-hint"
       />
 
       <div class="preview-actions">
@@ -47,7 +54,6 @@
           label="Transcrire"
           icon="pi pi-microphone"
           :loading="uploading"
-          :disabled="!meetingTitle.trim()"
           @click="submitRecording"
         />
         <NeoButton
@@ -165,6 +171,10 @@ function switchSpeaker(speaker: string) {
 
 async function submitRecording() {
   if (!recordedBlob.value) return
+  if (!meetingTitle.value.trim()) {
+    uploadError.value = 'Veuillez entrer un titre avant de transcrire.'
+    return
+  }
   uploading.value = true
   uploadError.value = ''
 

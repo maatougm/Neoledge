@@ -1,29 +1,12 @@
 <template>
-  <div class="app-root">
-    <ErrorBoundary>
-      <Loader v-if="app.loading" />
-      <div v-show="!app.loading">
-        <router-view />
-      </div>
-    </ErrorBoundary>
-    <NeoToast />
-  </div>
+  <router-view />
 </template>
 
 <script setup lang="ts">
-import { useApp } from './stores/useApp'
-import Loader from '@/components/Loader.vue'
-import ErrorBoundary from '@/components/ErrorBoundary.vue'
-import { NeoToast } from '@neolibrary/components'
-
-const app = useApp()
+// Global error boundary and toast are handled per-layout (AppShell injects NeoToast).
+// Dark mode class sync is handled by useDarkMode singleton (applied at module load in main.ts).
 </script>
 
 <style>
-.app-root {
-  min-height: 100vh;
-  background-color: var(--nl-bg);
-  color: var(--nl-text-1);
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
+/* All global styles live in assets/base.css and assets/main.css */
 </style>

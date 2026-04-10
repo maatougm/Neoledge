@@ -87,6 +87,10 @@
         v-else-if="activeTab === 'comments'"
         :project-id="project.id"
       />
+      <AutomationSection
+        v-else-if="activeTab === 'automation'"
+        :project-id="project.id"
+      />
     </div>
   </div>
 </template>
@@ -103,6 +107,7 @@ import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
 import MeetingSection        from '@/components/pm/MeetingSection.vue'
 import CommentsSection       from '@/components/pm/CommentsSection.vue'
 import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
+import AutomationSection     from '@/components/pm/AutomationSection.vue'
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
@@ -114,7 +119,7 @@ const emit = defineEmits<{ close: [] }>()
 const store = usePmStore()
 const commentStore = useCommentStore()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments'
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation'
 const activeTab = ref<TabId>('questionnaire')
 
 const historyLoaded = ref(false)
@@ -133,6 +138,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'activity',      label: 'Activité',               icon: 'pi-history' },
   { id: 'meetings',      label: 'Réunions',           icon: 'pi-microphone' },
   { id: 'comments',      label: 'Commentaires',       icon: 'pi-comments' },
+  { id: 'automation',   label: 'Automatisations',    icon: 'pi-bolt' },
 ]
 
 const statusSeverity = (s: ProjectStatus) =>

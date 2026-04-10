@@ -256,7 +256,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Dialog from 'primevue/dialog'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
@@ -266,14 +265,13 @@ import SavedFiltersPanel from '@/components/filters/SavedFiltersPanel.vue'
 import FilterBuilder from '@/components/filters/FilterBuilder.vue'
 import { useProjectStore } from '@/stores/projectStore'
 import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
 import type { FilterCriteria, SavedFilter } from '@/types/filter.types'
 
 const store        = useProjectStore()
 const filtersStore = useSavedFiltersStore()
-const app          = useApp()
 const toast        = useNeoToast()
 const confirm      = useNeoConfirm()
 
@@ -432,10 +430,9 @@ const confirmDuplicate = async () => {
   duplicateLoading.value = true
   duplicateError.value   = ''
   try {
-    await axios.post(
-      `${app.apiUrl}/admin/project/${duplicateSrcId.value}/duplicate`,
+    await api.post(
+      `/admin/project/${duplicateSrcId.value}/duplicate`,
       { name: duplicateName.value.trim() },
-      { headers: app.authHeader() },
     )
     toast.add({ severity: 'success', detail: `Projet dupliqué : « ${duplicateName.value.trim()} ».`, life: 3000 })
     closeDuplicate()
@@ -502,11 +499,7 @@ const handleBulkArchive = () => {
     rejectLabel: 'Annuler',
     accept: async () => {
       try {
-        await axios.post(
-          `${app.apiUrl}/admin/project/bulk-archive`,
-          { projectIds: [...selectedIds.value] },
-          { headers: app.authHeader() },
-        )
+        await api.post('/admin/project/bulk-archive', { projectIds: [...selectedIds.value] })
         toast.add({ severity: 'success', detail: `${selectedIds.value.size} projet(s) archivé(s).`, life: 3000 })
         selectedIds.value = new Set()
         await store.fetchAll()

@@ -122,16 +122,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue'
-import axios from 'axios'
 import { NeoInputText, NeoButton, NeoMessage } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 
 const emit = defineEmits<{
   (e: 'enabled'): void
   (e: 'cancel'): void
 }>()
-
-const app = useApp()
 
 const step          = ref<1 | 2>(1)
 const qrCode        = ref<string>('')
@@ -145,11 +142,7 @@ const confirmInputRef = ref<HTMLInputElement | null>(null)
 
 onMounted(async () => {
   try {
-    const res = await axios.post(
-      app.apiUrl + '/auth/2fa/setup',
-      {},
-      { headers: app.authHeader() },
-    )
+    const res = await api.post('/auth/2fa/setup', {})
     qrCode.value = res.data.qrCode
     secret.value = res.data.secret
   } catch {
@@ -170,11 +163,7 @@ const handleEnable = async () => {
   confirmError.value = null
   loading.value      = true
   try {
-    await axios.post(
-      app.apiUrl + '/auth/2fa/enable',
-      { code: confirmCode.value },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/2fa/enable', { code: confirmCode.value })
     emit('enabled')
   } catch {
     confirmError.value = 'Code invalide. Réessayez avec le code actuel de votre application.'

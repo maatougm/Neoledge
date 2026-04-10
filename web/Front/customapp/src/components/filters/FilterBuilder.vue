@@ -131,8 +131,8 @@ import {
 } from '@/types/filter.types'
 import type { FilterCriteria, Priority } from '@/types/filter.types'
 
-type NeoTagSeverity = 'success' | 'info' | 'warn' | 'warning' | 'danger' | 'secondary' | 'contrast'
-const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'warning', 'danger', 'secondary', 'contrast'])
+type NeoTagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'primary'
+const VALID_SEVERITIES = new Set<string>(['success', 'info', 'warn', 'danger', 'secondary', 'contrast', 'primary'])
 function toTagSeverity(val: string | undefined): NeoTagSeverity {
   return (val !== undefined && VALID_SEVERITIES.has(val) ? val : 'secondary') as NeoTagSeverity
 }

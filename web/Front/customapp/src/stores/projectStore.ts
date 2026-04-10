@@ -1,15 +1,10 @@
 /**
- * @file     projectStore.ts
- * @module   NeoLeadge — Deployment Manager
- * @author   [dev]
- * @date     2026-03-26
- * @desc     Pinia store for project management — immutable state updates
+ * @file src/stores/projectStore.ts — Pinia store for project management — immutable state updates
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -61,22 +56,16 @@ export const useProjectStore = defineStore('projects', () => {
     projects.value.filter((p) => p.status !== 'Draft' && p.status !== 'Completed'),
   )
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  const apiBase = () => useApp().apiUrl + '/admin/Project'
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
   const fetchAll = async () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<ProjectSummary[]>(apiBase(), { headers: authHeader() })
-      projects.value = [...data]
-      totalProjects.value = data.length
+      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>('/admin/Project')
+      const items = Array.isArray(data) ? data : (data.items ?? [])
+      projects.value = [...items]
+      totalProjects.value = Array.isArray(data) ? data.length : (data.total ?? items.length)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
     } finally {
@@ -100,10 +89,13 @@ export const useProjectStore = defineStore('projects', () => {
       if (params.status) queryParams.set('status', params.status)
       if (params.skip !== undefined) queryParams.set('skip', String(params.skip))
       if (params.take !== undefined) queryParams.set('take', String(params.take))
-      const url = queryParams.toString() ? `${apiBase()}?${queryParams.toString()}` : apiBase()
-      const { data } = await axios.get<ProjectSummary[]>(url, { headers: authHeader() })
-      projects.value = [...data]
-      totalProjects.value = data.length
+      const url = queryParams.toString()
+        ? `/admin/Project?${queryParams.toString()}`
+        : '/admin/Project'
+      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>(url)
+      const items = Array.isArray(data) ? data : (data.items ?? [])
+      projects.value = [...items]
+      totalProjects.value = Array.isArray(data) ? data.length : (data.total ?? items.length)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la recherche des projets.'
     } finally {
@@ -115,9 +107,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<ProjectDetail>(`${apiBase()}/${id}`, {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<ProjectDetail>(`/admin/Project/${id}`)
       currentProject.value = { ...data }
       return data
     } catch (e: unknown) {
@@ -132,9 +122,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<ProjectDetail>(apiBase(), payload, {
-        headers: authHeader(),
-      })
+      const { data } = await api.post<ProjectDetail>('/admin/Project', payload)
       currentProject.value = { ...data }
       await fetchAll()
       return data
@@ -146,13 +134,14 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
-  const updateProject = async (id: string, payload: UpdateProjectPayload): Promise<ProjectDetail | null> => {
+  const updateProject = async (
+    id: string,
+    payload: UpdateProjectPayload,
+  ): Promise<ProjectDetail | null> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.put<ProjectDetail>(`${apiBase()}/${id}`, payload, {
-        headers: authHeader(),
-      })
+      const { data } = await api.put<ProjectDetail>(`/admin/Project/${id}`, payload)
       currentProject.value = { ...data }
       projects.value = projects.value.map((p) =>
         p.id === id
@@ -172,7 +161,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`${apiBase()}/${id}`, { headers: authHeader() })
+      await api.delete(`/admin/Project/${id}`)
       projects.value = projects.value.filter((p) => p.id !== id)
       if (currentProject.value?.id === id) currentProject.value = null
     } catch (e: unknown) {
@@ -186,12 +175,11 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(`${apiBase()}/${projectId}/assign-manager`, payload, {
-        headers: authHeader(),
-      })
+      await api.post(`/admin/Project/${projectId}/assign-manager`, payload)
       await fetchAll()
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : "Erreur lors de l'assignation du chef de projet."
+      error.value =
+        e instanceof Error ? e.message : "Erreur lors de l'assignation du chef de projet."
     } finally {
       loading.value = false
     }
@@ -201,11 +189,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/${projectId}/status`,
-        { status },
-        { headers: authHeader() },
-      )
+      await api.post(`/admin/Project/${projectId}/status`, { status })
       projects.value = projects.value.map((p) => (p.id === projectId ? { ...p, status } : p))
       if (currentProject.value?.id === projectId) {
         currentProject.value = { ...currentProject.value, status }
@@ -221,7 +205,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.patch(`${apiBase()}/${projectId}/archive`, null, { headers: authHeader() })
+      await api.patch(`/admin/Project/${projectId}/archive`, null)
       projects.value = projects.value.map((p) =>
         p.id === projectId ? { ...p, status: 'Archived' as ProjectStatus } : p,
       )
@@ -232,15 +216,14 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
-  const addField = async (projectId: string, payload: AddFieldPayload): Promise<ProjectField | null> => {
+  const addField = async (
+    projectId: string,
+    payload: AddFieldPayload,
+  ): Promise<ProjectField | null> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<ProjectField>(
-        `${apiBase()}/${projectId}/fields`,
-        payload,
-        { headers: authHeader() },
-      )
+      const { data } = await api.post<ProjectField>(`/admin/Project/${projectId}/fields`, payload)
       if (currentProject.value?.id === projectId) {
         currentProject.value = {
           ...currentProject.value,
@@ -260,7 +243,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`${apiBase()}/${projectId}/fields/${fieldId}`, { headers: authHeader() })
+      await api.delete(`/admin/Project/${projectId}/fields/${fieldId}`)
       if (currentProject.value?.id === projectId) {
         currentProject.value = {
           ...currentProject.value,
@@ -278,16 +261,13 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.patch(
-        `${apiBase()}/${projectId}/toggle-manager-fields`,
-        { allow },
-        { headers: authHeader() },
-      )
+      await api.patch(`/admin/Project/${projectId}/toggle-manager-fields`, { allow })
       if (currentProject.value?.id === projectId) {
         currentProject.value = { ...currentProject.value, allowManagerCustomFields: allow }
       }
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors de la mise à jour des permissions.'
+      error.value =
+        e instanceof Error ? e.message : 'Erreur lors de la mise à jour des permissions.'
     } finally {
       loading.value = false
     }
@@ -317,11 +297,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/bulk-archive`,
-        { ids },
-        { headers: authHeader() },
-      )
+      await api.post('/admin/Project/bulk-archive', { ids })
       await fetchAll()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'archivage en masse."
@@ -334,14 +310,11 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/bulk-status`,
-        { ids, status },
-        { headers: authHeader() },
-      )
+      await api.post('/admin/Project/bulk-status', { ids, status })
       await fetchAll()
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du changement de statut en masse.'
+      error.value =
+        e instanceof Error ? e.message : 'Erreur lors du changement de statut en masse.'
     } finally {
       loading.value = false
     }
@@ -351,11 +324,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(
-        `${apiBase()}/bulk-assign-manager`,
-        { ids, managerId },
-        { headers: authHeader() },
-      )
+      await api.post('/admin/Project/bulk-assign-manager', { ids, managerId })
       await fetchAll()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'assignation en masse."
@@ -370,10 +339,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<DeletedProjectSummary[]>(
-        `${apiBase()}/deleted`,
-        { headers: authHeader() },
-      )
+      const { data } = await api.get<DeletedProjectSummary[]>('/admin/Project/deleted')
       deletedProjects.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la corbeille.'
@@ -386,7 +352,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(`${apiBase()}/${id}/restore`, null, { headers: authHeader() })
+      await api.post(`/admin/Project/${id}/restore`, null)
       deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
       await fetchAll()
     } catch (e: unknown) {
@@ -400,7 +366,7 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.delete(`${apiBase()}/${id}/hard-delete`, { headers: authHeader() })
+      await api.delete(`/admin/Project/${id}/hard-delete`)
       deletedProjects.value = deletedProjects.value.filter((p) => p.id !== id)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression définitive.'
@@ -410,9 +376,12 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   // ─── Activity ────────────────────────────────────────────────────────────────
+
   const fetchActivity = async (projectId: string) => {
     try {
-      const { data } = await axios.get<ProjectActivity[]>(`${apiBase()}/${projectId}/activity`, { headers: authHeader() })
+      const { data } = await api.get<ProjectActivity[]>(
+        `/admin/Project/${projectId}/activity`,
+      )
       activities.value = [...data]
     } catch {
       activities.value = []
@@ -420,11 +389,10 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   // ─── Templates ───────────────────────────────────────────────────────────────
-  const apiTemplates = () => useApp().apiUrl + '/admin/projecttemplate'
 
   const fetchTemplates = async () => {
     try {
-      const { data } = await axios.get<ProjectTemplateSummary[]>(apiTemplates(), { headers: authHeader() })
+      const { data } = await api.get<ProjectTemplateSummary[]>('/admin/projecttemplate')
       templates.value = [...data]
     } catch {
       templates.value = []
@@ -432,17 +400,17 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   const createTemplate = async (payload: CreateTemplatePayload) => {
-    await axios.post(apiTemplates(), payload, { headers: authHeader() })
+    await api.post('/admin/projecttemplate', payload)
     await fetchTemplates()
   }
 
   const deleteTemplate = async (id: string) => {
-    await axios.delete(`${apiTemplates()}/${id}`, { headers: authHeader() })
+    await api.delete(`/admin/projecttemplate/${id}`)
     templates.value = templates.value.filter((t) => t.id !== id)
   }
 
   const applyTemplate = async (templateId: string, projectId: string) => {
-    await axios.post(`${apiTemplates()}/${templateId}/apply/${projectId}`, {}, { headers: authHeader() })
+    await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
   }
 
   return {

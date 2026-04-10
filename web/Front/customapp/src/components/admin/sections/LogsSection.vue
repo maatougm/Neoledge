@@ -37,30 +37,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
-import axios from 'axios'
 import { NeoButton } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 
-const app        = useApp()
 const lines      = ref<string[]>([])
 const loading    = ref(false)
 const error      = ref<string | null>(null)
 const logBox     = ref<HTMLElement | null>(null)
 const linesParam = 200
 
-const authHeader = () => {
-  const jwt = app.jwt
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-}
-
 const load = async () => {
   loading.value = true
   error.value   = null
   try {
-    const { data } = await axios.get<string[]>(
-      `${app.apiUrl}/admin/Log?lines=${linesParam}`,
-      { headers: authHeader() },
-    )
+    const { data } = await api.get<string[]>(`/admin/Log?lines=${linesParam}`)
     lines.value = data
     await nextTick()
     if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight

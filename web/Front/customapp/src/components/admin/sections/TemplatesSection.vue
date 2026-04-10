@@ -121,6 +121,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import { useTemplateStore } from '@/stores/templateStore'
 import { useProjectStore } from '@/stores/projectStore'

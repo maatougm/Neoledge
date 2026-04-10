@@ -1,25 +1,14 @@
 /**
- * @file     notificationStore.ts
- * @module   NeoLeadge — Deployment Manager
- * @desc     Pinia store for notifications — immutable state updates, polling
+ * @file src/stores/notificationStore.ts — Pinia store for notifications — immutable state updates, polling
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
+import type { Notification } from '@/types/notification.types'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface Notification {
-  id: string
-  type: string
-  title: string
-  message: string
-  projectId: string | null
-  isRead: boolean
-  createdAt: string
-}
+// Re-export for consumers that import from this module directly
+export type { Notification }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -34,23 +23,17 @@ export const useNotificationStore = defineStore('notifications', () => {
   // ── Getters ────────────────────────────────────────────────────────────────
   const unreadCount = computed(() => notifications.value.filter((n) => !n.isRead).length)
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const apiBase = () => useApp().apiUrl + '/notifications'
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ── Actions ────────────────────────────────────────────────────────────────
 
   const fetchNotifications = async (): Promise<void> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<Notification[]>(apiBase(), { headers: authHeader() })
+      const { data } = await api.get<Notification[]>('/notifications')
       notifications.value = [...data]
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des notifications.'
+      error.value =
+        e instanceof Error ? e.message : 'Erreur lors du chargement des notifications.'
     } finally {
       loading.value = false
     }
@@ -58,9 +41,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   const fetchUnreadCount = async (): Promise<void> => {
     try {
-      const { data } = await axios.get<{ count: number }>(`${apiBase()}/unread-count`, {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<{ count: number }>('/notifications/unread-count')
       // Sync read status: if server count is lower, refresh the full list
       if (data.count !== unreadCount.value) {
         await fetchNotifications()
@@ -72,7 +53,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   const markAsRead = async (id: string): Promise<void> => {
     try {
-      await axios.patch(`${apiBase()}/${id}/read`, null, { headers: authHeader() })
+      await api.patch(`/notifications/${id}/read`, null)
       notifications.value = notifications.value.map((n) =>
         n.id === id ? { ...n, isRead: true } : n,
       )
@@ -83,7 +64,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   const markAllAsRead = async (): Promise<void> => {
     try {
-      await axios.patch(`${apiBase()}/read-all`, null, { headers: authHeader() })
+      await api.patch('/notifications/read-all', null)
       notifications.value = notifications.value.map((n) => ({ ...n, isRead: true }))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la mise à jour.'
@@ -92,7 +73,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   const removeNotification = async (id: string): Promise<void> => {
     try {
-      await axios.delete(`${apiBase()}/${id}`, { headers: authHeader() })
+      await api.delete(`/notifications/${id}`)
       notifications.value = notifications.value.filter((n) => n.id !== id)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression.'

@@ -4,6 +4,7 @@ import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PhaseGateService } from './phase-gate.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AutomationService } from '../automation/automation.service.js';
 
 @Injectable()
 export class ProjectsService {
@@ -12,6 +13,7 @@ export class ProjectsService {
     private readonly notifications: NotificationsService,
     private readonly phaseGate: PhaseGateService,
     private readonly audit: AuditService,
+    private readonly automation: AutomationService,
   ) {}
 
   async findWithFilters(
@@ -281,6 +283,7 @@ export class ProjectsService {
     await this.prisma.project.update({ where: { id: projectId }, data: { status } });
     await this.logActivity(projectId, null, 'status_change', `Statut changé: ${project.status} → ${status}`);
     void this.audit.log('Project', projectId, 'STATUS_CHANGE', undefined, { status: { before: project.status, after: status } });
+    void this.automation.executeRulesForEvent(projectId, 'status_changed', { newStatus: status, oldStatus: project.status });
     return Result.ok();
   }
 
@@ -428,6 +431,11 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
+    const duplicate = await this.prisma.projectValidation.findFirst({
+      where: { projectId, validatedByUserId: userId, phase: project.status },
+    });
+    if (duplicate) return Result.fail('Vous avez déjà soumis une validation pour cette phase.');
+
     const validation = await this.prisma.projectValidation.create({
       data: {
         projectId,
@@ -439,6 +447,11 @@ export class ProjectsService {
         validatedAt: new Date(),
       },
       include: { validatedBy: { select: { firstName: true, lastName: true } } },
+    });
+
+    void this.automation.executeRulesForEvent(projectId, 'validation_submitted', {
+      phase: validation.phase,
+      isApproved: validation.isApproved,
     });
 
     return Result.ok({

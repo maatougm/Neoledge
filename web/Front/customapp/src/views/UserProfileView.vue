@@ -190,19 +190,19 @@
       </div>
     </div>
 
-    <NeoToast />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import {
   NeoButton, NeoInputText, NeoPassword,
-  NeoTag, NeoMessage, NeoToast, useNeoToast,
+  NeoTag, NeoMessage, useNeoToast,
 } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { useConfigStore } from '@/stores/configStore'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 import SecuritySection from '@/components/admin/sections/SecuritySection.vue'
@@ -215,9 +215,10 @@ interface JwtPayload {
   'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'?: string
 }
 
-const router = useRouter()
-const app    = useApp()
-const toast  = useNeoToast()
+const router      = useRouter()
+const authStore   = useAuthStore()
+const configStore = useConfigStore()
+const toast       = useNeoToast()
 
 // ── JWT-decoded identity ───────────────────────────────────────────────────────
 const userId = ref('')
@@ -268,9 +269,9 @@ const infoChanged = computed(() =>
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 onMounted(async () => {
-  if (!app.jwt) return
+  if (!authStore.jwt) return
   try {
-    const payload = JSON.parse(atob(app.jwt.split('.')[1])) as JwtPayload
+    const payload = JSON.parse(atob(authStore.jwt.split('.')[1])) as JwtPayload
     userId.value    = payload.sub ?? ''
     firstName.value = payload.given_name ?? ''
     lastName.value  = payload.family_name ?? ''
@@ -284,7 +285,7 @@ onMounted(async () => {
 
   // Load avatar URL if user has one
   if (userId.value) {
-    avatarUrl.value = `${app.apiUrl}/api/userprofile/avatar/${userId.value}`
+    avatarUrl.value = `${configStore.apiUrl}/api/userprofile/avatar/${userId.value}`
   }
 })
 
@@ -316,13 +317,12 @@ async function onFileSelected(event: Event): Promise<void> {
   try {
     const base64 = await toBase64(file)
     const ext    = `.${file.name.split('.').pop()?.toLowerCase() ?? 'jpg'}`
-    const { data } = await axios.post<string>(
-      `${app.apiUrl}/api/userprofile/avatar`,
+    const { data } = await api.post<string>(
+      '/api/userprofile/avatar',
       { base64Image: base64, fileExtension: ext },
-      { headers: app.authHeader() },
     )
     // Force browser to reload the image by appending a cache-bust
-    avatarUrl.value = `${app.apiUrl}/api/userprofile/avatar/${userId.value}?t=${Date.now()}`
+    avatarUrl.value = `${configStore.apiUrl}/api/userprofile/avatar/${userId.value}?t=${Date.now()}`
     void nextTick() // let Vue re-render before showing the toast
     void data // satisfies TS — path returned from backend, not used directly
     toast.add({ severity: 'success', detail: 'Photo de profil mise à jour.', life: 3000 })
@@ -344,10 +344,7 @@ function toBase64(file: File): Promise<string> {
 
 // ── Back navigation ────────────────────────────────────────────────────────────
 function goBack(): void {
-  const r = app.userRole
-  if (r === 'Admin') router.push({ name: 'admin' })
-  else if (r === 'ProjectManager') router.push({ name: 'pm' })
-  else router.push({ name: 'team' })
+  router.push({ name: 'app-home' })
 }
 
 // ── Save personal info ─────────────────────────────────────────────────────────
@@ -359,10 +356,9 @@ async function saveInfo(): Promise<void> {
   }
   savingInfo.value = true
   try {
-    await axios.put(
-      `${app.apiUrl}/admin/AppUser/${userId.value}`,
+    await api.put(
+      `/admin/AppUser/${userId.value}`,
       { firstName: firstName.value.trim(), lastName: lastName.value.trim() },
-      { headers: app.authHeader() },
     )
     origFirst.value = firstName.value
     origLast.value  = lastName.value
@@ -390,14 +386,10 @@ async function savePassword(): Promise<void> {
 
   savingPw.value = true
   try {
-    await axios.post(
-      `${app.apiUrl}/auth/change-password`,
-      {
-        currentPassword: currentPassword.value,
-        newPassword:     newPassword.value,
-      },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/change-password', {
+      currentPassword: currentPassword.value,
+      newPassword:     newPassword.value,
+    })
     currentPassword.value = ''
     newPassword.value     = ''
     confirmPassword.value = ''
@@ -418,7 +410,7 @@ async function savePassword(): Promise<void> {
 /* ── Page layout ──────────────────────────────────────────────────────────────── */
 .profile-page {
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--nl-bg);
   padding: 2rem;
 }
 
@@ -436,7 +428,7 @@ async function savePassword(): Promise<void> {
   gap: 0.4rem;
   background: none;
   border: 1px solid var(--nl-border);
-  color: #475569;
+  color: var(--nl-text-2);
   font-size: 0.875rem;
   font-weight: 500;
   padding: 0.45rem 0.875rem;
@@ -447,9 +439,9 @@ async function savePassword(): Promise<void> {
 }
 
 .back-btn:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #1e293b;
+  background: color-mix(in srgb, var(--nl-text-1) 5%, transparent);
+  border-color: var(--nl-text-3);
+  color: var(--nl-text-1);
 }
 
 .back-btn:focus-visible {
@@ -461,7 +453,7 @@ async function savePassword(): Promise<void> {
   margin: 0;
   font-size: 1.375rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--nl-text-1);
 }
 
 /* ── Two-column grid ──────────────────────────────────────────────────────────── */
@@ -499,8 +491,8 @@ async function savePassword(): Promise<void> {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--nl-accent), #0891b2);
-  color: #fff;
+  background: linear-gradient(135deg, var(--nl-accent), color-mix(in srgb, var(--nl-accent) 70%, #000));
+  color: var(--nl-color-white, #fff);
   font-size: 1.75rem;
   font-weight: 700;
   display: flex;
@@ -526,7 +518,7 @@ async function savePassword(): Promise<void> {
   height: 26px;
   border-radius: 50%;
   background: var(--nl-accent);
-  color: #fff;
+  color: var(--nl-color-white, #fff);
   border: 2px solid var(--nl-surface);
   display: flex;
   align-items: center;
@@ -536,7 +528,7 @@ async function savePassword(): Promise<void> {
   transition: background 0.15s;
 }
 
-.avatar-change-btn:hover { background: #0891b2; }
+.avatar-change-btn:hover { background: color-mix(in srgb, var(--nl-accent) 80%, #000); }
 .avatar-change-btn:focus-visible { outline: 2px solid var(--nl-accent); outline-offset: 2px; }
 .avatar-change-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -552,7 +544,7 @@ async function savePassword(): Promise<void> {
 .identity-name {
   font-size: 1rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--nl-text-1);
   text-align: center;
   line-height: 1.3;
 }
@@ -564,7 +556,7 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--nl-text-3);
   text-align: center;
   word-break: break-all;
 }
@@ -572,7 +564,7 @@ async function savePassword(): Promise<void> {
 .identity-meta {
   width: 100%;
   padding-top: 0.75rem;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--nl-border);
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -583,7 +575,7 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--nl-text-3);
 }
 
 .meta-row .pi { color: var(--nl-accent); }
@@ -607,8 +599,8 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.65rem;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafafa;
+  border-bottom: 1px solid var(--nl-border);
+  background: color-mix(in srgb, var(--nl-surface) 80%, var(--nl-bg));
 }
 
 .panel-icon {
@@ -620,7 +612,7 @@ async function savePassword(): Promise<void> {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--nl-text-1);
 }
 
 .panel-body {
@@ -655,7 +647,7 @@ async function savePassword(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: #f8fafc;
+  background: color-mix(in srgb, var(--nl-bg) 60%, var(--nl-surface));
   border: 1px solid var(--nl-border);
   border-radius: 6px;
   padding: 0.55rem 0.875rem;
@@ -674,7 +666,7 @@ async function savePassword(): Promise<void> {
 .section-description {
   margin: 0;
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--nl-text-3);
   line-height: 1.5;
 }
 
@@ -686,20 +678,7 @@ async function savePassword(): Promise<void> {
   padding-top: 0.25rem;
 }
 
-/* ── Dark mode ────────────────────────────────────────────────────────────────── */
-:global(.dark) .profile-page { background: #0f172a; }
-:global(.dark) .page-title   { color: #f1f5f9; }
-:global(.dark) .back-btn     { border-color: #334155; color: #94a3b8; background: transparent; }
-:global(.dark) .back-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; border-color: #475569; }
-:global(.dark) .identity-card,
-:global(.dark) .settings-panel { background: #1e293b; border-color: #334155; }
-:global(.dark) .panel-header  { background: #1a2740; border-color: #334155; }
-:global(.dark) .panel-title,
-:global(.dark) .identity-name { color: #f1f5f9; }
-:global(.dark) .field-label   { color: #cbd5e1; }
-:global(.dark) .readonly-field { background: #0f172a; border-color: #334155; color: #94a3b8; }
-:global(.dark) .identity-meta { border-color: #334155; }
-:global(.dark) .section-description { color: #94a3b8; }
+/* ── Dark mode: handled automatically via CSS variables ──────────────────────── */
 
 /* ── Mobile ───────────────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {

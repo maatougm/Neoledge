@@ -5,6 +5,9 @@ Supports: Tunisian Arabic, French, English
 """
 
 import os
+
+# Must be set before any HuggingFace imports to avoid symlink errors on Windows
+os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
 import tempfile
 import logging
 from pathlib import Path

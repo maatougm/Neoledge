@@ -1,148 +1,288 @@
-/**
- * @file     router/index.ts
- * @module   NeoLeadge — Deployment Manager
- * @author   [dev]
- * @date     2026-03-26
- * @desc     Vue Router configuration — auth guard, role-based access, lazy-loaded views
- */
+/** @file src/router/index.ts — Vue Router configuration with nested layout routes and role-based guards */
 
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationNormalized } from 'vue-router'
-import { useApp } from '@/stores/useApp'
+import { useAuthStore } from '@/stores/authStore'
+import { useConfigStore } from '@/stores/configStore'
+import { roleGuard } from './guards'
 import type { UserRole } from '@/types/user.types'
+import axios from 'axios'
+
+// ─── Route meta augmentation ──────────────────────────────────────────────────
 
 declare module 'vue-router' {
   interface RouteMeta {
-    allowedRoles?: UserRole[]
+    requiresAuth?: boolean
+    allowedRoles?: string[]
+    readonly?: boolean
   }
 }
 
-const ALL_AUTHENTICATED_ROLES: UserRole[] = [
-  'Admin',
-  'ProjectManager',
-  'SpecificationTeam',
-  'RealizationTeam',
-  'DeploymentTeam',
-  'Viewer',
-]
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const PUBLIC_ROUTES = ['login', 'unauthorized', 'force-change-password']
+const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password', 'client-portal'])
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    // ── Root redirect ────────────────────────────────────────────────────────
     {
       path: '/',
-      name: 'CustomAction',
-      component: () => import('@/views/CustomActionView.vue'),
-      meta: { allowedRoles: ALL_AUTHENTICATED_ROLES },
+      redirect: '/app',
     },
-    {
-      path: '/admin',
-      name: 'admin',
-      component: () => import('@/views/AdminView.vue'),
-      meta: { allowedRoles: ['Admin'] },
-    },
-    {
-      path: '/pm',
-      name: 'pm',
-      component: () => import('@/views/ProjectManagerView.vue'),
-      meta: { allowedRoles: ['ProjectManager'] },
-    },
-    {
-      path: '/team',
-      name: 'team',
-      component: () => import('@/views/TeamMemberView.vue'),
-      meta: {
-        allowedRoles: ['SpecificationTeam', 'RealizationTeam', 'DeploymentTeam', 'Viewer'],
-      },
-    },
+
+    // ── Public routes ────────────────────────────────────────────────────────
     {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
     },
     {
-      path: '/unauthorized',
-      name: 'unauthorized',
-      component: () => import('@/views/UnauthorizedView.vue'),
-    },
-    {
-      path: '/profile',
-      name: 'profile',
-      component: () => import('@/views/UserProfileView.vue'),
-      meta: { allowedRoles: ALL_AUTHENTICATED_ROLES },
-    },
-    {
       path: '/force-change-password',
       name: 'force-change-password',
       component: () => import('@/views/ForceChangePasswordView.vue'),
     },
+    {
+      path: '/unauthorized',
+      name: 'unauthorized',
+      component: () => import('@/views/UnauthorizedView.vue'),
+    },
+
+    // ── Authenticated shell ───────────────────────────────────────────────────
+    {
+      path: '/app',
+      name: 'app',
+      component: () => import('@/layouts/AppShell.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        // Role-based default redirect
+        {
+          path: '',
+          name: 'app-home',
+          redirect: () => {
+            const auth = useAuthStore()
+            if (auth.userRole === 'Admin') return { name: 'admin-dashboard' }
+            if (auth.userRole === 'ProjectManager') return { name: 'pm-projects' }
+            return { name: 'team-projects' }
+          },
+        },
+        // ── Admin layout ───────────────────────────────────────────────────
+        {
+          path: 'admin',
+          component: () => import('@/layouts/AdminLayout.vue'),
+          meta: { requiresAuth: true, allowedRoles: ['Admin'] as UserRole[] },
+          beforeEnter: roleGuard,
+          children: [
+            {
+              path: '',
+              redirect: { name: 'admin-dashboard' },
+            },
+            {
+              path: 'dashboard',
+              name: 'admin-dashboard',
+              component: () =>
+                import('@/components/admin/sections/DashboardSection.vue'),
+            },
+            {
+              path: 'projects',
+              name: 'admin-projects',
+              component: () =>
+                import('@/components/admin/sections/ProjectManagementSection.vue'),
+            },
+            {
+              path: 'projects/:id',
+              name: 'admin-project-detail',
+              component: () => import('@/components/admin/ProjectDetailPanel.vue'),
+              props: (route) => ({ projectId: route.params.id }),
+            },
+            {
+              path: 'users',
+              name: 'admin-users',
+              component: () =>
+                import('@/components/admin/sections/UserManagementSection.vue'),
+            },
+            {
+              path: 'activity',
+              name: 'admin-activity',
+              component: () =>
+                import('@/components/admin/sections/ActivitySection.vue'),
+            },
+            {
+              path: 'analytics',
+              name: 'admin-analytics',
+              component: () =>
+                import('@/components/admin/sections/AnalyticsSection.vue'),
+            },
+            {
+              path: 'templates',
+              name: 'admin-templates',
+              component: () =>
+                import('@/components/admin/sections/TemplatesSection.vue'),
+            },
+            {
+              path: 'logs',
+              name: 'admin-logs',
+              component: () =>
+                import('@/components/admin/sections/LogsSection.vue'),
+            },
+            {
+              path: 'system',
+              name: 'admin-system',
+              component: () =>
+                import('@/components/admin/sections/SystemStatusSection.vue'),
+            },
+            {
+              path: 'trash',
+              name: 'admin-trash',
+              component: () => import('@/components/admin/TrashSection.vue'),
+            },
+          ],
+        },
+
+        // ── Project Manager layout ─────────────────────────────────────────
+        {
+          path: 'pm',
+          component: () => import('@/layouts/PmLayout.vue'),
+          meta: { requiresAuth: true, allowedRoles: ['ProjectManager'] as UserRole[] },
+          beforeEnter: roleGuard,
+          children: [
+            {
+              path: '',
+              redirect: { name: 'pm-projects' },
+            },
+            {
+              path: 'projects',
+              name: 'pm-projects',
+              component: () => import('@/views/PMProjectsPage.vue'),
+            },
+          ],
+        },
+
+        // ── Team layout ────────────────────────────────────────────────────
+        {
+          path: 'team',
+          component: () => import('@/layouts/TeamLayout.vue'),
+          meta: {
+            requiresAuth: true,
+            allowedRoles: [
+              'SpecificationTeam',
+              'RealizationTeam',
+              'DeploymentTeam',
+              'Viewer',
+            ] as UserRole[],
+          },
+          beforeEnter: roleGuard,
+          children: [
+            {
+              path: '',
+              redirect: { name: 'team-projects' },
+            },
+            {
+              path: 'projects',
+              name: 'team-projects',
+              component: () => import('@/views/TeamMemberView.vue'),
+            },
+            {
+              path: 'projects/:id',
+              name: 'team-project-detail',
+              component: () => import('@/components/pm/PMProjectDetail.vue'),
+              props: true,
+              meta: { readonly: true },
+            },
+            {
+              path: 'validations',
+              name: 'team-validations',
+              component: () => import('@/views/TeamMemberView.vue'),
+            },
+          ],
+        },
+
+        // ── Profile (all authenticated roles) ─────────────────────────────
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/UserProfileView.vue'),
+          meta: { requiresAuth: true },
+        },
+      ],
+    },
+
+    // ── Client Portal (public, no auth) ──────────────────────────────────────
+    {
+      path: '/portal/:token',
+      name: 'client-portal',
+      component: () => import('@/views/ClientPortalView.vue'),
+    },
+
+    // ── Legacy / Elise CustomAction root path ─────────────────────────────────
+    // Kept for backwards compatibility with existing Elise iframe URLs
+    {
+      path: '/custom-action',
+      name: 'CustomAction',
+      component: () => import('@/views/CustomActionView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 
-function isPublicRoute(to: RouteLocationNormalized): boolean {
-  return PUBLIC_ROUTES.includes(to.name as string)
-}
+// ─── Global before-each guard ─────────────────────────────────────────────────
 
-router.beforeEach(async (to) => {
-  const app = useApp()
+router.beforeEach(async (to: RouteLocationNormalized) => {
+  const auth = useAuthStore()
+  const config = useConfigStore()
 
-  if (!isPublicRoute(to)) {
-    app.setLoading(true)
-  }
+  const isPublic = PUBLIC_ROUTE_NAMES.has(to.name as string)
 
-  if (!app.apiUrl) {
-    await app.fetchApiUrl()
-  }
-
-  // --- Obtain JWT if missing (existing auth flows) ---
-  if (!app.jwt && !isPublicRoute(to)) {
-    // If Elise passes a GUID in the query string, use the GUID auth flow
-    const guid = to.query.Guid as string | undefined
-    if (guid) {
-      try {
-        await app.fetchJwt(guid)
-      } catch {
-        app.setLoading(false)
-        return { name: 'unauthorized' }
-      }
-    } else {
-      // No GUID — auto-login with hardcoded dev credentials (replace with real auth later)
-      try {
-        await app.login('admin@neoleadge.com', 'Admin@123')
-        // After auto-login, redirect based on role if not already on the right route
-        const role = app.userRole
-        if (role && to.name !== 'admin' && to.name !== 'pm' && to.name !== 'team') {
-          app.setLoading(false)
-          if (role === 'Admin') return { name: 'admin' }
-          if (role === 'ProjectManager') return { name: 'pm' }
-          return { name: 'team' }
-        }
-      } catch {
-        app.setLoading(false)
-        return { name: 'login' }
-      }
+  // Ensure config is loaded before any auth work
+  if (!config.apiUrl) {
+    try {
+      await config.fetchConfig()
+    } catch {
+      // Config failed — allow public routes through, block protected ones
+      if (!isPublic) return { name: 'unauthorized' }
+      return true
     }
   }
 
-  // --- Force-change-password check ---
-  if (app.jwt && app.mustChangePassword && !isPublicRoute(to)) {
-    app.setLoading(false)
-    return { name: 'force-change-password' }
-  }
-
-  // --- Role-based access check ---
-  const allowedRoles = to.meta.allowedRoles as UserRole[] | undefined
-  if (allowedRoles && allowedRoles.length > 0) {
-    const userRole = app.userRole as UserRole | null
-    if (!userRole || !allowedRoles.includes(userRole)) {
-      app.setLoading(false)
+  // ── Elise GUID flow ────────────────────────────────────────────────────────
+  // Elise passes ?Guid=<token> when loading the CustomAction in an iframe.
+  const guid = to.query.Guid as string | undefined
+  if (guid && !auth.isAuthenticated) {
+    try {
+      const response = await axios.get<{ jwt: string }>(
+        config.apiUrl + '/hook/auth',
+        { params: { guid } },
+      )
+      auth.setJwt(response.data.jwt)
+    } catch {
       return { name: 'unauthorized' }
     }
   }
 
-  app.setLoading(false)
+  // ── Protected route checks ─────────────────────────────────────────────────
+  if (!isPublic && to.meta.requiresAuth) {
+    if (!auth.isAuthenticated) {
+      // Development auto-login with seeded admin credentials
+      try {
+        await auth.login('admin@neoleadge.com', 'Admin@123')
+      } catch {
+        const redirect = to.fullPath !== '/' ? to.fullPath : undefined
+        return { name: 'login', query: redirect ? { redirect } : undefined }
+      }
+    }
+
+    // Force password change
+    if (auth.mustChangePassword && to.name !== 'force-change-password') {
+      return { name: 'force-change-password' }
+    }
+  }
+
+  // Route-level roleGuard is applied via beforeEnter on protected layout routes.
+  // No extra check needed here.
+
+  return true
 })
 
 export default router

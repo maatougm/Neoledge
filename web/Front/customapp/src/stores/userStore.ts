@@ -1,15 +1,10 @@
 /**
- * @file     userStore.ts
- * @module   NeoLeadge — Deployment Manager
- * @author   [dev]
- * @date     2026-03-26
- * @desc     Pinia store for user management — state never mutated in place (immutable updates)
+ * @file src/stores/userStore.ts — Pinia store for user management — immutable state updates
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-import { useApp } from './useApp'
+import api from '@/lib/api'
 import type {
   UserResponse,
   CreateUserPayload,
@@ -29,22 +24,15 @@ export const useUserStore = defineStore('users', () => {
     users.value.filter((u) => u.role === 'ProjectManager' && u.isActive),
   )
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
-  const apiBase = () => useApp().apiUrl + '/admin/AppUser'
-
-  const authHeader = () => {
-    const jwt = useApp().jwt
-    return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-  }
-
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
   const fetchAll = async () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<UserResponse[]>(apiBase(), { headers: authHeader() })
-      users.value = [...data]
+      const { data } = await api.get<{ items: UserResponse[]; total: number } | UserResponse[]>('/admin/appuser')
+      const items = Array.isArray(data) ? data : (data.items ?? [])
+      users.value = [...items]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des utilisateurs.'
     } finally {
@@ -56,9 +44,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.get<UserResponse[]>(`${apiBase()}/by-role/${role}`, {
-        headers: authHeader(),
-      })
+      const { data } = await api.get<UserResponse[]>(`/admin/AppUser/by-role/${role}`)
       return data
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur.'
@@ -72,9 +58,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<UserResponse>(apiBase(), payload, {
-        headers: authHeader(),
-      })
+      const { data } = await api.post<UserResponse>('/admin/AppUser', payload)
       users.value = [...users.value, data]
       return data
     } catch (e: unknown) {
@@ -85,13 +69,14 @@ export const useUserStore = defineStore('users', () => {
     }
   }
 
-  const updateUser = async (id: string, payload: UpdateUserPayload): Promise<UserResponse | null> => {
+  const updateUser = async (
+    id: string,
+    payload: UpdateUserPayload,
+  ): Promise<UserResponse | null> => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.put<UserResponse>(`${apiBase()}/${id}`, payload, {
-        headers: authHeader(),
-      })
+      const { data } = await api.put<UserResponse>(`/admin/AppUser/${id}`, payload)
       users.value = users.value.map((u) => (u.id === id ? { ...data } : u))
       return data
     } catch (e: unknown) {
@@ -106,10 +91,9 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await axios.post<{ temporaryPassword: string }>(
-        `${apiBase()}/${id}/reset-password`,
+      const { data } = await api.post<{ temporaryPassword: string }>(
+        `/admin/AppUser/${id}/reset-password`,
         {},
-        { headers: authHeader() },
       )
       return data.temporaryPassword
     } catch (e: unknown) {
@@ -124,7 +108,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(`${apiBase()}/${id}/deactivate`, {}, { headers: authHeader() })
+      await api.post(`/admin/AppUser/${id}/deactivate`, {})
       users.value = users.value.map((u) => (u.id === id ? { ...u, isActive: false } : u))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la désactivation.'
@@ -137,7 +121,7 @@ export const useUserStore = defineStore('users', () => {
     loading.value = true
     error.value = null
     try {
-      await axios.post(`${apiBase()}/${id}/reactivate`, {}, { headers: authHeader() })
+      await api.post(`/admin/AppUser/${id}/reactivate`, {})
       users.value = users.value.map((u) => (u.id === id ? { ...u, isActive: true } : u))
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la réactivation.'

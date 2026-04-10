@@ -27,7 +27,7 @@
               optionValue="value"
               style="min-width: 120px"
             />
-            <NeoCheckbox v-model="f.isRequired" :binary="true" />
+            <Checkbox v-model="f.isRequired" :binary="true" />
             <NeoButton icon="pi pi-times" severity="danger" size="small" outlined @click="removeField(i)" />
           </div>
           <NeoButton
@@ -118,7 +118,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import Dialog from 'primevue/dialog'
-import { NeoButton, NeoInputText, NeoSelect, NeoCheckbox, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import Checkbox from 'primevue/checkbox'
 import { useTemplateStore } from '@/stores/templateStore'
 import { type FieldType } from '@/types/project.types'
 

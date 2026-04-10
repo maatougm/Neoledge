@@ -133,13 +133,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoInputText, NeoButton, NeoMessage } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import TotpSetup from '@/components/auth/TotpSetup.vue'
 
-const app  = useApp()
 const toast = useNeoToast()
 
 const totpEnabled   = ref(false)
@@ -158,9 +156,7 @@ async function fetchStatus() {
   loadingStatus.value = true
   statusError.value   = null
   try {
-    const res = await axios.get(app.apiUrl + '/auth/2fa/status', {
-      headers: app.authHeader(),
-    })
+    const res = await api.get('/auth/2fa/status')
     totpEnabled.value = res.data.totpEnabled ?? false
   } catch {
     statusError.value = 'Impossible de récupérer le statut 2FA. Veuillez rafraîchir la page.'
@@ -185,11 +181,7 @@ const handleDisable = async () => {
   actionError.value  = null
   loadingAction.value = true
   try {
-    await axios.post(
-      app.apiUrl + '/auth/2fa/disable',
-      { code: disableCode.value },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/2fa/disable', { code: disableCode.value })
     totpEnabled.value     = false
     showDisableForm.value = false
     disableCode.value     = ''

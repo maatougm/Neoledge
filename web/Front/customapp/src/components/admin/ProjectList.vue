@@ -67,7 +67,7 @@
         <NeoButton
           label="Archiver"
           icon="pi pi-inbox"
-          severity="warning"
+          severity="warn"
           size="small"
           :loading="store.loading"
           @click="handleBulkArchive"
@@ -244,8 +244,6 @@
       </table>
     </div>
 
-    <NeoToast />
-
     <!-- Pagination -->
     <div class="project-list__pagination">
       <NeoButton
@@ -271,7 +269,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { NeoButton, NeoTag, NeoMessage, NeoInputText, NeoSelect, NeoToast, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { NeoButton, NeoTag, NeoMessage, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
 import {

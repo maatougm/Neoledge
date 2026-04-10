@@ -18,6 +18,11 @@ import { SavedFiltersModule } from './filters/saved-filters.module.js';
 import { ChecklistsModule } from './checklists/checklists.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { SystemStatusModule } from './system-status/system-status.module.js';
+import { AnalyticsModule } from './analytics/analytics.module.js';
+import { PortalModule } from './portal/portal.module.js';
+import { AiModule } from './ai/ai.module.js';
+import { CollaborationModule } from './collaboration/collaboration.module.js';
+import { AutomationModule } from './automation/automation.module.js';
 
 @Module({
   imports: [
@@ -40,6 +45,11 @@ import { SystemStatusModule } from './system-status/system-status.module.js';
     SavedFiltersModule,
     ChecklistsModule,
     SystemStatusModule,
+    AnalyticsModule,
+    PortalModule,
+    AiModule,
+    CollaborationModule,
+    AutomationModule,
   ],
 })
 export class AppModule {}
