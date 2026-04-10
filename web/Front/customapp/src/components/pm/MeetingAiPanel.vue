@@ -187,9 +187,9 @@ const statusLabel = computed(() => {
   }
 })
 
-const statusSeverity = computed((): 'secondary' | 'warning' | 'success' | 'danger' => {
+const statusSeverity = computed((): 'secondary' | 'warn' | 'success' | 'danger' => {
   switch (results.value?.aiStatus) {
-    case 'processing': return 'warning'
+    case 'processing': return 'warn'
     case 'completed': return 'success'
     case 'failed': return 'danger'
     default: return 'secondary'

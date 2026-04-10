@@ -78,7 +78,7 @@
     </div>
 
     <!-- Create Dialog -->
-    <NeoDialog
+    <Dialog
       v-model:visible="dialogVisible"
       header="Nouvelle règle d'automatisation"
       modal
@@ -143,13 +143,14 @@
         <NeoButton label="Annuler" outlined severity="secondary" @click="dialogVisible = false" />
         <NeoButton label="Enregistrer" :loading="saving" @click="submitRule" />
       </template>
-    </NeoDialog>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NeoButton, NeoCard, NeoTag, NeoDialog, NeoInputText, NeoSelect, NeoMessage } from '@neolibrary/components'
+import { NeoButton, NeoInputText, NeoSelect, NeoMessage } from '@neolibrary/components'
+import Dialog from 'primevue/dialog'
 import { useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import type { AutomationRule } from '@/types/pm.types'

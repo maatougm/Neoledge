@@ -66,7 +66,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       bottleneck.value = [...data]
     } catch (e: unknown) {
       error.value =
-        e instanceof Error ? e.message : 'Erreur lors du chargement des goulots d'étranglement.'
+        e instanceof Error ? e.message : "Erreur lors du chargement des goulots d'étranglement."
     }
   }
 

@@ -78,10 +78,10 @@
           dateFormat="yy-mm-dd"
           :disabled="readonly"
           class="w-full"
-          @update:modelValue="(v: string | null) => {
+          @update:modelValue="(v) => {
             dirty = true
             validateField(field.id, field.isRequired)
-            debouncedSendUpdate(field.id, v ?? '')
+            debouncedSendUpdate(field.id, (typeof v === 'string' ? v : null) ?? '')
           }"
           @focus="collab.sendFieldFocus(props.project.id, field.id)"
           @blur="collab.sendFieldBlur(props.project.id)"
