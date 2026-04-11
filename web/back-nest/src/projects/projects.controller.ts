@@ -84,8 +84,8 @@ export class ProjectsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string) {
-    const result = await this.service.deleteProject(id);
+  async delete(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const result = await this.service.softDelete(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 

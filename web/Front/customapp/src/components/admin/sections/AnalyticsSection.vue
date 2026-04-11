@@ -295,10 +295,17 @@ const workloadChartOptions = computed(() => ({
 /* ── Chart wrap ──────────────────────────────────────────────────────────── */
 .analytics__chart-wrap {
   flex: 1;
-  min-height: 220px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* Chart.js Bar needs a positioned parent with explicit height */
+.analytics__chart-wrap > div {
+  position: relative;
+  height: 200px;
+  width: 100%;
 }
 
 /* ── Velocity meta ───────────────────────────────────────────────────────── */
