@@ -48,10 +48,18 @@ function isRemoteFieldChange(v: unknown): v is RemoteFieldChange {
 
 // ─── Module-level singleton — shared across all component instances ────────────
 
+export interface RemoteCardMove {
+  workPackageId: string
+  boardColumnId: string | null
+  status: string
+}
+
 let socket: Socket | null = null
 const connected = ref(false)
 const presenceList = ref<PresenceUser[]>([])
 const remoteFieldChange = ref<RemoteFieldChange | null>(null)
+const remoteCardMove = ref<RemoteCardMove | null>(null)
+const pendingJoins = new Set<string>()
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
@@ -73,6 +81,11 @@ export function useCollaborationSocket() {
 
       socket.on('connect', () => {
         connected.value = true
+        // Flush any join-project calls that arrived before the socket finished handshake.
+        for (const projectId of pendingJoins) {
+          socket?.emit('join-project', projectId)
+        }
+        pendingJoins.clear()
       })
 
       socket.on('disconnect', () => {
@@ -95,6 +108,19 @@ export function useCollaborationSocket() {
           remoteFieldChange.value = { ...payload }
         }
       })
+
+      socket.on('card-moved', (payload: unknown) => {
+        if (typeof payload === 'object' && payload !== null) {
+          const p = payload as Record<string, unknown>
+          if (typeof p['workPackageId'] === 'string' && typeof p['status'] === 'string') {
+            remoteCardMove.value = {
+              workPackageId: p['workPackageId'],
+              boardColumnId: (p['boardColumnId'] as string | null) ?? null,
+              status: p['status'],
+            }
+          }
+        }
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn('[CollaborationSocket] Failed to initialize socket:', msg)
@@ -110,11 +136,16 @@ export function useCollaborationSocket() {
   }
 
   function joinProject(projectId: string): void {
-    if (!socket?.connected) return
+    if (!socket?.connected) {
+      // Buffer the join — flushed in the 'connect' handler once handshake completes.
+      pendingJoins.add(projectId)
+      return
+    }
     socket.emit('join-project', projectId)
   }
 
   function leaveProject(projectId: string): void {
+    pendingJoins.delete(projectId)
     if (!socket?.connected) return
     socket.emit('leave-project', projectId)
   }
@@ -145,5 +176,6 @@ export function useCollaborationSocket() {
     sendFieldBlur,
     presenceList,
     remoteFieldChange,
+    remoteCardMove,
   }
 }

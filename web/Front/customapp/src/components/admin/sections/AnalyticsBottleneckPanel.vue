@@ -34,7 +34,7 @@
           :key="row.phase"
           :class="`panel__heatmap-row--${row.severity}`"
         >
-          <td class="panel__phase">{{ row.phase }}</td>
+          <td class="panel__phase">{{ phaseLabel(row.phase) }}</td>
           <td class="panel__center">{{ row.currentCount }}</td>
           <td class="panel__center panel__bold">{{ row.avgDays }}j</td>
           <td>
@@ -49,6 +49,8 @@
 </template>
 
 <script setup lang="ts">
+import { phaseLabel } from '@/utils/phaseLabels'
+
 interface BottleneckRow {
   phase: string
   currentCount: number

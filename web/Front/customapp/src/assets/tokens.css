@@ -1,0 +1,21 @@
+/** @file src/assets/tokens.css — Operational project module color tokens */
+
+:root {
+  --op-sidebar-bg: #1a1f2e;
+  --op-sidebar-text: #c9d1e0;
+  --op-sidebar-text-muted: #6b7fa3;
+  --op-sidebar-hover: rgba(255,255,255,0.07);
+  --op-sidebar-active: rgba(30,158,143,0.18);
+  --op-sidebar-active-border: #1e9e8f;
+  --op-content-bg: #f5f7f9;
+  --op-surface: #ffffff;
+  --op-border: #e5e7eb;
+  --op-accent: #1e9e8f;
+  --op-accent-hover: #178a7c;
+  --op-accent-light: rgba(30,158,143,0.10);
+  --op-text-primary: #111827;
+  --op-text-secondary: #4b5563;
+  --op-text-muted: #9ca3af;
+  --op-shadow-card: 0 1px 3px rgba(0,0,0,0.08);
+  --op-shadow-panel: 0 4px 16px rgba(0,0,0,0.12);
+}

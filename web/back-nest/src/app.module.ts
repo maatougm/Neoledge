@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
+import { randomUUID } from 'node:crypto';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -23,10 +25,64 @@ import { PortalModule } from './portal/portal.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { CollaborationModule } from './collaboration/collaboration.module.js';
 import { AutomationModule } from './automation/automation.module.js';
+import { WorkPackagesModule } from './work-packages/work-packages.module.js';
+import { GanttModule } from './gantt/gantt.module.js';
+import { AgileModule } from './agile/agile.module.js';
+import { TimeTrackingModule } from './time-tracking/time-tracking.module.js';
+import { BudgetingModule } from './budgeting/budgeting.module.js';
+import { WikiModule } from './wiki/wiki.module.js';
+import { PortfolioModule } from './portfolio/portfolio.module.js';
+import { TeamPlannerModule } from './team-planner/team-planner.module.js';
+import { SearchModule } from './search/search.module.js';
+import { HealthModule } from './health/health.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        // Generate / propagate a request ID per HTTP call so every log line
+        // emitted while handling that request can be grouped together.
+        genReqId: (req, res) => {
+          const incoming = req.headers['x-request-id'];
+          const id = typeof incoming === 'string' && incoming.length > 0 ? incoming : randomUUID();
+          res.setHeader('x-request-id', id);
+          return id;
+        },
+        customProps: (req) => ({ reqId: (req as { id?: string }).id }),
+        // Quiet routine traffic; surface anything 4xx+ at warn/error.
+        customLogLevel: (_req, res, err) => {
+          if (err) return 'error';
+          if (res.statusCode >= 500) return 'error';
+          if (res.statusCode >= 400) return 'warn';
+          return 'info';
+        },
+        // Drop /health spam from production logs.
+        autoLogging: { ignore: (req) => req.url === '/health' },
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.body.password',
+            'req.body.jwt',
+            'res.headers["set-cookie"]',
+          ],
+          censor: '[REDACTED]',
+        },
+        transport: process.env.NODE_ENV === 'production'
+          ? undefined
+          : {
+              target: 'pino-pretty',
+              options: {
+                singleLine: true,
+                colorize: true,
+                translateTime: 'SYS:HH:MM:ss.l',
+                ignore: 'pid,hostname,req,res,responseTime',
+                messageFormat: '{msg} [{reqId}] {method} {url} {statusCode} ({responseTime}ms)',
+              },
+            },
+      },
+    }),
     PrismaModule,
     MailModule,
     AuditModule,
@@ -50,6 +106,16 @@ import { AutomationModule } from './automation/automation.module.js';
     AiModule,
     CollaborationModule,
     AutomationModule,
+    WorkPackagesModule,
+    GanttModule,
+    AgileModule,
+    TimeTrackingModule,
+    BudgetingModule,
+    WikiModule,
+    PortfolioModule,
+    TeamPlannerModule,
+    SearchModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

@@ -93,6 +93,7 @@
             :progress="progressPercent(project)"
             @toggle-select="store.toggleSelection(project.id)"
             @view="emit('view', project.id)"
+            @open="emit('open', project.id)"
             @edit="emit('edit', project.id)"
             @delete="emit('delete', project.id)"
             @assign-manager="emit('assign-manager', project.id)"
@@ -128,6 +129,7 @@ const confirm = useNeoConfirm()
 const emit = defineEmits<{
   create: []
   view: [id: string]
+  open: [id: string]
   edit: [id: string]
   delete: [id: string]
   'assign-manager': [id: string]

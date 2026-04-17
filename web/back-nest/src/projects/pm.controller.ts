@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Param, Body, UseGuards, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ProjectsService } from './projects.service.js';
+import { UsersService } from '../users/users.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
@@ -15,6 +16,7 @@ interface JwtUser {
 export class PmController {
   constructor(
     private readonly service: ProjectsService,
+    private readonly usersService: UsersService,
     private readonly notifications: NotificationsService,
     private readonly prisma: PrismaService,
   ) {}
@@ -55,6 +57,14 @@ export class PmController {
   async getActivity(@Param('id') id: string) {
     const result = await this.service.getActivity(id);
     return result.value;
+  }
+
+  /** Active users list — used by PM views like Members, assignee dropdowns, etc. */
+  @Get('users')
+  async getUsers() {
+    const result = await this.usersService.getAll(0, 500);
+    if (result.isFailure) return [];
+    return (result.value as unknown as { items: unknown[] }).items;
   }
 
   /** All active projects — used by team-member roles who are not project managers */

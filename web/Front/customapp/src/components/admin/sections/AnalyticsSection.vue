@@ -42,10 +42,12 @@
         </div>
 
         <div v-else class="analytics__chart-wrap">
-          <Bar :data="velocityChartData" :options="velocityChartOptions" />
+          <div class="analytics__chart-box">
+            <Bar :data="velocityChartData" :options="velocityChartOptions" />
+          </div>
           <div class="analytics__velocity-meta">
             <div v-for="row in store.phaseVelocity" :key="row.phase" class="analytics__velocity-row">
-              <span class="analytics__velocity-phase">{{ row.phase }}</span>
+              <span class="analytics__velocity-phase">{{ phaseLabel(row.phase) }}</span>
               <span class="analytics__velocity-range">
                 min {{ row.minDays }}j — max {{ row.maxDays }}j
                 ({{ row.projectCount }} projet{{ row.projectCount > 1 ? 's' : '' }})
@@ -85,7 +87,9 @@
         </div>
 
         <div v-else class="analytics__chart-wrap">
-          <Bar :data="workloadChartData" :options="workloadChartOptions" />
+          <div class="analytics__chart-box analytics__chart-box--tall">
+            <Bar :data="workloadChartData" :options="workloadChartOptions" />
+          </div>
         </div>
       </div>
 
@@ -109,6 +113,7 @@ import {
 } from 'chart.js'
 import { NeoButton, NeoMessage } from '@neolibrary/components'
 import { useAnalyticsStore } from '@/stores/analyticsStore'
+import { phaseLabel } from '@/utils/phaseLabels'
 import AnalyticsBottleneckPanel from './AnalyticsBottleneckPanel.vue'
 import AnalyticsRiskPanel from './AnalyticsRiskPanel.vue'
 
@@ -135,7 +140,7 @@ function goToProject(id: string): void {
 // ─── Velocity chart ───────────────────────────────────────────────────────────
 
 const velocityChartData = computed(() => ({
-  labels: store.phaseVelocity.map((r) => r.phase),
+  labels: store.phaseVelocity.map((r) => phaseLabel(r.phase)),
   datasets: [
     {
       label: 'Durée moyenne (jours)',
@@ -302,10 +307,13 @@ const workloadChartOptions = computed(() => ({
 }
 
 /* Chart.js Bar needs a positioned parent with explicit height */
-.analytics__chart-wrap > div {
+.analytics__chart-box {
   position: relative;
   height: 200px;
   width: 100%;
+}
+.analytics__chart-box--tall {
+  height: 260px;
 }
 
 /* ── Velocity meta ───────────────────────────────────────────────────────── */

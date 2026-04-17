@@ -96,6 +96,45 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Enhanced notify supporting Notifications 2.0 fields (reason, entityType, entityId, actorId, link).
+   * Use for work package assignments, status changes, mentions, deadlines, etc.
+   * Swallows errors so it never breaks business logic.
+   */
+  async notifyEnhanced(params: {
+    userId: string;
+    type: string;
+    title: string;
+    message: string;
+    projectId?: string | null;
+    reason?: 'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange' | 'Comment' | 'System';
+    entityType?: 'work_package' | 'project' | 'meeting' | 'wiki_page' | 'comment' | 'version' | null;
+    entityId?: string | null;
+    actorId?: string | null;
+    link?: string | null;
+  }): Promise<void> {
+    let created: NotificationPayload | null = null;
+    try {
+      created = await this.prisma.notification.create({
+        data: {
+          userId: params.userId,
+          type: params.type,
+          title: params.title,
+          message: params.message,
+          projectId: params.projectId ?? null,
+          reason: params.reason ?? 'System',
+          entityType: params.entityType ?? null,
+          entityId: params.entityId ?? null,
+          actorId: params.actorId ?? null,
+          link: params.link ?? null,
+        },
+      }) as NotificationPayload;
+    } catch {
+      return;
+    }
+    if (this.gateway && created) this.gateway.emitToUser(params.userId, created);
+  }
+
   async getForUser(userId: string): Promise<Result<NotificationRecord[]>> {
     try {
       const notifications = await this.prisma.notification.findMany({

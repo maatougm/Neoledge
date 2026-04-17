@@ -7,6 +7,7 @@
       :class="{ 'user-menu__trigger--open': open }"
       aria-haspopup="true"
       :aria-expanded="open"
+      :aria-label="`Menu utilisateur: ${authStore.userFullName}`"
       @click="toggleOpen"
     >
       <span class="user-menu__avatar" aria-hidden="true">

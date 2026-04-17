@@ -52,7 +52,7 @@ export class GeminiProvider {
     if (
       typeof data !== 'object' || data === null ||
       !Array.isArray((data as Record<string, unknown>)['candidates']) ||
-      (data as Record<string, unknown>)['candidates'].length === 0
+      (data as Record<string, unknown[]>)['candidates'].length === 0
     ) {
       throw new Error(`Unexpected Gemini response shape: ${JSON.stringify(data).slice(0, 200)}`)
     }

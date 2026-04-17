@@ -183,7 +183,9 @@ const handleSubmit = () => {
 .modal-scrim {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  /* Keep below PrimeVue/NeoLibrary overlay panels (z-index: 10000) so
+     Select/DatePicker dropdowns inside this dialog render above it. */
+  z-index: 900;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;

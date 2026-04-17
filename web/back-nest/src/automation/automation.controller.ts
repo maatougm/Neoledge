@@ -14,7 +14,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { AutomationService, CreateRuleDto, UpdateRuleDto } from './automation.service.js';
+import { AutomationService } from './automation.service.js';
+import { CreateRuleDto, UpdateRuleDto } from './dto/automation.dto.js';
 
 @Controller('pm/projects/:projectId/automation')
 @UseGuards(JwtAuthGuard)

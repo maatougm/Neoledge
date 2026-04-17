@@ -30,13 +30,26 @@ export default defineConfig({
   },
 
   build: {
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         entryFileNames: `assets/[name].js`,
         chunkFileNames: `assets/[name].js`,
-        assetFileNames: `assets/[name].[ext]`
+        assetFileNames: `assets/[name].[ext]`,
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('chart.js')) return 'chart'
+          if (id.includes('vue-chartjs')) return 'chart'
+          if (id.includes('@neolibrary')) return 'neolibrary'
+          if (id.includes('primevue') || id.includes('primeicons')) return 'primevue'
+          if (id.includes('axios')) return 'axios'
+          if (id.includes('socket.io-client')) return 'socket'
+          if (id.includes('/vue/') || id.includes('vue-router') || id.includes('pinia')) return 'vue'
+        }
       }
     }
   },
-  base: '/Sample/Front/'
+  // Dev + Elise iframe use the /Sample/Front/ base; prod build for
+  // neoleadge.pythagore-init.com ships at the root. Override via VITE_BASE.
+  base: process.env.VITE_BASE ?? '/Sample/Front/'
 })

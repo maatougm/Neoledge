@@ -109,26 +109,24 @@
             />
           </form>
 
-          <!-- Dev quick-access panel -->
-          <template v-if="isDev">
-            <div class="divider"><span>Accès rapide (dev)</span></div>
-            <div class="quick-access">
-              <button
-                v-for="acc in quickAccounts"
-                :key="acc.role"
-                class="qa-btn"
-                type="button"
-                :disabled="loading"
-                @click="fillCredentials(acc.email, acc.pwd)"
-              >
-                <span class="qa-avatar" :style="{ background: acc.color }">{{ acc.init }}</span>
-                <span class="qa-info">
-                  <span class="qa-role">{{ acc.label }}</span>
-                  <span class="qa-email">{{ acc.email }}</span>
-                </span>
-              </button>
-            </div>
-          </template>
+          <!-- Quick-access demo accounts (one click = log in) -->
+          <div class="divider"><span>Accès rapide</span></div>
+          <div class="quick-access">
+            <button
+              v-for="acc in quickAccounts"
+              :key="acc.role"
+              class="qa-btn"
+              type="button"
+              :disabled="loading"
+              @click="quickLogin(acc.email, acc.pwd)"
+            >
+              <span class="qa-avatar" :style="{ background: acc.color }">{{ acc.init }}</span>
+              <span class="qa-info">
+                <span class="qa-role">{{ acc.label }}</span>
+                <span class="qa-email">{{ acc.email }}</span>
+              </span>
+            </button>
+          </div>
         </template>
 
         <!-- ── Step 2: TOTP challenge ── -->
@@ -195,7 +193,6 @@ import { useAuthStore } from '@/stores/authStore'
 
 const router   = useRouter()
 const authStore = useAuthStore()
-const isDev    = import.meta.env.DEV
 
 // ── Form state ─────────────────────────────────────────────────────────────────
 const email    = ref('')
@@ -210,11 +207,13 @@ const totpCode      = ref('')
 const totpError     = ref<string | null>(null)
 const totpInputRef  = ref<HTMLInputElement | null>(null)
 
-// ── Dev quick accounts ─────────────────────────────────────────────────────────
+// ── Quick-access demo accounts (credentials must exist on this deployment) ───
 const quickAccounts = [
-  { role: 'admin', label: 'Administrateur',      email: 'admin@neoleadge.com',  pwd: 'Admin@123',  color: 'var(--nl-accent)', init: 'A'  },
-  { role: 'pm',    label: 'Chef de projet',       email: 'pm@neoleadge.com',     pwd: 'Pm@12345',   color: '#3B82F6',          init: 'CP' },
-  { role: 'team',  label: 'Équipe de validation', email: 'spec@neoleadge.com',   pwd: 'Valid@123',  color: '#8B5CF6',          init: 'EV' },
+  { role: 'admin',  label: 'Administrateur',        email: 'admin@neoleadge.com',   pwd: 'Admin@123',   color: 'var(--nl-accent)', init: 'A'  },
+  { role: 'pm',     label: 'Chef de projet',         email: 'pm@neoleadge.com',      pwd: 'Pm@123',      color: '#3B82F6',          init: 'CP' },
+  { role: 'spec',   label: 'Équipe spécification',   email: 'spec@neoleadge.com',    pwd: 'Spec@123',    color: '#8B5CF6',          init: 'ES' },
+  { role: 'realiz', label: 'Équipe réalisation',     email: 'realiz@neoleadge.com',  pwd: 'Realiz@123',  color: '#F97316',          init: 'ER' },
+  { role: 'deploy', label: 'Équipe déploiement',     email: 'deploy@neoleadge.com',  pwd: 'Deploy@123',  color: '#10B981',          init: 'ED' },
 ]
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -222,6 +221,12 @@ function fillCredentials(e: string, p: string): void {
   email.value    = e
   password.value = p
   errorMsg.value = null
+}
+
+/** One-click login — fill and submit immediately. */
+async function quickLogin(e: string, p: string): Promise<void> {
+  fillCredentials(e, p)
+  await handleLogin()
 }
 
 function redirectAfterLogin(): void {

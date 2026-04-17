@@ -1,5 +1,25 @@
 @import './base.css';
 
+/* ── Overlay stacking — keep PrimeVue/NeoLibrary dropdowns above AppModal ─────
+   AppModal uses z-index:900. Any teleported overlay panel from a Select,
+   DatePicker, AutoComplete, MultiSelect, etc. must render above it so users
+   can interact with dropdowns inside dialogs. */
+.p-select-overlay,
+.p-datepicker-panel,
+.p-datepicker:not(.p-datepicker-inline),
+.p-autocomplete-overlay,
+.p-multiselect-overlay,
+.p-cascadeselect-overlay,
+.p-dropdown-panel,
+.p-overlaypanel,
+.p-menu,
+.p-tieredmenu,
+.p-contextmenu,
+.p-popover,
+.p-tooltip {
+  z-index: 10000 !important;
+}
+
 #app {
   font-family: var(--nl-font);
   min-height: 100vh;

@@ -74,8 +74,16 @@ GEMINI_API_KEY=...
 | `AutomationModule` | `src/automation/` | Workflow rule engine, event triggers |
 | `CollaborationModule` | `src/collaboration/` | Real-time WebSocket collaboration |
 | `PortalModule` | `src/portal/` | Public client portal with token-based access |
-| `NotificationsModule` | `src/notifications/` | Real-time notification delivery |
+| `NotificationsModule` | `src/notifications/` | Real-time notification delivery (+ reason/entityType since v2.0) |
 | `PrismaModule` | `src/prisma/` | Global DB client (MariaDB adapter) |
+| `WorkPackagesModule` | `src/work-packages/` | Issues / tasks / features with hierarchy, watchers, dependencies, custom fields |
+| `GanttModule` | `src/gantt/` | Gantt timeline payload, milestones, baselines |
+| `AgileModule` | `src/agile/` | Boards, columns, sprints, burndown, card moves |
+| `TimeTrackingModule` | `src/time-tracking/` | Time entries, weekly timesheet, hourly rates |
+| `BudgetingModule` | `src/budgeting/` | Project budget, line items, burn report |
+| `WikiModule` | `src/wiki/` | Per-project wiki pages with revision history |
+| `PortfolioModule` | `src/portfolio/` | Portfolios grouping projects + per-project versions |
+| `TeamPlannerModule` | `src/team-planner/` | Capacity / assignments / conflicts |
 
 ### API Routes
 
@@ -129,6 +137,87 @@ GEMINI_API_KEY=...
 - `GET /portal/:token` — public project view (no auth)
 - `POST /portal/:token/signoff` — client sign-off (no auth)
 
+**Work Packages** (PM / Admin)
+- `GET /pm/projects/:id/work-packages` — list (filters: status, type, priority, assigneeId, sprintId, versionId, parentId, q, page, limit)
+- `GET /pm/projects/:id/work-packages/:wpId` — detail with watchers, deps, custom values
+- `POST /pm/projects/:id/work-packages` — create
+- `PATCH /pm/projects/:id/work-packages/:wpId` — update (triggers notification on assignee/status change)
+- `DELETE /pm/projects/:id/work-packages/:wpId` — soft-delete
+- `PATCH /pm/projects/:id/work-packages/:wpId/move` — reposition (sprint/column/parent)
+- `POST /pm/projects/:id/work-packages/:wpId/watchers` — add watcher
+- `DELETE /pm/projects/:id/work-packages/:wpId/watchers/:userId`
+- `POST /pm/projects/:id/work-packages/:wpId/dependencies` — add dep `{ toWpId, type }`
+- `DELETE /pm/projects/:id/work-packages/:wpId/dependencies/:depId`
+- `GET/POST/DELETE /pm/projects/:id/wp-custom-fields[/:fieldId]` — custom-field CRUD
+- `PUT /pm/projects/:id/work-packages/:wpId/custom-values` — bulk upsert `{ values: [{ customFieldId, value }] }`
+
+**Gantt + Milestones + Baselines**
+- `GET /pm/projects/:id/gantt` — full payload (WPs with dates + milestones + dependencies)
+- `GET/POST/PATCH/DELETE /pm/projects/:id/milestones[/:msId]`
+- `POST /pm/projects/:id/milestones/:msId/reach`
+- `GET/POST /pm/projects/:id/baselines` — list + capture
+- `GET /pm/projects/:id/baselines/:snapshotName/compare` — drift report
+- `DELETE /pm/projects/:id/baselines/:snapshotName`
+
+**Agile (Boards / Sprints / Burndown)**
+- `GET/POST /pm/projects/:id/boards` — auto-creates Kanban with 4 columns if none
+- `GET /pm/projects/:id/boards/:boardId` — board + columns + cards
+- `POST/PATCH/DELETE /pm/projects/:id/boards/:boardId/columns[/:colId]`
+- `PATCH /pm/projects/:id/boards/:boardId/cards/:wpId/move` — kanban drag-drop
+- `GET/POST /pm/projects/:id/boards/:boardId/sprints`
+- `PATCH/DELETE /pm/projects/:id/sprints/:sprintId`
+- `POST /pm/projects/:id/sprints/:sprintId/{start,close}`
+- `POST /pm/projects/:id/sprints/:sprintId/work-packages` — bulk add
+- `GET /pm/projects/:id/sprints/:sprintId/burndown` — ideal vs remaining hours
+
+**Time Tracking + Hourly Rates**
+- `GET/POST/PATCH/DELETE /api/time-entries[/:id]` — my entries (self-scoped)
+- `GET /api/time-entries/week?weekStart=YYYY-MM-DD`
+- `POST /api/time-entries/lock` — Admin lock period
+- `GET /pm/projects/:id/time-entries[/summary]` — per-project
+- `GET/POST/PATCH/DELETE /admin/hourly-rates[/:id]` — Admin only
+
+**Budgeting**
+- `GET /pm/projects/:id/budget` — budget + line items
+- `PUT /pm/projects/:id/budget` — upsert
+- `POST/PATCH/DELETE /pm/projects/:id/budget/line-items[/:id]`
+- `GET /pm/projects/:id/budget/burn` — spent vs remaining report
+- `GET /admin/budgets/overview` — Admin cross-project
+
+**Wiki**
+- `GET /pm/projects/:id/wiki` — page tree
+- `GET /pm/projects/:id/wiki/search?q=`
+- `GET/POST/PATCH/DELETE /pm/projects/:id/wiki/pages[/:slug]`
+- `PATCH /pm/projects/:id/wiki/pages/:slug/move` — reparent
+- `GET /pm/projects/:id/wiki/pages/:slug/revisions[/:version]`
+- `POST /pm/projects/:id/wiki/pages/:slug/restore/:version`
+
+**Portfolio + Versions** (Admin / PM)
+- `GET/POST /admin/portfolios` — Admin only
+- `GET/PATCH/DELETE /admin/portfolios/:id`
+- `POST /admin/portfolios/:id/projects` — attach project
+- `PATCH /admin/portfolios/:id/projects/reorder`
+- `DELETE /admin/portfolios/:id/projects/:projectId`
+- `GET /admin/portfolios/:id/roadmap` — projects + versions + milestones on timeline
+- `GET/POST/PATCH/DELETE /pm/projects/:id/versions[/:versionId]`
+- `POST /pm/projects/:id/versions/:versionId/{lock,close}`
+- `GET /pm/projects/:id/versions/:versionId/progress`
+
+**Team Planner** (PM / Admin)
+- `GET /pm/team-planner?from&to&userIds[]&projectIds[]` — assignments per user
+- `GET /pm/team-planner/capacity?from&to` — heatmap (allocated vs capacity)
+- `GET /pm/team-planner/conflicts?from&to` — overlapping assignments
+- `PATCH /pm/team-planner/work-packages/:wpId/reassign`
+- `GET /admin/team-planner/utilization` — Admin only
+
+**Meeting enhancements**
+- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/agenda[/:itemId]`
+- `PATCH /pm/projects/:id/meetings/:mId/agenda/reorder`
+- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/attendees[/:attendeeId]`
+- `POST /pm/projects/:id/meetings/:mId/attendees/bulk-mark` — set present/absent
+- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/outcomes[/:outcomeId]`
+- `POST /pm/projects/:id/meetings/:mId/outcomes/:outcomeId/convert-to-wp` — turn an outcome into a Work Package
+
 ### Prisma Schema — Key Models
 
 ```
@@ -146,9 +235,24 @@ AutomationLog     — execution history per rule
 PortalToken       — public access tokens (crypto.randomBytes(32), expiry, revocation)
 PortalSignoff     — client sign-off records (clientName, clientEmail, isApproved, ipAddress)
 AnalyticsCache    — 15-min TTL cache for analytics queries (cacheKey, data JSON)
-Notification      — per-user notifications delivered via Socket.IO
+Notification      — per-user notifications with reason/entityType/entityId/actorId/link (v2.0)
 PhaseChecklist    — per-phase checklist items
 AuditLog          — entity change audit trail
+
+— v2.0 models (OpenProject parity) —
+Board + BoardColumn + Sprint — kanban & scrum boards, auto-seeded with 4 columns
+Version            — per-project release versions (Open/Locked/Closed)
+WorkPackage        — issues/tasks/features (type, status, priority, parent, sprint, version, column)
+WorkPackageDependency — blocks / follows / relates relationships
+WorkPackageWatcher    — subscribe users to WP change notifications
+WorkPackageCustomField + WorkPackageCustomValue — per-project custom attributes
+Milestone          — project-level milestones with isReached + color
+GanttBaseline      — dated snapshots of WP dates for drift comparison
+TimeEntry + HourlyRate — timesheet entries + role/project-scoped rates
+ProjectBudget + BudgetLineItem — labor + material budgets + line items
+WikiPage + WikiRevision — per-project wiki with revision history
+Portfolio + PortfolioProject — group projects into portfolios for roadmap view
+MeetingAgendaItem + MeetingAttendee + MeetingOutcome — meeting prep & outputs
 ```
 
 ### AI Module (`src/ai/`)
@@ -243,6 +347,15 @@ npm run lint
 | `commentStore.ts` | Project comments |
 | `templateStore.ts` | Project templates |
 | `uiStore.ts` | UI state (sidebar, dark mode) |
+| `workPackageStore.ts` | Work Packages CRUD, watchers, dependencies, custom fields |
+| `agileStore.ts` | Boards, sprints, card moves, burndown |
+| `ganttStore.ts` | Gantt payload, milestones, baselines |
+| `timeStore.ts` | Time entries, weekly grid, project summary |
+| `budgetStore.ts` | Project budget + line items + burn report |
+| `wikiStore.ts` | Wiki tree + pages + revisions |
+| `portfolioStore.ts` | Portfolios + versions |
+| `teamPlannerStore.ts` | Assignments, capacity, conflicts |
+| `meetingExtrasStore.ts` | Agenda items + attendees + outcomes (convert-to-WP) |
 
 ### Composables (`src/composables/`)
 
@@ -269,13 +382,48 @@ npm run lint
 **Views:**
 - `views/ClientPortalView.vue` — public (no auth), route `/portal/:token`; phase stepper, field values, sign-off form
 
+**v2.0 Views (OpenProject parity):** — all under `/app/pm/projects/:id/*`, wrapped by `ProjectModuleShell` for breadcrumbs + header
+- `WorkPackagesView.vue` — split-panel WP list + detail (tabs: Détails, Relations, Observateurs), create dialog
+- `GanttView.vue` — timeline with zoom, milestones (clickable for CRUD), baseline capture
+- `KanbanBoardView.vue` — HTML5 drag-drop cards between columns
+- `BacklogView.vue` — unassigned WPs + active sprint with drag-drop assignment
+- `SprintBoardView.vue` — sprint selector, metadata, Chart.js burndown (ideal vs remaining)
+- `WikiView.vue` — tree + markdown view/edit + search + revisions
+- `BudgetView.vue` — summary cards + line items + edit modals
+- `TimeTrackingView.vue` — log time dialog + my entries + project summary (by user/activity)
+- `MembersView.vue` — project members table
+- `ProjectActivityView.vue` — activity timeline
+- `PMProjectDetailView.vue` — project overview tile grid (entry point)
+- `PortfolioView.vue` — `/app/admin/portfolio` — portfolio CRUD
+- `TeamPlannerView.vue` — `/app/admin/team-planner` — capacity heatmap, assignments, conflicts
+
+**v2.0 Shared components:**
+- `common/ProjectModuleShell.vue` — wraps every project module with breadcrumbs + page header
+- `common/ProjectBreadcrumbs.vue` — Home > Project > Module trail
+- `common/SplitPanel.vue` — 35/65 list+detail responsive split
+- `common/ModulePageHeader.vue` — title + status tag + action bar
+- `common/AppModal.vue` — Teleport-based modal (replacement for deprecated NeoDialog)
+- `common/PriorityDot.vue` — colored dot for WP priority
+- `common/WpStatusTag.vue` — severity-mapped NeoTag wrapper
+- `meetings/MeetingExtrasTabs.vue` — agenda/attendees/outcomes tabs in meeting detail
+
+**Shared utilities:**
+- `lib/formatDate.ts` — `formatDate`, `formatDateShort`, `formatDateTime`, `formatRelative`
+- `utils/phaseLabels.ts` — FR translation of ProjectStatus enum values
+
 ### Router (`src/router/index.ts`)
 
 - `/login` — LoginView (public)
 - `/portal/:token` — ClientPortalView (public, outside auth guard)
-- `/admin/*` — AdminLayout (requires Admin role)
-- `/pm/*` — PmLayout (requires ProjectManager role)
-- `/team/*` — TeamLayout (requires team member role)
+- `/app/admin/*` — AdminLayout (requires Admin role) — includes `portfolio`, `team-planner`
+- `/app/pm/*` — PmLayout (requires ProjectManager or Admin) — includes project module routes:
+  - `/app/pm/projects/:id` — project overview
+  - `/app/pm/projects/:id/{workpackages,gantt,board,backlogs,sprint,wiki,wiki/:slug,budget,time,members,activity}`
+- `/app/team/*` — TeamLayout (requires team member role)
+
+### Contextual Sidebar
+
+`AppShell.vue` builds the sidebar nav from role, but **switches to a project-module nav** when `route.path` starts with `/app/pm/projects/:id`. The switch happens in `router.afterEach` (not a computed) to avoid RouterView reconciliation crashes during layout transitions. Per-project nav arrays are cached in a `Map` keyed by projectId so navigation between sub-routes of the same project doesn't re-render the sidebar.
 
 ---
 
@@ -290,6 +438,27 @@ npm run lint
    ```
 5. Generate client: `npx prisma generate`
 
+### Seed demo data (OpenProject-parity tables)
+
+After migrations are applied and the core app data exists (projects, users, meetings), run:
+
+```bash
+cd web/back-nest
+npx tsx prisma/seed-openproject.ts    # 57 WPs, 15 sprints, 20 milestones, 120 time entries, 5 budgets, 13 wiki pages, 1 portfolio, 56 watchers, 16 dependencies
+npx tsx prisma/seed-notifications.ts  # 7 demo notifications for admin (mention, assignee, watcher, deadline)
+```
+
+The seeders are idempotent — safe to re-run. They scan existing `bbbbbbbb-*` seed projects and attach demo data to each.
+
+### Migration for new tables
+
+The 21 new tables added in v2.0 are defined in `prisma/migration-sprint0.sql`. Apply to an existing DB via:
+
+```bash
+C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 NeoLeadgeDeployment < prisma/migration-sprint0.sql
+cd web/back-nest && npx prisma generate
+```
+
 ---
 
 ## Known Issues & Constraints
@@ -301,6 +470,9 @@ npm run lint
 - **`NeoDatePicker` v-model must be `string | null`** — never bind to a `Date` object.
 - **Axios multipart uploads** — never set `Content-Type: multipart/form-data` manually; axios sets it with the boundary automatically when `FormData` is passed.
 - **Collaboration presence is single-instance** — the in-process presence Map won't work correctly with multiple NestJS processes (PM2 cluster, etc.).
+- **DTOs must be classes, not interfaces, when used with `@Body()`** — `import type` erases the class at runtime, and NestJS's `ValidationPipe` with `whitelist: true` will strip all fields because the metatype resolves to `Object`. Always define DTOs as `class` with `class-validator` decorators and import normally (not `import type`).
+- **New nav changes must defer to `router.afterEach`** — changing `navSections` during navigation crashes `RouterView` mid-reconciliation. See `AppShell.vue` for the stable pattern.
+- **Admin routes on new modules use `@Roles('Admin')`** — apply `JwtAuthGuard + RolesGuard` stack for any `/admin/*` endpoint in new modules. See `portfolio.controller.ts`, `time-tracking.controller.ts` for examples.
 
 ---
 

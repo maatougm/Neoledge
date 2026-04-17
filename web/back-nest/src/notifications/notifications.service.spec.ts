@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService, NotificationRecord } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,10 +47,12 @@ describe('NotificationsService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
+    const mockMail = { send: jest.fn(async () => undefined) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: MailService, useValue: mockMail },
       ],
     }).compile();
 

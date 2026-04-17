@@ -66,10 +66,11 @@
     <!-- Actions -->
     <td class="ptr__actions-cell">
       <div class="ptr__action-menu">
-        <NeoButton icon="pi pi-eye"       severity="secondary" text size="small" title="Voir"      @click="emit('view')" />
-        <NeoButton icon="pi pi-pencil"    severity="secondary" text size="small" title="Modifier"  @click="emit('edit')" />
-        <NeoButton icon="pi pi-user-plus" severity="secondary" text size="small" title="Assigner"  @click="emit('assign-manager')" />
-        <NeoButton icon="pi pi-trash"     severity="danger"    text size="small" title="Supprimer" @click="emit('delete')" />
+        <NeoButton icon="pi pi-eye"           severity="secondary" text size="small" title="Voir (panneau)"   aria-label="Voir le projet dans le panneau" @click="emit('view')" />
+        <NeoButton icon="pi pi-external-link" severity="secondary" text size="small" title="Ouvrir (modules)" aria-label="Ouvrir le projet avec tous les modules" @click="emit('open')" />
+        <NeoButton icon="pi pi-pencil"        severity="secondary" text size="small" title="Modifier"         aria-label="Modifier le projet" @click="emit('edit')" />
+        <NeoButton icon="pi pi-user-plus"     severity="secondary" text size="small" title="Assigner"         aria-label="Assigner un chef de projet" @click="emit('assign-manager')" />
+        <NeoButton icon="pi pi-trash"         severity="danger"    text size="small" title="Supprimer"        aria-label="Supprimer le projet" @click="emit('delete')" />
       </div>
     </td>
   </tr>
@@ -90,6 +91,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'toggle-select': []
   view: []
+  open: []
   edit: []
   delete: []
   'assign-manager': []

@@ -74,7 +74,7 @@ const buildStoreMock = (overrides: Partial<{
 
 async function mountSection(storeOverrides = {}) {
   const { useCommentStore } = await import('@/stores/commentStore')
-  vi.mocked(useCommentStore).mockReturnValue(buildStoreMock(storeOverrides) as ReturnType<typeof useCommentStore>)
+  vi.mocked(useCommentStore).mockReturnValue(buildStoreMock(storeOverrides) as unknown as ReturnType<typeof useCommentStore>)
 
   return mount(CommentsSection, {
     props: { projectId: 'p1' },

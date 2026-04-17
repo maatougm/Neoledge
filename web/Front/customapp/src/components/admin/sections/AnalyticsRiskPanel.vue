@@ -39,10 +39,10 @@
           @click="emit('navigate', row.projectId)"
           @keydown.enter="emit('navigate', row.projectId)"
         >
-          <td class="panel__risk-name">{{ row.projectName }}</td>
+          <td class="panel__risk-name" :title="row.projectName">{{ row.projectName }}</td>
           <td class="panel__muted">{{ row.pmName ?? '—' }}</td>
           <td>
-            <span class="panel__status-badge">{{ row.status }}</span>
+            <span :class="['panel__status-badge', `panel__status-badge--${statusClass(row.status)}`]">{{ statusLabel(row.status) }}</span>
           </td>
           <td :class="row.daysRemaining < 0 ? 'panel__overdue' : 'panel__days'">
             {{ row.daysRemaining < 0 ? `${Math.abs(row.daysRemaining)}j en retard` : `${row.daysRemaining}j` }}
@@ -86,6 +86,21 @@ function riskBarClass(score: number): string {
   if (score > 70) return 'panel__score-fill--high'
   if (score > 40) return 'panel__score-fill--medium'
   return 'panel__score-fill--low'
+}
+
+import { phaseLabel as statusLabel } from '@/utils/phaseLabels'
+
+function statusClass(status: string): string {
+  switch (status) {
+    case 'Draft':                    return 'draft'
+    case 'InProgress':               return 'active'
+    case 'SpecificationValidation':
+    case 'DeploymentValidation':     return 'validation'
+    case 'Realization':              return 'active'
+    case 'Completed':                return 'done'
+    case 'Archived':                 return 'muted'
+    default:                         return 'muted'
+  }
 }
 </script>
 
@@ -181,10 +196,17 @@ function riskBarClass(score: number): string {
 
 .panel__risk-row:hover td { background: var(--nl-surface-2); }
 
-.panel__risk-name { font-weight: 600; color: var(--nl-text-1); }
+.panel__risk-name {
+  font-weight: 600;
+  color: var(--nl-text-1);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .panel__muted     { color: var(--nl-text-3); font-size: 0.8125rem; }
-.panel__days      { color: var(--nl-text-2); }
-.panel__overdue   { color: var(--nl-danger); font-weight: 600; }
+.panel__days      { color: var(--nl-text-2); white-space: nowrap; }
+.panel__overdue   { color: var(--nl-danger); font-weight: 600; white-space: nowrap; }
 
 .panel__status-badge {
   display: inline-block;
@@ -194,7 +216,13 @@ function riskBarClass(score: number): string {
   font-weight: 600;
   background: var(--nl-surface-2);
   color: var(--nl-text-2);
+  white-space: nowrap;
 }
+.panel__status-badge--draft       { background: rgba(148,163,184,0.15); color: #475569; }
+.panel__status-badge--active      { background: rgba(59,130,246,0.12);  color: #1d4ed8; }
+.panel__status-badge--validation  { background: rgba(245,158,11,0.15);  color: #b45309; }
+.panel__status-badge--done        { background: rgba(16,185,129,0.15);  color: #047857; }
+.panel__status-badge--muted       { background: rgba(107,114,128,0.1);  color: #4b5563; }
 
 .panel__score-cell {
   display: flex;

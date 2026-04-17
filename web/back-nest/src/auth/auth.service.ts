@@ -45,12 +45,66 @@ const TEST_USERS: readonly TestUser[] = [
     mustChangePassword: false,
   },
   {
+    id: 'test-pm-003',
+    email: 'testpm@neoleadge.test',
+    password: 'TestPm@123',
+    firstName: 'Test',
+    lastName: 'PM',
+    role: 'ProjectManager',
+    mustChangePassword: false,
+  },
+  {
     id: 'test-deploy-001',
     email: 'valid@neoleadge.com',
     password: 'Valid@123',
     firstName: 'Deploy',
     lastName: 'Team',
     role: 'DeploymentTeam',
+    mustChangePassword: false,
+  },
+  {
+    id: 'test-deploy-002',
+    email: 'testdeploy@neoleadge.test',
+    password: 'TestDeploy@123',
+    firstName: 'Test',
+    lastName: 'Deploy',
+    role: 'DeploymentTeam',
+    mustChangePassword: false,
+  },
+  {
+    id: 'test-spec-001',
+    email: 'spec@neoleadge.com',
+    password: 'Spec@123',
+    firstName: 'Specification',
+    lastName: 'Team',
+    role: 'SpecificationTeam',
+    mustChangePassword: false,
+  },
+  {
+    id: 'test-spec-002',
+    email: 'testspec@neoleadge.test',
+    password: 'TestSpec@123',
+    firstName: 'Test',
+    lastName: 'Spec',
+    role: 'SpecificationTeam',
+    mustChangePassword: false,
+  },
+  {
+    id: 'test-realiz-001',
+    email: 'realiz@neoleadge.com',
+    password: 'Realiz@123',
+    firstName: 'Realization',
+    lastName: 'Team',
+    role: 'RealizationTeam',
+    mustChangePassword: false,
+  },
+  {
+    id: 'test-realiz-002',
+    email: 'testrealiz@neoleadge.test',
+    password: 'TestRealiz@123',
+    firstName: 'Test',
+    lastName: 'Realiz',
+    role: 'RealizationTeam',
     mustChangePassword: false,
   },
   {
@@ -101,6 +155,24 @@ export class AuthService {
 
       if (testUser && testUser.password === password) {
         this.logger.warn(`Dev login for test user: ${email}`);
+
+        // Lazily materialise an AppUser row so /api/userprofile, automation,
+        // notifications, and any other module that looks up users by id work
+        // for hardcoded dev accounts. Idempotent.
+        await this.prisma.appUser.upsert({
+          where: { id: testUser.id },
+          update: {},
+          create: {
+            id: testUser.id,
+            email: testUser.email,
+            firstName: testUser.firstName,
+            lastName: testUser.lastName,
+            role: testUser.role,
+            passwordHash: await bcrypt.hash(testUser.password, 10),
+            isActive: true,
+            mustChangePassword: testUser.mustChangePassword,
+          },
+        });
 
         const jwt = this.generateToken({
           sub: testUser.id,

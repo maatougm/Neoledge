@@ -189,11 +189,20 @@ export class AutomationService {
     ruleName: string,
   ) {
     if (actionType === 'send_notification') {
-      const userId = actionConfig['userId'] as string | undefined;
+      let userId = actionConfig['userId'] as string | undefined;
       const message = (actionConfig['message'] as string | undefined) ?? ruleName;
 
+      // Fallback to the project's assigned project manager when userId is not set
       if (!userId) {
-        this.logger.warn(`send_notification: missing userId in actionConfig`);
+        const project = await this.prisma.project.findUnique({
+          where: { id: projectId },
+          select: { projectManagerId: true },
+        });
+        userId = project?.projectManagerId ?? undefined;
+      }
+
+      if (!userId) {
+        this.logger.debug(`send_notification: no userId and no PM assigned for project ${projectId}; skipping.`);
         return;
       }
 

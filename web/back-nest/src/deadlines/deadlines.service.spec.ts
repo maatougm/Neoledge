@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeadlinesService } from './deadlines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MailService } from '../mail/mail.service';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,11 +72,13 @@ describe('DeadlinesService', () => {
     // Default: notify resolves cleanly
     mockNotifications.notify.mockResolvedValue(undefined);
 
+    const mockMail = { send: jest.fn(async () => undefined) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeadlinesService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: NotificationsService, useValue: mockNotifications },
+        { provide: MailService, useValue: mockMail },
       ],
     }).compile();
 

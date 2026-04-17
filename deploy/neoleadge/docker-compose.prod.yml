@@ -1,0 +1,88 @@
+# ============================================================================
+# NeoLeadge — Production Docker Compose
+# Lives entirely inside its own Docker network `neoleadge-net`.
+# Web container binds to 127.0.0.1:8002 only — public traffic arrives through
+# the host-level Caddy reverse proxy (separate file Caddyfile).
+# ============================================================================
+
+services:
+
+  # ── PostgreSQL (isolated from School Hub's postgres) ───────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: neoleadge_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-neoleadge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-neoleadge}
+    volumes:
+      - neoleadge_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-neoleadge} -d ${DB_NAME:-neoleadge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    mem_limit: 384m
+    mem_reservation: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [ neoleadge-net ]
+
+  # ── NestJS backend ─────────────────────────────────────────────────────────
+  server:
+    build:
+      context: ../../web/back-nest
+      dockerfile: Dockerfile
+    container_name: neoleadge_server
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=512"
+      PORT: 3000
+      DATABASE_URL: postgresql://${DB_USER:-neoleadge}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-neoleadge}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TRANSCRIPTION_URL: ${TRANSCRIPTION_URL:-}
+    volumes:
+      - neoleadge_uploads:/app/uploads
+      - neoleadge_logs:/app/logs
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 192m
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    networks: [ neoleadge-net ]
+
+  # ── Frontend (Vite build served by nginx) ──────────────────────────────────
+  web:
+    build:
+      context: ../../web/Front/customapp
+      dockerfile: Dockerfile
+    container_name: neoleadge_web
+    ports:
+      - "127.0.0.1:8002:80"   # only accessible to Caddy on the host
+    depends_on: [ server ]
+    restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 32m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [ neoleadge-net ]
+
+volumes:
+  neoleadge_db:
+  neoleadge_uploads:
+  neoleadge_logs:
+
+networks:
+  neoleadge-net:
+    driver: bridge

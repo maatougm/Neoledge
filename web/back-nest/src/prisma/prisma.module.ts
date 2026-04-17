@@ -1,5 +1,4 @@
 import { Global, Module, Logger, OnApplicationShutdown } from '@nestjs/common';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import { PrismaService } from './prisma.service.js';
 
@@ -13,20 +12,32 @@ import { PrismaService } from './prisma.service.js';
         const url = process.env.DATABASE_URL;
         if (!url) throw new Error('DATABASE_URL env var is not set');
 
-        // Parse mysql://user:pass@host:port/db
-        const parsed = new URL(url);
-        const factory = new PrismaMariaDb({
-          host: parsed.hostname,
-          port: Number(parsed.port) || 3306,
-          database: parsed.pathname.replace(/^\//, ''),
-          user: parsed.username || undefined,
-          password: parsed.password || undefined,
-        });
+        // Provider is picked at runtime from DATABASE_URL scheme:
+        //   mysql://…   → MariaDB adapter (local dev w/ XAMPP)
+        //   postgres…   → native Prisma engine (prod container)
+        let client: PrismaClient;
+        if (url.startsWith('mysql://') || url.startsWith('mariadb://')) {
+          const { PrismaMariaDb } = await import('@prisma/adapter-mariadb');
+          const parsed = new URL(url);
+          const adapter = new PrismaMariaDb({
+            host: parsed.hostname,
+            port: Number(parsed.port) || 3306,
+            database: parsed.pathname.replace(/^\//, ''),
+            user: parsed.username || undefined,
+            password: parsed.password || undefined,
+          });
+          client = new PrismaClient({ adapter });
+          logger.log('Connected via MariaDB adapter');
+        } else {
+          // Postgres (prod) — Prisma 7 requires a driver adapter. Use pg.
+          const { PrismaPg } = await import('@prisma/adapter-pg');
+          const adapter = new PrismaPg({ connectionString: url });
+          client = new PrismaClient({ adapter });
+          logger.log('Connected via Postgres (pg) adapter');
+        }
 
-        const client = new PrismaClient({ adapter: factory }) as PrismaService;
         await client.$connect();
-        logger.log('Connected to MariaDB');
-        return client;
+        return client as PrismaService;
       },
     },
   ],

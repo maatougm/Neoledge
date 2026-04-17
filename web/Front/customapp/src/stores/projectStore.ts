@@ -4,7 +4,20 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import axios from 'axios'
 import api from '@/lib/api'
+
+/** Extract a user-facing error message from an axios error response. */
+function extractApiError(e: unknown, fallback: string): string {
+  if (axios.isAxiosError(e)) {
+    const data = e.response?.data as { message?: string | string[]; error?: string } | undefined
+    if (data?.message) {
+      return Array.isArray(data.message) ? data.message.join(', ') : data.message
+    }
+    if (data?.error) return data.error
+  }
+  return e instanceof Error ? e.message : fallback
+}
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -127,7 +140,7 @@ export const useProjectStore = defineStore('projects', () => {
       await fetchAll()
       return data
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors de la création du projet.'
+      error.value = extractApiError(e, 'Erreur lors de la création du projet.')
       return null
     } finally {
       loading.value = false

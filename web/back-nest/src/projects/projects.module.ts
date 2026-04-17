@@ -5,9 +5,10 @@ import { PmController } from './pm.controller.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { PhaseGateService } from './phase-gate.service.js';
 import { AutomationModule } from '../automation/automation.module.js';
+import { UsersModule } from '../users/users.module.js';
 
 @Module({
-  imports: [NotificationsModule, AutomationModule],
+  imports: [NotificationsModule, AutomationModule, UsersModule],
   controllers: [ProjectsController, PmController],
   providers: [ProjectsService, PhaseGateService],
   exports: [ProjectsService, PhaseGateService],

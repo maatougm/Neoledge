@@ -38,6 +38,8 @@
             <i v-else class="pi pi-spin pi-spinner" aria-hidden="true" />
           </button>
           <input
+            id="avatar-file-input"
+            name="avatar-file-input"
             ref="fileInputRef"
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
@@ -53,9 +55,25 @@
           <span>{{ email }}</span>
         </div>
         <div class="identity-meta">
-          <div class="meta-row">
-            <i class="pi pi-shield" aria-hidden="true" />
-            <span>Compte actif</span>
+          <div v-if="jobTitle" class="meta-row">
+            <i class="pi pi-briefcase" aria-hidden="true" />
+            <span>{{ jobTitle }}</span>
+          </div>
+          <div v-if="department" class="meta-row">
+            <i class="pi pi-building" aria-hidden="true" />
+            <span>{{ department }}</span>
+          </div>
+          <div v-if="phoneNumber" class="meta-row">
+            <i class="pi pi-phone" aria-hidden="true" />
+            <span>{{ phoneNumber }}</span>
+          </div>
+          <div v-if="lastLoginAt" class="meta-row">
+            <i class="pi pi-clock" aria-hidden="true" />
+            <span>Dernière connexion : {{ formatRelative(lastLoginAt) }}</span>
+          </div>
+          <div v-if="createdAt" class="meta-row">
+            <i class="pi pi-calendar" aria-hidden="true" />
+            <span>Membre depuis {{ formatDate(createdAt) }}</span>
           </div>
         </div>
       </aside>
@@ -101,6 +119,41 @@
                 <span>{{ email }}</span>
               </div>
               <p class="field-hint">L'adresse e-mail ne peut pas être modifiée ici.</p>
+            </div>
+
+            <div class="fields-row">
+              <div class="field-group">
+                <label for="jobTitle" class="field-label">Fonction</label>
+                <NeoInputText
+                  id="jobTitle"
+                  v-model="jobTitle"
+                  placeholder="Ex. Chef de projet"
+                  :disabled="savingInfo"
+                  class="field-input"
+                />
+              </div>
+              <div class="field-group">
+                <label for="department" class="field-label">Département</label>
+                <NeoInputText
+                  id="department"
+                  v-model="department"
+                  placeholder="Ex. Direction IT"
+                  :disabled="savingInfo"
+                  class="field-input"
+                />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="phoneNumber" class="field-label">Numéro de téléphone</label>
+              <NeoInputText
+                id="phoneNumber"
+                v-model="phoneNumber"
+                placeholder="+33 6 12 34 56 78"
+                :disabled="savingInfo"
+                autocomplete="tel"
+                class="field-input"
+              />
             </div>
 
             <NeoMessage v-if="infoError" severity="error" :text="infoError" class="panel-msg" />
@@ -206,13 +259,28 @@ import { useConfigStore } from '@/stores/configStore'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 import SecuritySection from '@/components/admin/sections/SecuritySection.vue'
+import { formatDate, formatRelative } from '@/lib/formatDate'
+
+interface ProfilePayload {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  role: UserRole
+  avatarPath: string | null
+  jobTitle: string | null
+  phoneNumber: string | null
+  department: string | null
+  createdAt: string | null
+  lastLoginAt: string | null
+}
 
 interface JwtPayload {
   sub?: string
-  given_name?: string
-  family_name?: string
   email?: string
-  'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'?: string
+  role?: string
+  firstName?: string
+  lastName?: string
 }
 
 const router      = useRouter()
@@ -220,7 +288,7 @@ const authStore   = useAuthStore()
 const configStore = useConfigStore()
 const toast       = useNeoToast()
 
-// ── JWT-decoded identity ───────────────────────────────────────────────────────
+// ── Identity (hydrated from backend; JWT is only a fallback) ───────────────────
 const userId = ref('')
 const email  = ref('')
 const role   = ref<UserRole | ''>('')
@@ -228,8 +296,14 @@ const role   = ref<UserRole | ''>('')
 // ── Editable fields ────────────────────────────────────────────────────────────
 const firstName = ref('')
 const lastName  = ref('')
-const origFirst = ref('')
-const origLast  = ref('')
+const jobTitle  = ref('')
+const phoneNumber = ref('')
+const department  = ref('')
+const origSnapshot = ref<Record<string, string>>({})
+
+// ── Read-only meta ─────────────────────────────────────────────────────────────
+const createdAt   = ref<string | null>(null)
+const lastLoginAt = ref<string | null>(null)
 
 // ── Password fields ────────────────────────────────────────────────────────────
 const currentPassword = ref('')
@@ -264,28 +338,60 @@ const roleLabel = computed(() =>
 )
 
 const infoChanged = computed(() =>
-  firstName.value !== origFirst.value || lastName.value !== origLast.value
+  firstName.value   !== (origSnapshot.value.firstName   ?? '') ||
+  lastName.value    !== (origSnapshot.value.lastName    ?? '') ||
+  jobTitle.value    !== (origSnapshot.value.jobTitle    ?? '') ||
+  phoneNumber.value !== (origSnapshot.value.phoneNumber ?? '') ||
+  department.value  !== (origSnapshot.value.department  ?? ''),
 )
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-onMounted(async () => {
+function hydrateFromJwt(): void {
   if (!authStore.jwt) return
   try {
     const payload = JSON.parse(atob(authStore.jwt.split('.')[1])) as JwtPayload
     userId.value    = payload.sub ?? ''
-    firstName.value = payload.given_name ?? ''
-    lastName.value  = payload.family_name ?? ''
-    origFirst.value = payload.given_name ?? ''
-    origLast.value  = payload.family_name ?? ''
     email.value     = payload.email ?? ''
-    role.value      = (
-      payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? ''
-    ) as UserRole | ''
+    role.value      = (payload.role ?? '') as UserRole | ''
+    firstName.value = payload.firstName ?? ''
+    lastName.value  = payload.lastName  ?? ''
   } catch { /* JWT decode failed — ignore */ }
+}
 
-  // Load avatar URL if user has one
-  if (userId.value) {
-    avatarUrl.value = `${configStore.apiUrl}/api/userprofile/avatar/${userId.value}`
+function applyProfile(p: ProfilePayload): void {
+  userId.value      = p.id
+  firstName.value   = p.firstName ?? ''
+  lastName.value    = p.lastName  ?? ''
+  email.value       = p.email     ?? ''
+  role.value        = p.role
+  jobTitle.value    = p.jobTitle    ?? ''
+  phoneNumber.value = p.phoneNumber ?? ''
+  department.value  = p.department  ?? ''
+  createdAt.value   = p.createdAt
+  lastLoginAt.value = p.lastLoginAt
+  origSnapshot.value = {
+    firstName: firstName.value,
+    lastName: lastName.value,
+    jobTitle: jobTitle.value,
+    phoneNumber: phoneNumber.value,
+    department: department.value,
+  }
+  // Only load avatar if backend says the user actually has one.
+  avatarUrl.value = p.avatarPath
+    ? `${configStore.apiUrl}/api/userprofile/avatar/${p.id}?t=${Date.now()}`
+    : null
+}
+
+onMounted(async () => {
+  hydrateFromJwt() // fast path for role/email while the HTTP fetch is in-flight
+  try {
+    const { data } = await api.get<ProfilePayload>('/api/userprofile', {
+      suppressErrorToast: true,
+    } as never)
+    applyProfile(data)
+  } catch {
+    // Seeded test users (testpm@neoleadge.test etc.) have no AppUser row — the
+    // JWT hydrate above already populated what we know. Fall back silently.
   }
 })
 
@@ -356,12 +462,14 @@ async function saveInfo(): Promise<void> {
   }
   savingInfo.value = true
   try {
-    await api.put(
-      `/admin/AppUser/${userId.value}`,
-      { firstName: firstName.value.trim(), lastName: lastName.value.trim() },
-    )
-    origFirst.value = firstName.value
-    origLast.value  = lastName.value
+    const { data } = await api.put<ProfilePayload>('/api/userprofile', {
+      firstName:   firstName.value.trim(),
+      lastName:    lastName.value.trim(),
+      jobTitle:    jobTitle.value.trim() || null,
+      phoneNumber: phoneNumber.value.trim() || null,
+      department:  department.value.trim() || null,
+    })
+    applyProfile(data)
     toast.add({ severity: 'success', detail: 'Profil mis à jour avec succès.', life: 3000 })
   } catch {
     infoError.value = 'Erreur lors de la mise à jour. Veuillez réessayer.'

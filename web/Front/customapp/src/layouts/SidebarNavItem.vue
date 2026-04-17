@@ -42,7 +42,27 @@ const router = useRouter()
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
 
-const isActive = computed<boolean>(() => route.path.startsWith(props.item.to))
+/**
+ * Active highlight rule — avoids the "Aperçu" (project index) staying highlighted
+ * on every sub-route of the project.
+ *
+ * - /app/pm/projects/X              → exact match only (index route)
+ * - /app/pm/projects/X/wiki/:slug   → prefix match (so /wiki is active on any wiki page)
+ * - Everything else                 → prefix match
+ *
+ * Heuristic: a "leaf" item ends in a segment with a slash (e.g. "/workpackages").
+ * The project-overview item is the only one whose `to` is the bare project path
+ * (ends with the projectId UUID, no trailing segment).
+ */
+const isActive = computed<boolean>(() => {
+  const to = props.item.to
+  const path = route.path
+  // Project overview (bare /app/pm/projects/:id) must be EXACT — otherwise it would
+  // stay highlighted on every sub-route (workpackages, gantt, etc.)
+  const PROJECT_OVERVIEW_RE = /^\/app\/pm\/projects\/[^/]+$/
+  if (PROJECT_OVERVIEW_RE.test(to)) return path === to
+  return path === to || path.startsWith(to + '/')
+})
 
 const badgeValue = computed<number>(() => {
   if (props.item.badge === undefined) return 0

@@ -335,7 +335,7 @@ onMounted(async () => {
 
   try {
     const { data } = await axios.get<PortalProject>(
-      `${configStore.apiUrl}/portal/${token}`,
+      `${configStore.apiUrl}/api/portal/${token}`,
     )
     project.value = data
     state.value = 'loaded'

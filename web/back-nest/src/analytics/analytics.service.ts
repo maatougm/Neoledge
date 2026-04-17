@@ -161,20 +161,16 @@ export class AnalyticsService {
 
     const now = new Date();
 
+    type ProjectRow = { id: string; name: string; status: string; endDate: Date; projectManager: { firstName: string; lastName: string } | null };
     const projects = await this.prisma.project.findMany({
       where: {
         isDeleted: false,
         status: { notIn: TERMINAL_STATUSES },
-        endDate: { not: null },
       },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        endDate: true,
+      include: {
         projectManager: { select: { firstName: true, lastName: true } },
       },
-    });
+    }) as unknown as ProjectRow[];
 
     const result: DeadlineRiskRow[] = projects.map((p) => {
       const daysRemaining = Math.floor((p.endDate.getTime() - now.getTime()) / 86_400_000);

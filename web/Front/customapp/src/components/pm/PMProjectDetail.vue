@@ -1,5 +1,7 @@
 <template>
   <div class="pm-detail">
+    <div v-if="!project" class="pm-detail__loading">Chargement…</div>
+    <template v-else>
     <div class="detail-header">
       <button class="back-btn" @click="emit('close')">
         <i class="pi pi-arrow-left" /> Mes projets
@@ -94,6 +96,7 @@
         :project-id="project.id"
       />
     </div>
+    </template>
   </div>
 </template>
 

@@ -1,0 +1,29 @@
+# /etc/caddy/Caddyfile on school-hub-server
+# Host-level reverse proxy — TLS automated via Let's Encrypt.
+
+# ── School Hub (existing, unchanged app) ────────────────────────────────────
+# school_web insists on HTTPS internally with its own self-signed cert, so we
+# proxy over HTTPS and skip verify (the loop stays on 127.0.0.1 — no leak).
+pythagore-init.com, www.pythagore-init.com {
+    reverse_proxy https://127.0.0.1:8443 {
+        transport http {
+            tls_insecure_skip_verify
+        }
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    encode gzip
+}
+
+# ── NeoLeadge (new deployment) ──────────────────────────────────────────────
+neoleadge.pythagore-init.com {
+    reverse_proxy 127.0.0.1:8002 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    encode gzip
+}

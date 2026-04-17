@@ -16,11 +16,14 @@
       <div class="topbar__search">
         <i class="pi pi-search topbar__search-icon" aria-hidden="true" />
         <input
+          id="topbar-search"
+          name="topbar-search"
           v-model="searchQuery"
           class="topbar__search-input"
           type="search"
           placeholder="Rechercher…"
           aria-label="Rechercher"
+          autocomplete="off"
         />
       </div>
 

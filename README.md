@@ -1,384 +1,223 @@
 # NeoLeadge — Deployment Manager
 
-> Full-stack deployment project management platform. Manage users, projects, meetings, AI-powered analysis, real-time collaboration, and client sign-offs.
+Full-stack project management platform for deployment projects. Manage projects, work packages, sprints, Gantt timelines, budgets, time tracking, wiki documentation, meetings with AI transcription, real-time collaboration, and client sign-offs.
 
-**Backend** — NestJS (TypeScript) · Prisma 7 · MySQL  
-**Frontend** — Vue 3 · TypeScript · NeoLibrary (PrimeVue 4)  
-**Transcription** — Python FastAPI · faster-whisper · SpeechBrain  
-**Auth** — JWT Bearer · Role-based access control (6 roles)  
-**Real-time** — Socket.IO (notifications + collaboration)
+**Live:** https://neoleadge.pythagore-init.com
 
----
+## Stack
 
-## Table of Contents
+| Layer | Tech |
+|-------|------|
+| Backend | NestJS 11 (TypeScript) + Prisma 7 + PostgreSQL |
+| Frontend | Vue 3 + Vite + Pinia + TypeScript + NeoLibrary (PrimeVue 4) |
+| Real-time | Socket.IO — notifications + collaboration namespaces |
+| Auth | JWT + role-based access control (6 roles) |
+| Transcription | Python FastAPI + faster-whisper + SpeechBrain (optional) |
+| Infrastructure | Docker Compose + Caddy reverse proxy + Let's Encrypt |
 
-- [Overview](#overview)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Features](#features)
-- [API Reference](#api-reference)
-- [Roles & Permissions](#roles--permissions)
-- [Configuration](#configuration)
-- [Development Guide](#development-guide)
-- [Troubleshooting](#troubleshooting)
+## Quick Start (local development)
 
----
-
-## Overview
-
-NeoLeadge manages the full lifecycle of deployment projects — from initial specification through delivery and client sign-off — with multi-team collaboration, AI meeting analysis, and automated workflows.
-
-```
-Draft → InProgress → SpecificationValidation → Realization → DeploymentValidation → Completed
-```
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- [Node.js 18+](https://nodejs.org/)
-- [Python 3.10+](https://www.python.org/)
-- [XAMPP](https://www.apachefriends.org/) (MySQL on port 3306)
-
-### 1 — Clone
+**Prerequisites:** Node 22+, XAMPP MySQL on port 3306, database `NeoLeadgeDeployment`.
 
 ```bash
-git clone https://github.com/maatougm/Neoledge.git
-cd Neoledge
-git checkout nest-back
-```
-
-### 2 — Database
-
-Start XAMPP and ensure MySQL is running on port 3306, then:
-
-```bash
-C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 -e "CREATE DATABASE IF NOT EXISTS NeoLeadgeDeployment;"
-```
-
-### 3 — Backend (NestJS)
-
-```bash
+# Backend
 cd web/back-nest
+cp .env.example .env          # set DATABASE_URL, JWT_SECRET
 npm install
-cp .env.example .env      # then fill in your values
 npx prisma generate
-npm run start:dev
-# → http://localhost:5122
-```
+npm run start:dev             # http://localhost:5122
 
-### 4 — Frontend (Vue 3)
-
-```bash
+# Frontend
 cd web/Front/customapp
 npm install
-npm run dev
-# → http://localhost:5173
+npm run dev                   # http://localhost:5173
+
+# Seed demo data
+cd web/back-nest
+npx tsx prisma/seed.ts
+npx tsx prisma/seed-openproject.ts
+npx tsx prisma/seed-notifications.ts
 ```
 
-### 5 — Transcription service (optional — needed for meeting upload)
-
-```bash
-cd web/Transcription
-pip install -r requirements.txt
-uvicorn app:app --port 8000
-```
-
----
+Login: `admin@neoleadge.com` / `Admin@123`
 
 ## Project Structure
 
 ```
-Neoledge/
-├── README.md
-├── CLAUDE.md                    ← Developer reference (architecture, patterns, constraints)
-├── CODEBASE_EXPLANATION.md      ← Deep-dive architecture doc
-│
-└── web/
-    ├── back-nest/               ← NestJS backend (ACTIVE)
-    │   ├── prisma/
-    │   │   └── schema.prisma    ← Database schema (Prisma)
-    │   ├── src/
-    │   │   ├── app.module.ts    ← Module registry
-    │   │   ├── auth/            ← JWT login
-    │   │   ├── users/           ← User management
-    │   │   ├── projects/        ← Project CRUD, validations, field values
-    │   │   ├── meetings/        ← Audio transcription, transcript management
-    │   │   ├── ai/              ← AI transcript analysis (OpenAI / Gemini)
-    │   │   ├── analytics/       ← Dashboard metrics with caching
-    │   │   ├── automation/      ← Workflow rule engine
-    │   │   ├── collaboration/   ← Real-time WebSocket field editing
-    │   │   ├── portal/          ← Public client sign-off portal
-    │   │   ├── notifications/   ← Real-time notification delivery
-    │   │   ├── prisma/          ← Global DB client (MariaDB adapter)
-    │   │   └── common/          ← Guards, result pattern, utilities
-    │   └── .env                 ← Environment variables (not committed)
-    │
-    ├── Front/customapp/         ← Vue 3 frontend
-    │   └── src/
-    │       ├── router/          ← Auth guard + role-based routing
-    │       ├── stores/          ← Pinia stores (auth, projects, pm, analytics, ...)
-    │       ├── views/           ← Page-level components (Admin, PM, Team, Portal)
-    │       ├── components/      ← UI components
-    │       │   ├── admin/       ← Admin sections, analytics, portal token manager
-    │       │   ├── pm/          ← PM questionnaire, meetings, AI panel, automation
-    │       │   ├── common/      ← Presence avatars, shared UI
-    │       │   └── shared/      ← Reusable base components
-    │       ├── composables/     ← useCollaborationSocket, useNotificationSocket, ...
-    │       ├── layouts/         ← AppShell, AdminLayout, PmLayout, TeamLayout
-    │       └── types/           ← TypeScript interfaces
-    │
-    ├── Transcription/           ← Python transcription service
-    │   ├── app.py               ← FastAPI app
-    │   ├── transcriber.py       ← faster-whisper + SpeechBrain pipeline
-    │   └── models/              ← SpeechBrain ECAPA model weights
-    │
-    └── Back/                    ← ASP.NET Core 8 (LEGACY — standby)
+neoleadge/
+  web/
+    back-nest/              NestJS backend (port 5122)
+      src/
+        auth/               JWT login, TOTP 2FA
+        users/              User CRUD (Admin)
+        projects/           Projects + PM endpoints
+        work-packages/      Issues/tasks with hierarchy, deps, watchers
+        agile/              Boards, columns, sprints, burndown
+        gantt/              Gantt timeline + milestones + baselines
+        budgeting/          Project budgets + line items
+        time-tracking/      Time entries + hourly rates
+        wiki/               Per-project wiki with revisions
+        portfolio/          Portfolio grouping + versions
+        team-planner/       Capacity, assignments, conflicts
+        meetings/           Audio transcription + agenda + outcomes
+        ai/                 OpenAI / Gemini transcript analysis
+        analytics/          Dashboard metrics (cached 15min)
+        automation/         Workflow rule engine
+        collaboration/      WebSocket real-time collab
+        notifications/      In-app notifications + socket push
+        portal/             Public client portal + sign-off
+        search/             Global search (projects, WPs, wiki, users)
+        health/             /health endpoint
+        prisma/             Global DB client (MariaDB + Postgres)
+      prisma/
+        schema.prisma           MariaDB schema (local dev)
+        schema.postgres.prisma  PostgreSQL schema (production)
+        seed.ts                 Core demo data (users, projects, fields)
+        seed-openproject.ts     WPs, sprints, milestones, time, budget, wiki
+        seed-notifications.ts   Demo notifications
+      Dockerfile              Multi-stage prod build
+    Front/customapp/        Vue 3 SPA
+      src/
+        views/              25 page components
+        components/         Admin, PM, common, shared UI
+        stores/             18 Pinia stores
+        composables/        Socket.IO, keyboard shortcuts, dark mode
+        layouts/            AppShell, Sidebar, Topbar, role layouts
+        router/             49 named routes with role guards
+        lib/                API client, JWT helpers, date formatters
+      Dockerfile            Vite build + nginx serve
+      nginx.prod.conf       SPA + API proxy + Socket.IO
+    Transcription/          Python FastAPI (optional, port 8000)
+  deploy/neoleadge/         Production deployment config
+    docker-compose.prod.yml 3-container stack (Postgres + NestJS + nginx)
+    Caddyfile               TLS reverse proxy for both apps
+    .env.prod.example       Environment template
+    README.md               Deploy runbook
+  .github/workflows/ci.yml  Build + lint + test + 9 Playwright smoke harnesses
 ```
 
----
+## Features (25 pages)
 
-## Features
+### Admin
+- Dashboard with analytics (phase velocity, bottleneck, deadline risk, workload)
+- Project CRUD with soft-delete + trash/restore
+- User management (create, edit, deactivate, password reset)
+- Templates for project field presets
+- System status + audit log
+- Portfolio management (group projects, roadmap view)
+- Team planner (capacity heatmap, assignment conflicts)
 
-### Project Management
-- 7-stage workflow with enforced phase gates
-- Dynamic questionnaires — Static, Dynamic, and Custom field types
-- Team validations — each phase requires explicit approval before advancing
-- Activity audit feed — every action logged per project
-- File attachments, threaded comments, project templates
+### Project Manager
+- Project list + overview with tile grid
+- Work Packages — split-panel list/detail, create/edit/delete, custom fields, watchers, dependencies
+- Gantt — timeline with zoom, milestones, baseline capture + drift comparison
+- Kanban Board — drag-drop cards between columns, real-time sync across users
+- Backlog — unassigned WPs + sprint drag-drop assignment
+- Sprint Board — sprint selector, metadata, burndown chart (ideal vs remaining)
+- Wiki — page tree, markdown editing, search, revision history + restore
+- Budget — summary cards, line items, burn report
+- Time Tracking — log entries, weekly grid, project summary by user/activity
+- Members — project team roster
+- Activity — project timeline feed
+- Meetings — audio upload, AI transcription (faster-whisper), speaker diarization, AI analysis (action items + decisions), agenda + attendees + outcomes
+- Automation — rule builder (trigger events, conditions, actions), execution logs
+- My Tasks — cross-project assigned work packages
+- Team Planner — capacity + assignment view
 
-### Real-time Collaboration
-- Live field editing with presence indicators — see who is editing which field
-- Colored avatar circles showing active users per project
-- Debounced field updates broadcast via WebSocket (`/collaboration` namespace)
+### Team Members (Spec/Realiz/Deploy/Viewer)
+- Project list (read-only or role-scoped)
+- Project detail with questionnaire
+- Validation submission
 
-### AI Meeting Assistant
-- Upload audio recordings → automatic transcription (faster-whisper)
-- Speaker diarization (SpeechBrain ECAPA)
-- AI analysis via OpenAI GPT-4o-mini or Google Gemini 1.5 Flash
-- Extracts: meeting summary (markdown), action items with assignees, key decisions and risks
-- Results available via polling or immediate if already processed
+### Public
+- Client Portal — token-based access, project phase stepper, sign-off form
+- Login with quick-access demo buttons + TOTP 2FA support
 
-### Advanced Analytics (Admin)
-- Phase velocity — completion rates per phase
-- Bottleneck heatmap — identify process blockers
-- Deadline risk scores — projects at risk with days remaining
-- Team workload distribution
-- 15-minute server-side cache for performance
+## Roles
 
-### Workflow Automation Engine
-- Rule builder: choose trigger event + action type + optional condition
-- Trigger events: `status_changed`, `validation_submitted`, `field_updated`, `deadline_approaching`
-- Actions: `send_notification` (push to user), `update_field` (auto-populate field value)
-- Execution logs with success/failed/skipped status per rule
+| Role | Access |
+|------|--------|
+| Admin | Full access to all modules + system management |
+| ProjectManager | Own projects + all project modules + team planner |
+| SpecificationTeam | Assigned projects (read) + specification validation |
+| RealizationTeam | Assigned projects (read) + realization validation |
+| DeploymentTeam | Assigned projects (read) + deployment validation |
+| Viewer | Read-only project access |
 
-### Client Portal
-- Generate shareable token links for clients (configurable expiry)
-- Public view of project fields and phase progress — no login required
-- Clients submit approval or rejection with optional comment
-- Admin can revoke tokens and view access count
+## Real-time Features
 
-### Notifications
-- Real-time push via Socket.IO (`/notifications` namespace)
-- Triggered by automation rules, project events, and validations
+- **Notifications** — Socket.IO `/notifications` namespace, JWT room auth, toast + bell counter
+- **Collaboration** — Socket.IO `/collaboration` namespace, field focus indicators, presence avatars, live Kanban card-move sync across users
 
----
+## Production Deployment
 
-## API Reference
+Deployed at `https://neoleadge.pythagore-init.com` alongside School Hub (`pythagore-init.com`) on the same VPS with zero interference.
 
-All endpoints except `/auth/login`, `GET /portal/:token`, and `POST /portal/:token/signoff` require: `Authorization: Bearer {token}`
+```
+neoleadge_postgres    PostgreSQL 16   384 MB limit
+neoleadge_server      NestJS          768 MB limit
+neoleadge_web         nginx + Vite    128 MB limit
+caddy                 TLS terminator  host-level, routes by Host header
+```
 
-### Auth
-| Method | Route | Description |
-|--------|-------|-------------|
-| `POST` | `/auth/login` | `{ email, password }` → `{ access_token }` |
+See `deploy/neoleadge/README.md` for the full deploy + update + rollback runbook.
 
-### Projects — PM
-| Method | Route | Description |
-|--------|-------|-------------|
-| `GET` | `/pm/projects` | My assigned projects |
-| `GET` | `/pm/team-projects` | Team projects |
-| `GET` | `/pm/projects/:id` | Project detail + validations |
-| `PATCH` | `/pm/projects/:id/field-values` | Save questionnaire |
-| `POST` | `/pm/projects/:id/fields` | Add custom field |
-| `POST` | `/pm/projects/:id/validations` | Submit phase validation |
-| `GET` | `/pm/projects/:id/activity` | Activity feed |
+## API Overview
 
-### Projects — Admin
-| Method | Route | Description |
-|--------|-------|-------------|
-| `GET` | `/admin/projects` | All projects |
-| `POST` | `/admin/projects` | Create project |
-| `PATCH` | `/admin/projects/:id/status` | Update status |
-| `POST` | `/admin/projects/:id/assign-manager` | Assign PM |
+70+ REST endpoints organized by module. Key routes:
 
-### Meetings
-| Method | Route | Description |
-|--------|-------|-------------|
-| `POST` | `/pm/projects/:id/meetings/upload` | Upload audio (multipart) |
-| `GET` | `/pm/projects/:id/meetings` | List meetings |
-| `GET` | `/pm/projects/:id/meetings/:meetingId` | Transcript detail |
-| `DELETE` | `/pm/projects/:id/meetings/:meetingId` | Delete |
-| `PATCH` | `/pm/projects/:id/meetings/:meetingId/rename-speaker` | Rename speaker |
-| `POST` | `/pm/projects/:id/meetings/:meetingId/ai-analyze` | Trigger AI analysis |
-| `GET` | `/pm/projects/:id/meetings/:meetingId/ai-results` | Get AI results |
+- `POST /auth/login` — JWT authentication
+- `GET/POST/PUT /admin/project` — project CRUD
+- `GET/POST/PATCH/DELETE /pm/projects/:id/work-packages` — work package CRUD
+- `GET /pm/projects/:id/gantt` — Gantt payload
+- `GET/POST /pm/projects/:id/boards` — Kanban boards
+- `PATCH /pm/projects/:id/boards/:id/cards/:wpId/move` — card drag-drop
+- `GET/POST /pm/projects/:id/wiki/pages` — wiki CRUD
+- `GET/PUT /pm/projects/:id/budget` — budget management
+- `GET/POST /api/time-entries` — time tracking
+- `GET /api/analytics/*` — dashboard metrics
+- `GET /api/portal/:token` — public project view
+- `GET /health` — server health check
 
-### Analytics (Admin)
-| Method | Route | Description |
-|--------|-------|-------------|
-| `GET` | `/api/analytics/phase-velocity` | Phase completion rates |
-| `GET` | `/api/analytics/bottleneck` | Bottleneck heatmap |
-| `GET` | `/api/analytics/deadline-risk` | At-risk projects |
-| `GET` | `/api/analytics/team-workload` | Team utilization |
+Full API documentation available at `/api` (Swagger UI) when the backend is running.
 
-### Automation
-| Method | Route | Description |
-|--------|-------|-------------|
-| `GET` | `/pm/projects/:id/automation/rules` | List rules |
-| `POST` | `/pm/projects/:id/automation/rules` | Create rule |
-| `PATCH` | `/pm/projects/:id/automation/rules/:ruleId` | Update rule |
-| `DELETE` | `/pm/projects/:id/automation/rules/:ruleId` | Delete rule |
-| `PATCH` | `/pm/projects/:id/automation/rules/:ruleId/toggle` | Enable/disable |
-| `GET` | `/pm/projects/:id/automation/logs` | Execution logs |
+## Testing
 
-### Client Portal
-| Method | Route | Auth | Description |
-|--------|-------|------|-------------|
-| `POST` | `/admin/projects/:id/portal-tokens` | JWT | Generate token |
-| `GET` | `/admin/projects/:id/portal-tokens` | JWT | List tokens |
-| `DELETE` | `/admin/portal-tokens/:id` | JWT | Revoke token |
-| `GET` | `/portal/:token` | None | Public project view |
-| `POST` | `/portal/:token/signoff` | None | Client sign-off |
+9 Playwright smoke harnesses + Jest backend tests:
 
----
+| Harness | Coverage |
+|---------|----------|
+| `smoke-test.mjs` | 25 routes + 3 interactive flows |
+| `smoke-mutations.mjs` | 8 CRUD operations |
+| `smoke-a11y.mjs` | axe-core WCAG 2.1 AA |
+| `smoke-darkmode.mjs` | All routes in dark mode |
+| `smoke-mobile.mjs` | iPhone SE viewport + overflow detection |
+| `smoke-rbac.mjs` | 6 roles x API+UI matrix (85+75 cases) |
+| `smoke-public.mjs` | Login, lockout, portal flows |
+| `smoke-every-button.mjs` | 48 clickable elements |
+| `smoke-collab.mjs` | Two-browser real-time card move |
+| Jest (backend) | 66 specs |
 
-## Roles & Permissions
+## Database
 
-| Feature | Admin | ProjectManager | Spec/Real/Deploy Teams | Viewer |
-|---------|:-----:|:--------------:|:---------------------:|:------:|
-| Dashboard & analytics | ✅ | — | — | — |
-| Create / manage projects | ✅ | — | — | — |
-| Manage users | ✅ | — | — | — |
-| Generate portal tokens | ✅ | — | — | — |
-| View assigned projects | ✅ | ✅ | ✅ | ✅ |
-| Fill questionnaire | — | ✅ | — | — |
-| Add custom fields | — | ✅ *(if allowed)* | — | — |
-| Upload meeting recordings | — | ✅ | — | — |
-| Trigger AI analysis | — | ✅ | — | — |
-| Manage automation rules | ✅ | ✅ *(own projects)* | — | — |
-| Submit phase validation | — | — | ✅ | — |
-| Post comments | ✅ | ✅ | ✅ | — |
+- **Local dev:** MySQL via XAMPP, port 3306, `NeoLeadgeDeployment`
+- **Production:** PostgreSQL 16 (Docker), `neoleadge`
+- **ORM:** Prisma 7 with adapter pattern — auto-detects MariaDB or Postgres from `DATABASE_URL`
+- **Schema:** 44 tables covering users, projects, work packages, sprints, boards, milestones, budgets, time entries, wiki, portfolios, notifications, audit logs, and more
 
----
-
-## Configuration
-
-### `web/back-nest/.env`
+## Environment Variables
 
 ```env
-DATABASE_URL=mysql://root:@127.0.0.1:3306/NeoLeadgeDeployment
-JWT_SECRET=your-secret-min-32-chars
+DATABASE_URL=mysql://root:@127.0.0.1:3306/NeoLeadgeDeployment  # or postgresql://...
+JWT_SECRET=your-secret
 JWT_EXPIRES_IN=7d
+AI_ENABLED=false
+AI_PROVIDER=openai
+OPENAI_API_KEY=
+GEMINI_API_KEY=
 TRANSCRIPTION_URL=http://localhost:8000
-
-# AI Meeting Assistant
-AI_ENABLED=true
-AI_PROVIDER=openai          # openai | gemini
-OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=...
 ```
 
-### `web/Front/customapp/public/config.json`
+## License
 
-```json
-{
-  "GLB_API_URL": "http://localhost:5122",
-  "GLB_ELISE_URL": "https://your-elise-instance"
-}
-```
-
----
-
-## Development Guide
-
-### Backend
-
-```bash
-cd web/back-nest
-
-npm run start:dev     # watch mode
-npm run build         # production build
-npm run lint          # ESLint
-
-# After editing prisma/schema.prisma:
-npx prisma generate
-
-# Schema changes on existing DB — use raw SQL, NOT prisma db push:
-C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 NeoLeadgeDeployment -e "ALTER TABLE ..."
-```
-
-### Frontend
-
-```bash
-cd web/Front/customapp
-
-npm run dev           # http://localhost:5173
-npm run build         # production build
-npm run lint          # ESLint --fix
-npm run format        # Prettier
-npm run test:unit     # Vitest
-```
-
-### Adding a new NestJS module
-
-1. Create `src/<module>/<module>.service.ts` — use `PrismaService`, return `Result.ok()` / `Result.fail()`
-2. Create `src/<module>/<module>.controller.ts` — `@UseGuards(JwtAuthGuard)`, map results to HTTP
-3. Create `src/<module>/<module>.module.ts`
-4. Add to `imports` in `src/app.module.ts`
-
----
-
-## Troubleshooting
-
-### `prisma db push` / `prisma migrate` fails
-
-Known issue — FK index drift on the existing DB. Use raw SQL for schema changes:
-```bash
-C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 NeoLeadgeDeployment -e "ALTER TABLE ..."
-npx prisma generate
-```
-
-### Frontend shows blank page or `Failed to fetch`
-
-1. Check backend is running: `http://localhost:5122`
-2. Check `public/config.json` — `GLB_API_URL` must be `http://localhost:5122`
-3. Open DevTools (F12) → Network for the specific error
-
-### Meeting upload does nothing / 500 error
-
-The transcription service is not running. Start it:
-```bash
-cd web/Transcription && uvicorn app:app --port 8000
-```
-
-### AI analysis stays in "processing" forever
-
-- Check `AI_ENABLED=true` in `.env`
-- Check `OPENAI_API_KEY` or `GEMINI_API_KEY` is set and valid
-- Check NestJS logs for API errors from the provider
-
-### Port already in use
-
-```bash
-# Windows — free a port (example: 5122)
-netstat -ano | findstr :5122
-taskkill //F //PID <PID>
-```
-
----
-
-## Legacy
-
-`web/Back/` contains the original ASP.NET Core 8 backend built for Elise CustomAction integration. It is **not in active development** and has been superseded by the NestJS backend. Kept for reference only.
+Proprietary. All rights reserved.

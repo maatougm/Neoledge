@@ -16,7 +16,7 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { PortalService } from './portal.service.js';
-import type { GenerateTokenDto, SubmitSignoffDto } from './portal.service.js';
+import { GenerateTokenDto, SubmitSignoffDto } from './dto/portal.dto.js';
 
 // ─── Admin routes (JWT required) ─────────────────────────────────────────────
 
@@ -29,9 +29,12 @@ export class PortalTokensAdminController {
   async generate(
     @Param('projectId') projectId: string,
     @Body() dto: GenerateTokenDto,
-    @Req() req: Request & { user?: { sub?: string } },
+    @Req() req: Request & { user?: { userId?: string } },
   ) {
-    const userId = req.user?.sub ?? '';
+    const userId = req.user?.userId ?? '';
+    if (!userId) {
+      throw new HttpException('Authenticated user id missing.', HttpStatus.UNAUTHORIZED);
+    }
     const result = await this.portalService.generateToken(projectId, userId, dto);
     if (result.isFailure) {
       throw new HttpException(result.error ?? 'Erreur interne.', HttpStatus.BAD_REQUEST);
@@ -66,7 +69,7 @@ export class PortalTokenRevokeController {
 
 // ─── Public portal routes (NO guard) ─────────────────────────────────────────
 
-@Controller('portal')
+@Controller('api/portal')
 export class PortalPublicController {
   constructor(private readonly portalService: PortalService) {}
 

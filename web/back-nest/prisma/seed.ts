@@ -4,21 +4,12 @@
  * Run: npx ts-node --esm prisma/seed.ts   (or: npm run seed)
  */
 
-import { PrismaClient } from '@prisma/client';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import * as bcrypt from 'bcryptjs';
+import type { PrismaClient } from '@prisma/client';
+import { createSeedClient } from './seed-client.js';
 
-// ─── Bootstrap with MariaDB adapter (mirrors prisma.module.ts) ───────────────
-const url = process.env.DATABASE_URL ?? 'mysql://root@localhost:3306/NeoLeadgeDeployment';
-const parsed = new URL(url);
-const adapter = new PrismaMariaDb({
-  host: parsed.hostname,
-  port: Number(parsed.port) || 3306,
-  database: parsed.pathname.replace(/^\//, ''),
-  user: parsed.username || undefined,
-  password: parsed.password || undefined,
-});
-const prisma = new PrismaClient({ adapter });
+// Picks MariaDB (mysql://) or Postgres (postgres://) adapter at runtime.
+let prisma!: PrismaClient;
 const HASH = (p: string) => bcrypt.hashSync(p, 10);
 
 // ─── Fixed UUIDs so seed is idempotent ───────────────────────────────────────
@@ -47,6 +38,7 @@ const ID = {
 };
 
 async function main() {
+  prisma = await createSeedClient();
   console.log('🌱  Seeding database...');
 
   // ─── Users ────────────────────────────────────────────────────────────────
@@ -59,7 +51,7 @@ async function main() {
     },
     {
       id: ID.pm1, firstName: 'Luca', lastName: 'Martin',
-      email: 'pm@neoleadge.com', passwordHash: HASH('Pm@12345'),
+      email: 'pm@neoleadge.com', passwordHash: HASH('Pm@123'),
       role: 'ProjectManager', jobTitle: 'Chef de projet senior',
       department: 'Direction Projets',
     },
@@ -71,7 +63,7 @@ async function main() {
     },
     {
       id: ID.spec1, firstName: 'Julien', lastName: 'Morel',
-      email: 'spec@neoleadge.com', passwordHash: HASH('Valid@123'),
+      email: 'spec@neoleadge.com', passwordHash: HASH('Spec@123'),
       role: 'SpecificationTeam', jobTitle: 'Analyste fonctionnel',
       department: 'Études & Specs',
     },
@@ -83,13 +75,13 @@ async function main() {
     },
     {
       id: ID.real1, firstName: 'Antoine', lastName: 'Petit',
-      email: 'real@neoleadge.com', passwordHash: HASH('Valid@123'),
+      email: 'realiz@neoleadge.com', passwordHash: HASH('Realiz@123'),
       role: 'RealizationTeam', jobTitle: 'Développeur fullstack',
       department: 'Réalisation',
     },
     {
       id: ID.deploy1, firstName: 'Nadia', lastName: 'Simon',
-      email: 'deploy@neoleadge.com', passwordHash: HASH('Valid@123'),
+      email: 'deploy@neoleadge.com', passwordHash: HASH('Deploy@123'),
       role: 'DeploymentTeam', jobTitle: 'Ingénieure déploiement',
       department: 'Infrastructure',
     },
@@ -123,7 +115,7 @@ async function main() {
     pm2:     userIdByEmail['pm2@neoleadge.com'],
     spec1:   userIdByEmail['spec@neoleadge.com'],
     spec2:   userIdByEmail['spec2@neoleadge.com'],
-    real1:   userIdByEmail['real@neoleadge.com'],
+    real1:   userIdByEmail['realiz@neoleadge.com'],
     deploy1: userIdByEmail['deploy@neoleadge.com'],
     viewer1: userIdByEmail['viewer@neoleadge.com'],
   };
@@ -318,6 +310,37 @@ async function main() {
     }
   }
   console.log(`  ✓ ${activities.length} activities`);
+
+  // ─── Analytics-compatible phase-transition activities ──────────────────────
+  // These use the lowercase action 'status_change' and the detail format
+  // "Statut changé: <from> → <to>" that analytics.service.ts parses.
+  // Fixed timestamps give deterministic phase durations for the analytics queries.
+  const analyticsActivities: Array<{ projectId: string; userId: string; action: string; detail: string; createdAt: Date }> = [
+    // p1: Draft → InProgress (14 days in Draft), then InProgress → Realization (21 days)
+    { projectId: ID.p1, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',       createdAt: new Date('2026-01-15') },
+    { projectId: ID.p1, userId: ID.pm1,   action: 'status_change', detail: 'Statut changé: InProgress → Realization', createdAt: new Date('2026-02-05') },
+    // p2: Draft → InProgress (10 days), InProgress → SpecificationValidation (18 days)
+    { projectId: ID.p2, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',                  createdAt: new Date('2026-01-05') },
+    { projectId: ID.p2, userId: ID.pm1,   action: 'status_change', detail: 'Statut changé: InProgress → SpecificationValidation', createdAt: new Date('2026-01-15') },
+    // p3: Draft → InProgress (12 days), InProgress → Realization (30 days)
+    { projectId: ID.p3, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',       createdAt: new Date('2025-11-01') },
+    { projectId: ID.p3, userId: ID.pm2,   action: 'status_change', detail: 'Statut changé: InProgress → Realization', createdAt: new Date('2025-11-13') },
+    // p4: Draft → InProgress (7 days), InProgress → DeploymentValidation (45 days)
+    { projectId: ID.p4, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',              createdAt: new Date('2025-12-01') },
+    { projectId: ID.p4, userId: ID.pm2,   action: 'status_change', detail: 'Statut changé: InProgress → DeploymentValidation', createdAt: new Date('2025-12-08') },
+    // p5: Draft → InProgress (5 days), InProgress → Completed (60 days)
+    { projectId: ID.p5, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress', createdAt: new Date('2025-07-01') },
+    { projectId: ID.p5, userId: ID.pm1,   action: 'status_change', detail: 'Statut changé: InProgress → Completed', createdAt: new Date('2025-07-06') },
+  ];
+  for (const a of analyticsActivities) {
+    const exists = await prisma.projectActivity.findFirst({
+      where: { projectId: a.projectId, action: a.action, detail: a.detail },
+    });
+    if (!exists) {
+      await prisma.projectActivity.create({ data: a });
+    }
+  }
+  console.log(`  ✓ ${analyticsActivities.length} analytics phase-transition activities`);
 
   // ─── Validations ──────────────────────────────────────────────────────────
   const validations = [

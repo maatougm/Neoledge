@@ -179,10 +179,19 @@ const defaultForm = () => ({
 const form = ref(defaultForm())
 
 const triggerOptions = [
-  { value: 'status_changed',        label: 'Statut modifié' },
-  { value: 'validation_submitted',  label: 'Validation soumise' },
-  { value: 'field_updated',         label: 'Champ mis à jour' },
-  { value: 'deadline_approaching',  label: 'Échéance proche' },
+  // Legacy project-level events
+  { value: 'status_changed',                 label: 'Projet : statut modifié' },
+  { value: 'validation_submitted',           label: 'Projet : validation soumise' },
+  { value: 'field_updated',                  label: 'Projet : champ mis à jour' },
+  { value: 'deadline_approaching',           label: 'Projet : échéance proche' },
+  // v2.0 work package events
+  { value: 'work_package_created',           label: 'Work Package : créé' },
+  { value: 'work_package_status_changed',    label: 'Work Package : statut modifié' },
+  // v2.0 sprint events
+  { value: 'sprint_started',                 label: 'Sprint : démarré' },
+  { value: 'sprint_closed',                  label: 'Sprint : clôturé' },
+  // v2.0 milestone events
+  { value: 'milestone_reached',              label: 'Jalon : atteint' },
 ]
 
 const actionOptions = [

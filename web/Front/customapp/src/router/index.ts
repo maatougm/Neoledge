@@ -138,6 +138,21 @@ const router = createRouter({
               name: 'admin-trash',
               component: () => import('@/components/admin/TrashSection.vue'),
             },
+            {
+              path: 'portfolio',
+              name: 'admin-portfolio',
+              component: () => import('@/views/PortfolioView.vue'),
+            },
+            {
+              path: 'team-planner',
+              name: 'admin-team-planner',
+              component: () => import('@/views/TeamPlannerView.vue'),
+            },
+            {
+              path: 'audit',
+              name: 'admin-audit',
+              component: () => import('@/views/AuditLogView.vue'),
+            },
           ],
         },
 
@@ -145,7 +160,7 @@ const router = createRouter({
         {
           path: 'pm',
           component: () => import('@/layouts/PmLayout.vue'),
-          meta: { requiresAuth: true, allowedRoles: ['ProjectManager'] as UserRole[] },
+          meta: { requiresAuth: true, allowedRoles: ['ProjectManager', 'Admin'] as UserRole[] },
           beforeEnter: roleGuard,
           children: [
             {
@@ -156,6 +171,89 @@ const router = createRouter({
               path: 'projects',
               name: 'pm-projects',
               component: () => import('@/views/PMProjectsPage.vue'),
+            },
+            // ── OpenProject parity module routes ─────────────────────────
+            {
+              path: 'projects/:id',
+              name: 'pm-project-detail',
+              component: () => import('@/views/PMProjectDetailView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/workpackages',
+              name: 'pm-workpackages',
+              component: () => import('@/views/WorkPackagesView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/gantt',
+              name: 'pm-gantt',
+              component: () => import('@/views/GanttView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/board',
+              name: 'pm-board',
+              component: () => import('@/views/KanbanBoardView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/backlogs',
+              name: 'pm-backlogs',
+              component: () => import('@/views/BacklogView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/sprint',
+              name: 'pm-sprint',
+              component: () => import('@/views/SprintBoardView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/wiki',
+              name: 'pm-wiki',
+              component: () => import('@/views/WikiView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/wiki/:slug',
+              name: 'pm-wiki-page',
+              component: () => import('@/views/WikiView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/budget',
+              name: 'pm-budget',
+              component: () => import('@/views/BudgetView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/time',
+              name: 'pm-time',
+              component: () => import('@/views/TimeTrackingView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/members',
+              name: 'pm-members',
+              component: () => import('@/views/MembersView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/activity',
+              name: 'pm-project-activity',
+              component: () => import('@/views/ProjectActivityView.vue'),
+              props: true,
+            },
+            {
+              path: 'team-planner',
+              name: 'pm-team-planner',
+              component: () => import('@/views/TeamPlannerView.vue'),
+            },
+            {
+              path: 'my-tasks',
+              name: 'pm-my-tasks',
+              component: () => import('@/views/MyTasksView.vue'),
             },
           ],
         },
@@ -233,6 +331,11 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
   const auth = useAuthStore()
   const config = useConfigStore()
 
+  // CRITICAL: restore persisted JWT from localStorage BEFORE any auth checks.
+  // Without this, a page refresh sees `auth.isAuthenticated === false` and
+  // would incorrectly fall into the dev auto-login-as-admin branch below.
+  auth.init()
+
   const isPublic = PUBLIC_ROUTE_NAMES.has(to.name as string)
 
   // Ensure config is loaded before any auth work
@@ -240,8 +343,8 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
     try {
       await config.fetchConfig()
     } catch {
-      // Config failed — allow public routes through, block protected ones
-      if (!isPublic) return { name: 'unauthorized' }
+      // Config failed — allow public routes through, redirect to login for protected ones
+      if (!isPublic) return { name: 'login' }
       return true
     }
   }
@@ -264,10 +367,16 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
   // ── Protected route checks ─────────────────────────────────────────────────
   if (!isPublic && to.meta.requiresAuth) {
     if (!auth.isAuthenticated) {
-      // Development auto-login with seeded admin credentials
-      try {
-        await auth.login('admin@neoleadge.com', 'Admin@123')
-      } catch {
+      // In development, auto-login for convenience. In production, redirect to login.
+      if (import.meta.env.DEV) {
+        try {
+          await auth.login('admin@neoleadge.com', 'Admin@123')
+        } catch {
+          // fall through to redirect below
+        }
+      }
+      // Still not authenticated → redirect to login with return URL
+      if (!auth.isAuthenticated) {
         const redirect = to.fullPath !== '/' ? to.fullPath : undefined
         return { name: 'login', query: redirect ? { redirect } : undefined }
       }

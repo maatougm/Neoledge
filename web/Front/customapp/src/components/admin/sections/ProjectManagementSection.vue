@@ -116,11 +116,14 @@
             <tr>
               <th class="col-check">
                 <input
+                  id="project-select-all"
+                  name="project-select-all"
                   type="checkbox"
                   :checked="allSelected"
                   :indeterminate="someSelected"
                   @change="toggleSelectAll"
                   class="row-checkbox"
+                  aria-label="Tout sélectionner"
                 />
               </th>
               <th>Nom</th>
@@ -139,10 +142,13 @@
             >
               <td class="col-check">
                 <input
+                  :id="`project-select-${p.id}`"
+                  :name="`project-select-${p.id}`"
                   type="checkbox"
                   :checked="selectedIds.has(p.id)"
                   @change="toggleRow(p.id)"
                   class="row-checkbox"
+                  :aria-label="`Sélectionner ${p.name}`"
                 />
               </td>
               <td class="cell-name">
@@ -172,6 +178,13 @@
                     outlined
                     title="Gérer le questionnaire"
                     @click="selectedProjectId = p.id"
+                  />
+                  <NeoButton
+                    icon="pi pi-external-link"
+                    size="small"
+                    outlined
+                    title="Ouvrir (Work Packages, Gantt, Budget…)"
+                    @click="openProjectModules(p.id)"
                   />
                   <NeoButton
                     icon="pi pi-user-edit"
@@ -256,6 +269,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Dialog from 'primevue/dialog'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
@@ -274,6 +288,11 @@ const store        = useProjectStore()
 const filtersStore = useSavedFiltersStore()
 const toast        = useNeoToast()
 const confirm      = useNeoConfirm()
+const router       = useRouter()
+
+function openProjectModules(id: string) {
+  router.push(`/app/pm/projects/${id}`)
+}
 
 const showForm          = ref(false)
 const selectedProjectId = ref<string | null>(null)

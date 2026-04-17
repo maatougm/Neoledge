@@ -50,7 +50,7 @@ export class OpenAiProvider {
     if (
       typeof data !== 'object' || data === null ||
       !Array.isArray((data as Record<string, unknown>)['choices']) ||
-      (data as Record<string, unknown>)['choices'].length === 0
+      (data as Record<string, unknown[]>)['choices'].length === 0
     ) {
       throw new Error(`Unexpected OpenAI response shape: ${JSON.stringify(data).slice(0, 200)}`)
     }

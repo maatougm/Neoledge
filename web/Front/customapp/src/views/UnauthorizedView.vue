@@ -18,7 +18,7 @@
           label="Retourner à l'accueil"
           icon="pi pi-home"
           class="unauthorized-btn"
-          @click="router.push('/')"
+          @click="router.push(auth.isAuthenticated ? '/app' : '/login')"
         />
       </div>
     </div>
@@ -28,8 +28,10 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { NeoButton } from '@neolibrary/components'
+import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
+const auth = useAuthStore()
 </script>
 
 <style scoped>

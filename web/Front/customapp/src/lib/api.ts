@@ -41,18 +41,50 @@ api.interceptors.request.use(
 
 // ─── Response interceptor ─────────────────────────────────────────────────────
 
+/**
+ * Attach `{ suppressErrorToast: true }` to the axios request config to opt out of
+ * the global error toast (e.g. for polling loops, silent fallback probes).
+ */
+function shouldToast(config: AxiosError['config']): boolean {
+  const meta = (config as (AxiosError['config'] & { suppressErrorToast?: boolean }) | undefined)
+  return !meta?.suppressErrorToast
+}
+
+function extractErrorMessage(error: AxiosError): string | null {
+  const data = error.response?.data as { message?: string | string[]; error?: string } | undefined
+  if (data?.message) return Array.isArray(data.message) ? data.message.join(', ') : data.message
+  if (data?.error) return data.error
+  if (error.message) return error.message
+  return null
+}
+
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     const url: string = error.config?.url ?? ''
     const isAuthEndpoint = url.includes('/auth/login') || url.includes('/hook/auth')
+    const status = error.response?.status
 
-    if (error.response?.status === 401 && !isAuthEndpoint) {
+    if (status === 401 && !isAuthEndpoint) {
+      // Clear stale JWT so the next page load doesn't restore it → avoids a 401 loop.
+      const authStore = useAuthStore()
+      authStore.clear()
       // Import router lazily to break any potential circular dep with router/index.ts
       // which itself imports authStore and configStore.
       import('@/router').then(({ default: router }) => {
         router.push({ name: 'login' })
       })
+    }
+
+    // Auto-toast 4xx/5xx except the 401-redirect case and opted-out requests
+    if (status && status >= 400 && status !== 401 && shouldToast(error.config)) {
+      const message = extractErrorMessage(error) ?? `Erreur ${status}`
+      try {
+        const { useNeoToast } = await import('@neolibrary/components')
+        useNeoToast().add({ severity: status >= 500 ? 'error' : 'warn', detail: message, life: 5000 })
+      } catch {
+        // Toast provider may not be mounted yet (e.g. during login bootstrap) — swallow.
+      }
     }
 
     return Promise.reject(error)

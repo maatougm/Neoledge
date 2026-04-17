@@ -32,11 +32,23 @@ class TranscriptionService:
     def _init_diarization(self) -> None:
         """Initialize speaker diarization using speechbrain's speaker embedding model."""
         try:
+            import os
+            from huggingface_hub import snapshot_download
             from speechbrain.inference.speaker import EncoderClassifier
 
+            savedir = os.path.join(os.path.dirname(__file__), "models", "spkrec-ecapa-voxceleb")
+            os.makedirs(savedir, exist_ok=True)
+
+            # Download model files with copy strategy (no symlinks — avoids Windows privilege error)
+            snapshot_download(
+                repo_id="speechbrain/spkrec-ecapa-voxceleb",
+                local_dir=savedir,
+                local_dir_use_symlinks=False,
+            )
+
             self._embedding_model = EncoderClassifier.from_hparams(
-                source="speechbrain/spkrec-ecapa-voxceleb",
-                savedir="models/spkrec-ecapa-voxceleb",
+                source=savedir,
+                savedir=savedir,
                 run_opts={"device": "cpu"},
             )
             logger.info("Speaker embedding model loaded")

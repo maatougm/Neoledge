@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import { useConfigStore } from './configStore'
-import { getUserRole, getUserFullName, getUserInitials, getUserId } from '@/lib/jwt'
+import { getUserRole, getUserFullName, getUserInitials, getUserId, isTokenExpired } from '@/lib/jwt'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,6 +56,10 @@ export const useAuthStore = defineStore('auth', () => {
   const init = (): void => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
+      if (isTokenExpired(stored)) {
+        _clearStorage()
+        return
+      }
       jwt.value = stored
     }
   }

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -54,6 +55,7 @@ const COLOR_PALETTE = [
 
 @WebSocketGateway({ namespace: '/collaboration', cors: { origin: '*' } })
 export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(CollaborationGateway.name);
   @WebSocketServer() private readonly server: Server;
 
   // Map<projectId, Map<socketId, PresenceUser>>
@@ -208,6 +210,20 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
       socketMap.set(client.id, { ...existing, editingFieldId: null });
     }
     this.emitPresenceUpdate(projectId);
+  }
+
+  // ─── Public broadcast helpers (called from services after mutations) ──────
+
+  /** Broadcast a kanban card move to all other clients watching this project. */
+  broadcastCardMoved(projectId: string, payload: { workPackageId: string; boardColumnId: string | null; status: string }): void {
+    if (!this.server) return;
+    this.server.to(`project:${projectId}`).emit('card-moved', payload);
+  }
+
+  /** Broadcast a work-package mutation (create/update/delete) for any subscriber. */
+  broadcastWpChanged(projectId: string, payload: { workPackageId: string; action: 'created' | 'updated' | 'deleted' }): void {
+    if (!this.server) return;
+    this.server.to(`project:${projectId}`).emit('wp-changed', payload);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

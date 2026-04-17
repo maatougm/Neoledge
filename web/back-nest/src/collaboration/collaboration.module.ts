@@ -7,5 +7,6 @@ import { AuthModule } from '../auth/auth.module.js';
 @Module({
   imports: [PrismaModule, AuthModule],
   providers: [CollaborationGateway, CollaborationService],
+  exports: [CollaborationGateway],
 })
 export class CollaborationModule {}

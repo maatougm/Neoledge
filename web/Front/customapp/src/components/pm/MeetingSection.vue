@@ -71,11 +71,16 @@
     </div>
 
     <!-- Detail view -->
-    <TranscriptViewer
-      v-else-if="view === 'detail' && store.currentTranscript"
-      :transcript="store.currentTranscript"
-      :project-id="projectId"
-    />
+    <div v-else-if="view === 'detail' && store.currentTranscript">
+      <TranscriptViewer
+        :transcript="store.currentTranscript"
+        :project-id="projectId"
+      />
+      <div class="meeting-extras-wrap">
+        <h3 class="meeting-extras-title">Extras</h3>
+        <MeetingExtrasTabs :project-id="projectId" :meeting-id="store.currentTranscript.id" />
+      </div>
+    </div>
 
     <!-- List view -->
     <div v-else-if="view === 'list'">
@@ -157,6 +162,7 @@ import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import MeetingRecorder from '@/components/pm/MeetingRecorder.vue'
 import TranscriptViewer from '@/components/pm/TranscriptViewer.vue'
+import MeetingExtrasTabs from '@/components/meetings/MeetingExtrasTabs.vue'
 
 const props = defineProps<{ projectId: string }>()
 
@@ -497,5 +503,16 @@ function parseLangs(raw: string): string[] {
   display: flex;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+.meeting-extras-wrap {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--nl-border, #e5e7eb);
+}
+.meeting-extras-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: var(--nl-text, #111827);
 }
 </style>
