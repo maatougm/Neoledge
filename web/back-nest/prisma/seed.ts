@@ -205,7 +205,8 @@ async function main() {
   for (const p of projects) {
     await prisma.project.upsert({
       where: { id: p.id },
-      update: {},
+      // Re-apply on re-seed so stale enum values (e.g. old 'Planning') are corrected.
+      update: { status: p.status, priority: p.priority, isDeleted: false },
       create: { ...p, isDeleted: false },
     });
   }

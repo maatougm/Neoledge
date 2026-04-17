@@ -5,23 +5,50 @@
       <NeoButton label="Nouveau" icon="pi pi-plus" @click="showCreate = true" />
     </template>
 
-    <div class="wp-view__filters">
-      <NeoInputText v-model="filters.q" placeholder="Rechercher..." />
+    <div class="wp-view__toolbar">
+      <!-- Quick filter pills -->
+      <div class="wp-view__pills">
+        <button
+          v-for="p in pills"
+          :key="p.key"
+          class="nl-pill"
+          :class="{ 'nl-pill--active': activePill === p.key }"
+          @click="activatePill(p.key)"
+        >
+          <i class="pi" :class="p.icon" />
+          {{ p.label }}
+          <span v-if="pillCount(p.key) > 0" class="wp-view__pill-count">{{ pillCount(p.key) }}</span>
+        </button>
+      </div>
+
+      <div class="wp-view__controls">
+        <NeoInputText v-model="filters.q" placeholder="Rechercher… (/)" @input="load" />
+        <NeoSelect
+          v-model="filters.status" :options="statusOptions"
+          optionLabel="label" optionValue="value" placeholder="Statut"
+          @change="load"
+        />
+        <NeoSelect
+          v-model="filters.type" :options="typeOptions"
+          optionLabel="label" optionValue="value" placeholder="Type"
+          @change="load"
+        />
+        <NeoSelect
+          v-model="groupBy" :options="groupByOptions"
+          optionLabel="label" optionValue="value" placeholder="Grouper"
+        />
+      </div>
+    </div>
+
+    <!-- Bulk action bar (only when selection present) -->
+    <div v-if="selectedIds.size > 0" class="wp-view__bulk">
+      <span class="wp-view__bulk-count">{{ selectedIds.size }} sélectionné(s)</span>
       <NeoSelect
-        v-model="filters.status"
-        :options="statusOptions"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Statut"
+        v-model="bulkStatus" :options="statusOptions.slice(1)"
+        optionLabel="label" optionValue="value" placeholder="→ Changer statut"
+        @change="onBulkStatus"
       />
-      <NeoSelect
-        v-model="filters.type"
-        :options="typeOptions"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Type"
-      />
-      <NeoButton label="Appliquer" icon="pi pi-filter" outlined @click="load" />
+      <NeoButton label="Effacer" severity="secondary" outlined size="small" @click="clearSelection" />
     </div>
 
     <SplitPanel :show-detail="!!selectedId">
@@ -29,6 +56,16 @@
         <table class="wp-table">
           <thead>
             <tr>
+              <th class="wp-table__check">
+                <input
+                  id="wp-select-all"
+                  type="checkbox"
+                  :checked="allVisibleSelected"
+                  :indeterminate="someVisibleSelected"
+                  aria-label="Tout sélectionner"
+                  @change="toggleSelectAll"
+                />
+              </th>
               <th>Titre</th>
               <th>Type</th>
               <th>Statut</th>
@@ -38,14 +75,29 @@
               <th>%</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody v-for="group in groupedRows" :key="group.key">
+            <tr v-if="groupBy !== 'none' && group.label" class="wp-table__group">
+              <td colspan="8">
+                <i class="pi pi-angle-down" /> <strong>{{ group.label }}</strong>
+                <span class="wp-table__group-count">· {{ group.items.length }}</span>
+              </td>
+            </tr>
             <tr
-              v-for="wp in store.items"
+              v-for="wp in group.items"
               :key="wp.id"
               class="wp-table__row"
-              :class="{ 'wp-table__row--active': selectedId === wp.id }"
+              :class="{ 'wp-table__row--active': selectedId === wp.id, 'wp-table__row--selected': selectedIds.has(wp.id) }"
               @click="selectedId = wp.id"
             >
+              <td class="wp-table__check" @click.stop>
+                <input
+                  :id="`wp-check-${wp.id}`"
+                  type="checkbox"
+                  :checked="selectedIds.has(wp.id)"
+                  aria-label="Sélectionner"
+                  @change="toggleOne(wp.id)"
+                />
+              </td>
               <td class="wp-table__title">{{ wp.title }}</td>
               <td><NeoTag :value="wp.type" severity="secondary" /></td>
               <td><WpStatusTag :status="wp.status" /></td>
@@ -58,9 +110,9 @@
                 </div>
               </td>
             </tr>
-            <tr v-if="!store.loading && store.items.length === 0">
-              <td colspan="7" class="wp-empty">Aucun work package.</td>
-            </tr>
+          </tbody>
+          <tbody v-if="!store.loading && visibleRows.length === 0">
+            <tr><td colspan="8" class="wp-empty">Aucun work package.</td></tr>
           </tbody>
         </table>
       </template>
@@ -94,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { NeoButton, NeoInputText, NeoSelect, NeoDatePicker, NeoTag, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
@@ -105,12 +157,14 @@ import PriorityDot from '@/components/common/PriorityDot.vue'
 import WpStatusTag from '@/components/common/WpStatusTag.vue'
 import WorkPackageDetail from '@/components/workpackages/WorkPackageDetail.vue'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
-import type { WpType, WpPriority, WpStatus } from '@/types/work-package.types'
+import { useAuthStore } from '@/stores/authStore'
+import type { WpType, WpPriority, WpStatus, WorkPackage } from '@/types/work-package.types'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
 const toast = useNeoToast()
 const store = useWorkPackageStore()
+const authStore = useAuthStore()
 
 const projectId = ref(props.id || (route.params.id as string))
 const selectedId = ref<string | null>(null)
@@ -118,6 +172,104 @@ const showCreate = ref(false)
 const creating = ref(false)
 
 const filters = reactive<{ q: string; status: string; type: string }>({ q: '', status: '', type: '' })
+
+// Quick-filter pills
+type PillKey = 'all' | 'mine' | 'due-soon' | 'overdue' | 'unassigned' | 'blocked'
+const pills: { key: PillKey; label: string; icon: string }[] = [
+  { key: 'all',        label: 'Tout',         icon: 'pi-list' },
+  { key: 'mine',       label: 'Mes tâches',   icon: 'pi-user' },
+  { key: 'due-soon',   label: 'Dues ≤ 7 j',   icon: 'pi-calendar' },
+  { key: 'overdue',    label: 'En retard',    icon: 'pi-exclamation-triangle' },
+  { key: 'unassigned', label: 'Non assignés', icon: 'pi-user-minus' },
+  { key: 'blocked',    label: 'Bloqués',      icon: 'pi-lock' },
+]
+const activePill = ref<PillKey>('all')
+function activatePill(key: PillKey): void { activePill.value = key }
+
+function matchesPill(wp: WorkPackage, key: PillKey): boolean {
+  const now = Date.now()
+  switch (key) {
+    case 'all':        return true
+    case 'mine':       return wp.assigneeId === authStore.userId
+    case 'due-soon': {
+      if (!wp.dueDate) return false
+      const d = new Date(wp.dueDate).getTime()
+      return d >= now && d <= now + 7 * 24 * 60 * 60 * 1000
+    }
+    case 'overdue':    return !!wp.dueDate && new Date(wp.dueDate).getTime() < now && wp.status !== 'Closed' && wp.status !== 'Resolved'
+    case 'unassigned': return !wp.assigneeId
+    case 'blocked':    return String(wp.status) === 'OnHold' || String(wp.status) === 'Blocked' || String(wp.status) === 'On Hold'
+  }
+}
+
+function pillCount(key: PillKey): number {
+  if (key === 'all') return 0
+  return store.items.filter((wp) => matchesPill(wp, key)).length
+}
+
+// Selection
+const selectedIds = ref<Set<string>>(new Set())
+function toggleOne(id: string): void {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  selectedIds.value = next
+}
+function clearSelection(): void { selectedIds.value = new Set() }
+const allVisibleSelected  = computed<boolean>(() => visibleRows.value.length > 0 && visibleRows.value.every((wp) => selectedIds.value.has(wp.id)))
+const someVisibleSelected = computed<boolean>(() => visibleRows.value.some((wp) => selectedIds.value.has(wp.id)) && !allVisibleSelected.value)
+function toggleSelectAll(): void {
+  if (allVisibleSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(visibleRows.value.map((wp) => wp.id))
+  }
+}
+
+// Bulk status change
+const bulkStatus = ref<string>('')
+async function onBulkStatus(): Promise<void> {
+  if (!bulkStatus.value || selectedIds.value.size === 0) return
+  const ids = Array.from(selectedIds.value)
+  const newStatus = bulkStatus.value as WpStatus
+  try {
+    await Promise.all(ids.map((id) => store.update(projectId.value, id, { status: newStatus })))
+    toast.add({ severity: 'success', detail: `${ids.length} WP mis à jour`, life: 3000 })
+    clearSelection()
+    bulkStatus.value = ''
+  } catch {
+    toast.add({ severity: 'error', detail: 'Échec de la mise à jour en lot', life: 4000 })
+  }
+}
+
+// Group-by
+type GroupKey = 'none' | 'status' | 'priority' | 'assignee'
+const groupBy = ref<GroupKey>('none')
+const groupByOptions: { label: string; value: GroupKey }[] = [
+  { label: 'Sans groupe',      value: 'none' },
+  { label: 'Par statut',       value: 'status' },
+  { label: 'Par priorité',     value: 'priority' },
+  { label: "Par assigné",      value: 'assignee' },
+]
+
+const visibleRows = computed<WorkPackage[]>(() =>
+  store.items.filter((wp) => matchesPill(wp, activePill.value)),
+)
+
+const groupedRows = computed<{ key: string; label: string; items: WorkPackage[] }[]>(() => {
+  if (groupBy.value === 'none') {
+    return [{ key: 'all', label: '', items: visibleRows.value }]
+  }
+  const buckets = new Map<string, WorkPackage[]>()
+  for (const wp of visibleRows.value) {
+    let key = 'Autre'
+    if (groupBy.value === 'status')   key = wp.status
+    if (groupBy.value === 'priority') key = wp.priority
+    if (groupBy.value === 'assignee') key = wp.assignee ? `${wp.assignee.firstName} ${wp.assignee.lastName}` : 'Non assigné'
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key)!.push(wp)
+  }
+  return Array.from(buckets.entries()).map(([k, items]) => ({ key: k, label: k, items }))
+})
 
 const form = reactive<{
   title: string
@@ -218,6 +370,52 @@ onMounted(load)
   align-items: center;
 }
 .wp-view__filters > * { min-width: 160px; }
+
+.wp-view__toolbar {
+  display: flex; flex-direction: column; gap: var(--nl-sp-2);
+  padding: var(--nl-sp-3) var(--nl-sp-6);
+  background: var(--nl-surface);
+  border-bottom: 1px solid var(--nl-border);
+}
+.wp-view__pills {
+  display: flex; gap: var(--nl-sp-1); flex-wrap: wrap;
+}
+.wp-view__pills .nl-pill { cursor: pointer; border: 1px solid transparent; background: transparent; }
+.wp-view__pills .nl-pill:hover { background: var(--nl-surface-2); }
+.wp-view__pill-count {
+  background: var(--nl-surface-2); color: var(--nl-text-2);
+  padding: 0 6px; border-radius: var(--nl-radius-pill);
+  font-size: 10px; font-weight: 700;
+}
+.wp-view__pills .nl-pill--active .wp-view__pill-count {
+  background: var(--nl-accent); color: #fff;
+}
+.wp-view__controls {
+  display: flex; gap: var(--nl-sp-2); align-items: center; flex-wrap: wrap;
+}
+.wp-view__controls > *:first-child { flex: 1; min-width: 200px; }
+.wp-view__controls > :not(:first-child) { min-width: 160px; }
+
+.wp-view__bulk {
+  display: flex; align-items: center; gap: var(--nl-sp-2);
+  padding: var(--nl-sp-2) var(--nl-sp-6);
+  background: var(--nl-accent-light);
+  border-bottom: 1px solid var(--nl-accent);
+}
+.wp-view__bulk-count { font-weight: 600; color: var(--nl-accent); font-size: var(--nl-fs-sm); }
+
+.wp-table__check { width: 36px; text-align: center; }
+.wp-table__check input[type="checkbox"] { cursor: pointer; }
+.wp-table__row--selected { background: var(--nl-row-selected) !important; }
+.wp-table__group {
+  background: var(--nl-surface-2);
+}
+.wp-table__group td {
+  padding: var(--nl-sp-2) var(--nl-sp-3) !important;
+  font-size: var(--nl-fs-sm); color: var(--nl-text-2);
+}
+.wp-table__group td .pi { margin-right: 4px; font-size: 10px; }
+.wp-table__group-count { color: var(--nl-text-3); margin-left: 4px; }
 :deep(.split-panel) { flex: 1; min-height: 0; }
 
 .wp-table {

@@ -229,7 +229,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocumentClick))
   border-radius: var(--nl-radius-lg);
   box-shadow: var(--nl-shadow-lg);
   overflow: hidden;
-  z-index: 300;
+  z-index: 9500;
 }
 
 /* ── Panel header ──────────────────────────────────────────────────────────── */

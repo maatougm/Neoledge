@@ -65,7 +65,48 @@
 
   /* Typography — Inter like Linear */
   --nl-font: 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --nl-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   --nl-transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── PM Workspace density scale — tighter than the default SaaS feel ──── */
+  --nl-fs-xs:   11px;
+  --nl-fs-sm:   12px;
+  --nl-fs-base: 13px;
+  --nl-fs-md:   14px;
+  --nl-fs-lg:   16px;
+  --nl-fs-xl:   20px;
+  --nl-fs-2xl:  28px;
+
+  --nl-sp-1:    4px;
+  --nl-sp-2:    8px;
+  --nl-sp-3:    12px;
+  --nl-sp-4:    16px;
+  --nl-sp-5:    20px;
+  --nl-sp-6:    24px;
+  --nl-sp-8:    32px;
+
+  /* Surface — row hover, subtle separators */
+  --nl-row-hover:  rgba(15, 98, 254, 0.04);
+  --nl-row-selected: rgba(15, 98, 254, 0.08);
+  --nl-separator: #EEEEF0;
+
+  /* Priority + status tokens — explicit colors */
+  --nl-prio-urgent: #DC2626;
+  --nl-prio-high:   #F59E0B;
+  --nl-prio-normal: #3B82F6;
+  --nl-prio-low:    #10B981;
+
+  --nl-status-new:        #6B7280;
+  --nl-status-inprogress: #0F62FE;
+  --nl-status-resolved:   #10B981;
+  --nl-status-closed:     #71717A;
+  --nl-status-onhold:     #F59E0B;
+  --nl-status-blocked:    #DC2626;
+
+  /* Kbd chip */
+  --nl-kbd-bg:     #F4F4F5;
+  --nl-kbd-border: #D4D4D8;
+  --nl-kbd-text:   #3F3F46;
 }
 
 /* Dark mode */
@@ -94,6 +135,12 @@
   --nl-shadow-lg:     0 10px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
   --nl-glass-bg:      rgba(28, 28, 31, 0.8);
   --nl-glass-border:  rgba(255, 255, 255, 0.07);
+  --nl-row-hover:     rgba(75, 139, 254, 0.07);
+  --nl-row-selected:  rgba(75, 139, 254, 0.14);
+  --nl-separator:     #26262A;
+  --nl-kbd-bg:        #26262A;
+  --nl-kbd-border:    #3F3F46;
+  --nl-kbd-text:      #D4D4D8;
 }
 
 *, *::before, *::after {

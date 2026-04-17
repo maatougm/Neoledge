@@ -226,7 +226,9 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocumentClick))
   border-radius: var(--nl-radius-lg);
   box-shadow: var(--nl-shadow-lg);
   overflow: hidden;
-  z-index: 300;
+  /* Lifted so it escapes the topbar's stacking context (z-index: 50) and
+     clears the sidebar (z-index: 100), row menus (9500), etc. */
+  z-index: 9500;
 }
 
 /* ── Header ────────────────────────────────────────────────────────────────── */

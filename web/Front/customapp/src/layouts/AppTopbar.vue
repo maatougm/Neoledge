@@ -12,20 +12,19 @@
 
     <!-- Right: search + actions -->
     <div class="topbar__right">
-      <!-- Search -->
-      <div class="topbar__search">
+      <!-- Search — opens the Cmd-K palette (keyboard: / or Ctrl+K) -->
+      <button
+        class="topbar__search topbar__search--btn"
+        :title="'Rechercher ou lancer une commande (Ctrl+K)'"
+        aria-label="Ouvrir la palette de commandes"
+        @click="openPalette"
+      >
         <i class="pi pi-search topbar__search-icon" aria-hidden="true" />
-        <input
-          id="topbar-search"
-          name="topbar-search"
-          v-model="searchQuery"
-          class="topbar__search-input"
-          type="search"
-          placeholder="Rechercher…"
-          aria-label="Rechercher"
-          autocomplete="off"
-        />
-      </div>
+        <span class="topbar__search-placeholder">Rechercher…</span>
+        <span class="topbar__search-kbd">
+          <span class="nl-kbd">Ctrl</span><span class="nl-kbd">K</span>
+        </span>
+      </button>
 
       <!-- Notification panel -->
       <NotificationPanel />
@@ -47,9 +46,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDarkMode } from '@/composables/useDarkMode'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import NotificationPanel from './NotificationPanel.vue'
 import UserMenu from './UserMenu.vue'
 
@@ -57,10 +57,11 @@ import UserMenu from './UserMenu.vue'
 
 const route = useRoute()
 const darkMode = useDarkMode()
+const kb = useKeyboardShortcuts()
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const searchQuery = ref('')
+function openPalette(): void { kb.searchVisible.value = true }
 
 // ─── Breadcrumb label mapping ─────────────────────────────────────────────────
 
@@ -154,6 +155,23 @@ const breadcrumbLabel = computed<string>(() => {
   display: flex;
   align-items: center;
 }
+.topbar__search--btn {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  padding: 0 8px 0 30px;
+  height: 34px; min-width: 220px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex; align-items: center; gap: var(--nl-sp-2);
+  font-family: var(--nl-font);
+}
+.topbar__search--btn:hover { border-color: var(--nl-accent); background: var(--nl-accent-light); }
+.topbar__search-placeholder {
+  flex: 1; text-align: left;
+  color: var(--nl-text-3); font-size: var(--nl-fs-sm);
+}
+.topbar__search-kbd { display: flex; gap: 3px; }
 
 .topbar__search-icon {
   position: absolute;

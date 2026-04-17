@@ -41,7 +41,9 @@
         </div>
 
         <!-- Today marker -->
-        <div v-if="todayOffset !== null" class="gantt__today" :style="{ left: todayOffset + 'px' }" />
+        <div v-if="todayOffset !== null" class="gantt__today" :style="{ left: todayOffset + 'px' }">
+          <span class="gantt__today-label">Aujourd'hui</span>
+        </div>
 
         <!-- Rows with bars -->
         <div
@@ -53,7 +55,11 @@
           <div
             v-if="barFor(wp)"
             class="gantt__bar"
-            :class="{ 'gantt__bar--dragging': draggingWpId === wp.id }"
+            :class="{
+              'gantt__bar--dragging': draggingWpId === wp.id,
+              'gantt__bar--overdue': isWpOverdue(wp),
+              'gantt__bar--done': wp.status === 'Closed' || wp.status === 'Resolved',
+            }"
             :style="barFor(wp) as Record<string, string>"
             :title="`${wp.title} — glisser pour déplacer, bords pour redimensionner`"
             @mousedown="(e) => startDrag(e, wp, 'move')"
@@ -195,6 +201,14 @@ const headerCols = computed(() => {
   }
   return cols
 })
+
+interface WpLite { dueDate?: string | null; endDate?: string | null; status: string }
+function isWpOverdue(wp: WpLite): boolean {
+  if (wp.status === 'Closed' || wp.status === 'Resolved') return false
+  const end = wp.endDate ?? wp.dueDate
+  if (!end) return false
+  return new Date(end).getTime() < Date.now()
+}
 
 const todayOffset = computed(() => {
   const today = new Date()
@@ -435,18 +449,29 @@ onMounted(() => ganttStore.fetchGantt(props.id))
 }
 .gantt__today {
   position: absolute;
-  top: 36px;
+  top: 0;
   bottom: 0;
   width: 2px;
   background: #ef4444;
-  z-index: 1;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  z-index: 5;
+  pointer-events: none;
+}
+.gantt__today-label {
+  position: absolute;
+  top: 6px; left: -30px;
+  background: #ef4444; color: #fff;
+  padding: 2px 8px; border-radius: var(--nl-radius-pill);
+  font-size: 10px; font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
 }
 .gantt__row { height: 40px; border-bottom: 1px solid var(--nl-border, #f3f4f6); position: relative; }
 .gantt__bar {
   position: absolute;
   top: 8px;
   height: 24px;
-  background: var(--nl-accent, #1e9e8f);
+  background: var(--nl-accent);
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -457,6 +482,14 @@ onMounted(() => ganttStore.fetchGantt(props.id))
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
   cursor: grab;
   user-select: none;
+}
+.gantt__bar--overdue {
+  background: var(--nl-danger);
+  box-shadow: 0 0 0 1px var(--nl-danger), 0 2px 6px rgba(220, 38, 38, 0.3);
+}
+.gantt__bar--done {
+  background: var(--nl-success);
+  opacity: 0.65;
   transition: box-shadow 0.15s;
 }
 .gantt__bar:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.2); }

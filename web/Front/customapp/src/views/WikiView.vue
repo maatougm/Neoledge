@@ -48,7 +48,21 @@
           </div>
         </div>
         <div v-else class="wiki__empty">
-          Sélectionnez une page ou créez-en une nouvelle.
+          <div class="wiki__empty-icon"><i class="pi pi-book" /></div>
+          <h3 class="wiki__empty-title">Documentation du projet</h3>
+          <p class="wiki__empty-subtitle">
+            Sélectionnez une page à gauche pour la consulter, ou créez-en une nouvelle pour documenter ce projet.
+          </p>
+          <NeoButton label="Créer la première page" icon="pi pi-plus" @click="showCreate = true" />
+          <div v-if="recentPages.length > 0" class="wiki__empty-recent">
+            <div class="nl-section-title">Récemment modifiées</div>
+            <ul class="wiki__empty-list">
+              <li v-for="p in recentPages" :key="p.slug" @click="selectPage(p)">
+                <i class="pi pi-file" /> <span>{{ p.title }}</span>
+                <span class="wiki__empty-date">{{ formatDate(p.updatedAt) }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
@@ -97,6 +111,16 @@ const editContent = ref('')
 const newPage = reactive<{ title: string; content: string }>({ title: '', content: '' })
 
 const displayedPages = computed(() => (searchQ.value ? searchResults.value : wikiStore.tree))
+
+const recentPages = computed<WikiPage[]>(() =>
+  [...wikiStore.tree]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 5),
+)
+
+function selectPage(p: WikiPage): void {
+  void router.push(`/app/pm/projects/${props.id}/wiki/${p.slug}`)
+}
 
 const renderedContent = computed(() => renderMarkdown(wikiStore.currentPage?.content ?? ''))
 
@@ -232,7 +256,31 @@ onMounted(async () => {
 .wiki__content-body :deep(code) { background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 3px; font-family: monospace; font-size: 0.875rem; }
 .wiki__content-edit { display: flex; flex-direction: column; gap: 0.75rem; }
 .wiki__content-meta { margin-top: 2rem; font-size: 0.75rem; color: var(--nl-text-muted, #9ca3af); }
-.wiki__empty { text-align: center; padding: 3rem; color: var(--nl-text-muted, #9ca3af); }
+.wiki__empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--nl-sp-8); color: var(--nl-text-3); text-align: center;
+  gap: var(--nl-sp-3); max-width: 480px; margin: 0 auto;
+}
+.wiki__empty-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--nl-accent-light); color: var(--nl-accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+.wiki__empty-title { font-size: var(--nl-fs-lg); font-weight: 600; color: var(--nl-text-1); margin: 0; }
+.wiki__empty-subtitle { margin: 0; font-size: var(--nl-fs-sm); }
+.wiki__empty-recent { width: 100%; margin-top: var(--nl-sp-4); text-align: left; }
+.wiki__empty-list { list-style: none; padding: 0; margin: var(--nl-sp-2) 0 0; display: flex; flex-direction: column; gap: 2px; }
+.wiki__empty-list li {
+  display: flex; align-items: center; gap: var(--nl-sp-2);
+  padding: var(--nl-sp-2) var(--nl-sp-3);
+  border-radius: var(--nl-radius); cursor: pointer;
+  font-size: var(--nl-fs-sm); color: var(--nl-text-1);
+  transition: background 0.15s;
+}
+.wiki__empty-list li:hover { background: var(--nl-row-hover); }
+.wiki__empty-list li .pi { color: var(--nl-text-3); }
+.wiki__empty-date { margin-left: auto; color: var(--nl-text-3); font-size: var(--nl-fs-xs); }
 
 .wiki__editor {
   width: 100%;

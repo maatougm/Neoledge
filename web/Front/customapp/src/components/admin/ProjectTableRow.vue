@@ -63,24 +63,68 @@
     <td class="ptr__muted">{{ formatDate(project.startDate) }}</td>
     <td class="ptr__muted">{{ formatDate(project.endDate) }}</td>
 
-    <!-- Actions -->
+    <!-- Actions: primary "Ouvrir" + overflow ⋯ menu -->
     <td class="ptr__actions-cell">
       <div class="ptr__action-menu">
-        <NeoButton icon="pi pi-eye"           severity="secondary" text size="small" title="Voir (panneau)"   aria-label="Voir le projet dans le panneau" @click="emit('view')" />
-        <NeoButton icon="pi pi-external-link" severity="secondary" text size="small" title="Ouvrir (modules)" aria-label="Ouvrir le projet avec tous les modules" @click="emit('open')" />
-        <NeoButton icon="pi pi-pencil"        severity="secondary" text size="small" title="Modifier"         aria-label="Modifier le projet" @click="emit('edit')" />
-        <NeoButton icon="pi pi-user-plus"     severity="secondary" text size="small" title="Assigner"         aria-label="Assigner un chef de projet" @click="emit('assign-manager')" />
-        <NeoButton icon="pi pi-trash"         severity="danger"    text size="small" title="Supprimer"        aria-label="Supprimer le projet" @click="emit('delete')" />
+        <NeoButton
+          icon="pi pi-external-link" severity="secondary" text size="small"
+          title="Ouvrir (modules)" aria-label="Ouvrir le projet avec tous les modules"
+          @click="emit('open')"
+        />
+        <div class="ptr__overflow" @click.stop>
+          <NeoButton
+            ref="triggerBtn"
+            icon="pi pi-ellipsis-h" severity="secondary" text size="small"
+            title="Plus d'actions" aria-label="Menu des actions"
+            @click="openMenu"
+          />
+          <Teleport to="body">
+            <div
+              v-if="menuOpen"
+              class="ptr__overflow-menu"
+              role="menu"
+              :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+              @click="menuOpen = false"
+            >
+              <button role="menuitem" @click="emit('view')"><i class="pi pi-eye" /> Voir (panneau)</button>
+              <button role="menuitem" @click="emit('edit')"><i class="pi pi-pencil" /> Modifier</button>
+              <button role="menuitem" @click="emit('assign-manager')"><i class="pi pi-user-plus" /> Assigner un chef</button>
+              <div class="ptr__overflow-sep" />
+              <button role="menuitem" class="ptr__overflow-danger" @click="emit('delete')"><i class="pi pi-trash" /> Supprimer</button>
+            </div>
+          </Teleport>
+        </div>
       </div>
     </td>
   </tr>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { NeoButton } from '@neolibrary/components'
 import { PROJECT_STATUS_LABELS } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+
+const menuOpen = ref<boolean>(false)
+const menuPos   = ref<{ top: number; left: number }>({ top: 0, left: 0 })
+const triggerBtn = ref<unknown>(null)
+
+function openMenu(event: MouseEvent): void {
+  const btn = (event.currentTarget as HTMLElement | null) ?? (event.target as HTMLElement | null)
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const MENU_WIDTH = 200
+    menuPos.value = {
+      top: rect.bottom + 4,
+      left: Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
+    }
+  }
+  menuOpen.value = !menuOpen.value
+}
+
+function closeMenu(): void { menuOpen.value = false }
+onMounted(() => document.addEventListener('click', closeMenu))
+onUnmounted(() => document.removeEventListener('click', closeMenu))
 
 const props = defineProps<{
   project: ProjectSummary
@@ -245,9 +289,9 @@ const formatDate = (iso: string) =>
   display: flex;
   gap: 0.125rem;
   justify-content: flex-end;
-  opacity: 0;
-  transition: opacity 0.15s;
+  opacity: 1;
 }
 
-.ptr:hover .ptr__action-menu { opacity: 1; }
+.ptr__overflow { position: relative; }
+/* .ptr__overflow-menu styles are in main.css (teleported — not scoped) */
 </style>

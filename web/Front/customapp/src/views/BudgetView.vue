@@ -7,24 +7,48 @@
     </template>
 
     <div class="bg" v-if="budgetStore.budget">
-      <!-- Summary cards -->
-      <div class="bg__summary">
-        <div class="bg__card">
-          <div class="bg__card-label">Budget total</div>
-          <div class="bg__card-value">{{ format(total) }} {{ currency }}</div>
+      <!-- Summary cards + burn donut -->
+      <div class="bg__overview">
+        <div class="bg__summary">
+          <div class="bg__card">
+            <div class="bg__card-label">Budget total</div>
+            <div class="bg__card-value">{{ format(total) }} {{ currency }}</div>
+          </div>
+          <div class="bg__card">
+            <div class="bg__card-label">Dépensé</div>
+            <div class="bg__card-value">{{ format(burn?.spent ?? 0) }} {{ currency }}</div>
+            <NeoTag v-if="burn" :value="`${burn.percentUsed}%`" :severity="burn.percentUsed > 100 ? 'danger' : burn.percentUsed > 80 ? 'warn' : 'success'" />
+          </div>
+          <div class="bg__card">
+            <div class="bg__card-label">Restant</div>
+            <div class="bg__card-value">{{ format(burn?.remaining ?? total) }} {{ currency }}</div>
+          </div>
+          <div class="bg__card">
+            <div class="bg__card-label">Lignes</div>
+            <div class="bg__card-value">{{ budgetStore.budget.lineItems.length }}</div>
+          </div>
         </div>
-        <div class="bg__card">
-          <div class="bg__card-label">Dépensé</div>
-          <div class="bg__card-value">{{ format(burn?.spent ?? 0) }} {{ currency }}</div>
-          <NeoTag v-if="burn" :value="`${burn.percentUsed}%`" :severity="burn.percentUsed > 100 ? 'danger' : burn.percentUsed > 80 ? 'warn' : 'success'" />
-        </div>
-        <div class="bg__card">
-          <div class="bg__card-label">Restant</div>
-          <div class="bg__card-value">{{ format(burn?.remaining ?? total) }} {{ currency }}</div>
-        </div>
-        <div class="bg__card">
-          <div class="bg__card-label">Lignes</div>
-          <div class="bg__card-value">{{ budgetStore.budget.lineItems.length }}</div>
+
+        <!-- Burn progress bar + breakdown -->
+        <div class="bg__burn">
+          <div class="bg__burn-head">
+            <span class="nl-section-title">Consommation</span>
+            <span class="bg__burn-pct" :class="{ 'bg__burn-pct--danger': (burn?.percentUsed ?? 0) > 100, 'bg__burn-pct--warn': (burn?.percentUsed ?? 0) > 80 && (burn?.percentUsed ?? 0) <= 100 }">
+              {{ burn?.percentUsed ?? 0 }}%
+            </span>
+          </div>
+          <div class="bg__burn-bar">
+            <div class="bg__burn-fill" :style="{ width: Math.min(100, burn?.percentUsed ?? 0) + '%', background: burnColor }" />
+            <div v-if="(burn?.percentUsed ?? 0) > 100" class="bg__burn-overflow" />
+          </div>
+          <div class="bg__breakdown">
+            <div v-for="b in breakdown" :key="b.type" class="bg__breakdown-row">
+              <span class="bg__breakdown-dot" :style="{ background: b.color }" />
+              <span class="bg__breakdown-label">{{ b.label }}</span>
+              <span class="bg__breakdown-val">{{ format(b.total) }} {{ currency }}</span>
+              <span class="bg__breakdown-pct">{{ Math.round((b.total / Math.max(1, total)) * 100) }}%</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -121,6 +145,43 @@ const burn = computed(() => budgetStore.burn)
 const currency = computed(() => budget.value?.currency ?? 'EUR')
 const total = computed(() => Number(budget.value?.laborBudget ?? 0) + Number(budget.value?.materialBudget ?? 0))
 
+const burnColor = computed<string>(() => {
+  const pct = burn.value?.percentUsed ?? 0
+  if (pct > 100) return 'var(--nl-danger)'
+  if (pct > 80)  return 'var(--nl-warning)'
+  return 'var(--nl-success)'
+})
+
+const BREAKDOWN_COLORS: Record<string, string> = {
+  labor:    '#0F62FE',
+  material: '#10B981',
+  service:  '#F59E0B',
+  other:    '#A855F7',
+}
+const BREAKDOWN_LABELS: Record<string, string> = {
+  labor:    "Main-d'œuvre",
+  material: 'Matériel',
+  service:  'Service',
+  other:    'Autre',
+}
+
+const breakdown = computed<{ type: string; label: string; color: string; total: number }[]>(() => {
+  const lines = budget.value?.lineItems ?? []
+  const map = new Map<string, number>()
+  for (const l of lines) {
+    const t = l.type || 'other'
+    map.set(t, (map.get(t) ?? 0) + Number(l.total))
+  }
+  return Array.from(map.entries())
+    .map(([type, total]) => ({
+      type,
+      label: BREAKDOWN_LABELS[type] ?? type,
+      color: BREAKDOWN_COLORS[type] ?? '#6B7280',
+      total,
+    }))
+    .sort((a, b) => b.total - a.total)
+})
+
 function format(n: number): string {
   return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -184,7 +245,42 @@ onMounted(load)
 <style scoped>
 .bg-view { display: flex; flex-direction: column; height: 100%; background: var(--nl-bg, #f5f7f9); overflow-y: auto; }
 .bg { padding: 1.5rem; }
-.bg__summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+.bg__overview { display: grid; grid-template-columns: 1fr 320px; gap: var(--nl-sp-4); margin-bottom: var(--nl-sp-4); }
+.bg__summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--nl-sp-3); }
+
+.bg__burn {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
+  padding: var(--nl-sp-4);
+  display: flex; flex-direction: column; gap: var(--nl-sp-3);
+}
+.bg__burn-head { display: flex; justify-content: space-between; align-items: baseline; }
+.bg__burn-pct { font-size: var(--nl-fs-2xl); font-weight: 700; color: var(--nl-success); line-height: 1; }
+.bg__burn-pct--warn   { color: var(--nl-warning); }
+.bg__burn-pct--danger { color: var(--nl-danger); }
+.bg__burn-bar {
+  height: 8px; background: var(--nl-surface-2);
+  border-radius: var(--nl-radius-pill); overflow: hidden;
+  position: relative;
+}
+.bg__burn-fill { height: 100%; border-radius: inherit; transition: width 0.3s; }
+.bg__burn-overflow {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(45deg, var(--nl-danger) 0 8px, color-mix(in srgb, var(--nl-danger) 60%, #000) 8px 16px);
+  opacity: 0.35;
+}
+.bg__breakdown { display: flex; flex-direction: column; gap: var(--nl-sp-2); }
+.bg__breakdown-row { display: grid; grid-template-columns: 8px 1fr auto auto; gap: var(--nl-sp-2); align-items: center; font-size: var(--nl-fs-sm); }
+.bg__breakdown-dot { width: 8px; height: 8px; border-radius: 50%; }
+.bg__breakdown-label { color: var(--nl-text-2); }
+.bg__breakdown-val { color: var(--nl-text-1); font-weight: 600; font-family: var(--nl-font-mono); }
+.bg__breakdown-pct { color: var(--nl-text-3); font-size: var(--nl-fs-xs); min-width: 30px; text-align: right; }
+
+@media (max-width: 900px) {
+  .bg__overview { grid-template-columns: 1fr; }
+  .bg__summary { grid-template-columns: repeat(2, 1fr); }
+}
 .bg__card {
   background: var(--nl-card-bg, #fff);
   padding: 1rem 1.25rem;

@@ -57,16 +57,15 @@ const router = createRouter({
       component: () => import('@/layouts/AppShell.vue'),
       meta: { requiresAuth: true },
       children: [
-        // Role-based default redirect
+        // Unified Home (same for every role — an inbox/today view)
         {
           path: '',
           name: 'app-home',
-          redirect: () => {
-            const auth = useAuthStore()
-            if (auth.userRole === 'Admin') return { name: 'admin-dashboard' }
-            if (auth.userRole === 'ProjectManager') return { name: 'pm-projects' }
-            return { name: 'team-projects' }
-          },
+          component: () => import('@/views/HomeView.vue'),
+        },
+        {
+          path: 'home',
+          redirect: { name: 'app-home' },
         },
         // ── Admin layout ───────────────────────────────────────────────────
         {

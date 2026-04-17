@@ -1,5 +1,96 @@
 @import './base.css';
 
+/* ── PM Workspace utilities (new v3 design) ────────────────────────────────── */
+.nl-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--nl-kbd-bg); border: 1px solid var(--nl-kbd-border);
+  border-bottom-width: 2px; border-radius: 4px;
+  font-family: var(--nl-font-mono); font-size: 10px; font-weight: 600;
+  color: var(--nl-kbd-text); line-height: 1;
+}
+
+.nl-row { transition: background 0.1s ease; cursor: pointer; }
+.nl-row:hover { background: var(--nl-row-hover); }
+.nl-row--selected { background: var(--nl-row-selected); }
+
+.nl-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: var(--nl-radius-pill);
+  font-size: var(--nl-fs-xs); font-weight: 500; line-height: 1.5;
+  background: var(--nl-surface-2); color: var(--nl-text-2);
+  border: 1px solid var(--nl-border);
+}
+.nl-pill--active {
+  background: var(--nl-accent-light); color: var(--nl-accent);
+  border-color: var(--nl-accent);
+}
+.nl-pill--danger  { background: var(--nl-danger-light);  color: var(--nl-danger);  border-color: color-mix(in srgb, var(--nl-danger) 35%, transparent); }
+.nl-pill--warning { background: var(--nl-warning-light); color: var(--nl-warning); border-color: color-mix(in srgb, var(--nl-warning) 35%, transparent); }
+.nl-pill--success { background: var(--nl-success-light); color: var(--nl-success); border-color: color-mix(in srgb, var(--nl-success) 35%, transparent); }
+
+.nl-prio-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.nl-prio-dot--urgent  { background: var(--nl-prio-urgent); }
+.nl-prio-dot--high    { background: var(--nl-prio-high); }
+.nl-prio-dot--normal  { background: var(--nl-prio-normal); }
+.nl-prio-dot--low     { background: var(--nl-prio-low); }
+
+.nl-card {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
+  padding: var(--nl-sp-4);
+}
+.nl-card__title {
+  font-size: var(--nl-fs-sm); font-weight: 600;
+  color: var(--nl-text-3); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: var(--nl-sp-3);
+}
+
+.nl-section-title {
+  font-size: var(--nl-fs-xs); font-weight: 600;
+  color: var(--nl-text-3); text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nl-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--nl-sp-2); padding: var(--nl-sp-8);
+  color: var(--nl-text-3); text-align: center;
+}
+.nl-empty__icon {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--nl-surface-2); display: flex;
+  align-items: center; justify-content: center;
+  color: var(--nl-text-3); font-size: 18px;
+}
+
+/* ── Teleported context menus (row overflow ⋯ etc.) ──────────────────────── */
+/* Must live at the root so teleported nodes inherit the styles. */
+.ptr__overflow-menu {
+  position: fixed; min-width: 200px;
+  background: var(--nl-surface); border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius); box-shadow: var(--nl-shadow-lg);
+  padding: 4px; z-index: 9500;
+  display: flex; flex-direction: column; gap: 1px;
+  font-family: var(--nl-font);
+}
+.ptr__overflow-menu button {
+  display: flex; align-items: center; gap: var(--nl-sp-2);
+  padding: 6px 10px; background: transparent; border: none;
+  border-radius: var(--nl-radius-sm); cursor: pointer;
+  font-family: inherit; font-size: var(--nl-fs-sm);
+  color: var(--nl-text-1); text-align: left;
+  width: 100%;
+}
+.ptr__overflow-menu button:hover { background: var(--nl-row-hover); }
+.ptr__overflow-menu button .pi { color: var(--nl-text-3); font-size: 12px; width: 14px; }
+.ptr__overflow-danger { color: var(--nl-danger) !important; }
+.ptr__overflow-danger:hover { background: var(--nl-danger-light) !important; }
+.ptr__overflow-danger .pi { color: var(--nl-danger) !important; }
+.ptr__overflow-sep { height: 1px; background: var(--nl-separator); margin: 4px 0; }
+
+
 /* ── Overlay stacking — keep PrimeVue/NeoLibrary dropdowns above AppModal ─────
    AppModal uses z-index:900. Any teleported overlay panel from a Select,
    DatePicker, AutoComplete, MultiSelect, etc. must render above it so users

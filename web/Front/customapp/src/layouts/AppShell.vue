@@ -63,7 +63,10 @@ const collab      = useCollaborationSocket()
 // descendants, so inject would never find them from AppSidebar).
 
 const adminNav: NavSection[] = [
-  { items: [{ key: 'admin-dashboard', label: 'Tableau de bord', icon: 'pi-home',         to: '/app/admin/dashboard' }] },
+  { items: [
+      { key: 'app-home',          label: 'Accueil',         icon: 'pi-inbox',        to: '/app' },
+      { key: 'admin-dashboard',   label: 'Tableau de bord', icon: 'pi-chart-line',   to: '/app/admin/dashboard' },
+  ]},
   { heading: 'Gestion', items: [
       { key: 'admin-projects',  label: 'Projets',       icon: 'pi-briefcase', to: '/app/admin/projects'  },
       { key: 'admin-users',     label: 'Utilisateurs',  icon: 'pi-users',     to: '/app/admin/users'     },
@@ -85,7 +88,8 @@ const adminNav: NavSection[] = [
 
 const pmNav: NavSection[] = [
   { items: [
-      { key: 'pm-projects',     label: 'Mes projets',   icon: 'pi-briefcase', to: '/app/pm/projects' },
+      { key: 'app-home',        label: 'Accueil',        icon: 'pi-inbox',     to: '/app' },
+      { key: 'pm-projects',     label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/pm/projects' },
   ]},
   { heading: 'Travail', items: [
       { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
@@ -129,6 +133,7 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
 
 const teamNav: NavSection[] = [
   { items: [
+      { key: 'app-home',         label: 'Accueil',     icon: 'pi-inbox',        to: '/app' },
       { key: 'team-projects',    label: 'Projets',     icon: 'pi-briefcase',    to: '/app/team/projects'    },
       { key: 'team-validations', label: 'Validations', icon: 'pi-check-circle', to: '/app/team/validations' },
   ]},
@@ -151,8 +156,23 @@ const navSections = ref<NavSection[]>(
   computeNavForRoute(route.path, route.params as Record<string, string | string[]>),
 )
 
-const stopAfterEach = router.afterEach((to) => {
+const stopAfterEach = router.afterEach(async (to) => {
   navSections.value = computeNavForRoute(to.path, to.params as Record<string, string | string[]>)
+
+  // Track project visits for the sidebar "Recents" section.
+  const m = to.path.match(/^\/app\/pm\/projects\/([^/]+)/)
+  if (m && m[1]) {
+    const projectId = m[1]
+    try {
+      const { default: api } = await import('@/lib/api')
+      const { data } = await api.get<{ id: string; name: string; clientName?: string | null }>(
+        `/pm/projects/${projectId}`,
+      )
+      uiStore.trackProjectVisit({ id: data.id, name: data.name, clientName: data.clientName ?? null })
+    } catch {
+      // Silent — visit tracking is best-effort.
+    }
+  }
 })
 
 // Also react to role changes (e.g. on login/logout) outside navigation.
@@ -230,5 +250,7 @@ onUnmounted(() => {
   .shell__content {
     padding: 1rem;
   }
+  .shell__main { margin-left: 0; }
+  .shell--pinned .shell__main { margin-left: 0; }
 }
 </style>
