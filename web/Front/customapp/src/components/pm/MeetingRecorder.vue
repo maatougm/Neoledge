@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { NeoButton, NeoInputText, NeoMessage } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
@@ -203,7 +203,20 @@ function discardRecording() {
   uploadError.value = ''
 }
 
+function onBeforeUnload(e: BeforeUnloadEvent): void {
+  if (isRecording.value) {
+    e.preventDefault()
+    // Modern browsers ignore the custom message but still show a generic dialog
+    e.returnValue = 'Enregistrement en cours. Quitter maintenant perdra votre enregistrement.'
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', onBeforeUnload)
+})
+
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
   if (timerInterval) clearInterval(timerInterval)
   if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {

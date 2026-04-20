@@ -98,7 +98,16 @@ export class TimeTrackingService {
       const existing = await this.prisma.timeEntry.findUnique({ where: { id } });
       if (!existing) return Result.fail('Saisie introuvable.');
       if (existing.userId !== userId) return Result.fail('Accès refusé.');
-      if (existing.lockedAt) return Result.fail('Saisie verrouillée.');
+
+      // [Fix-5] Validate cross-project reassignment via workPackageId.
+      if (dto.workPackageId) {
+        const wp = await this.prisma.workPackage.findUnique({ where: { id: dto.workPackageId } });
+        if (!wp) return Result.fail('Work package introuvable.');
+        if (wp.projectId !== existing.projectId) {
+          return Result.fail('Le work package appartient à un autre projet.');
+        }
+        if (wp.isDeleted) return Result.fail('Work package supprimé.');
+      }
 
       const data: Record<string, unknown> = {};
       if (dto.hours !== undefined) data.hours = dto.hours;
@@ -108,9 +117,19 @@ export class TimeTrackingService {
       if (dto.isBillable !== undefined) data.isBillable = dto.isBillable;
       if (dto.workPackageId !== undefined) data.workPackageId = dto.workPackageId;
 
-      const updated = await this.prisma.timeEntry.update({ where: { id }, data });
+      // [Fix-6] Atomic lock check: add lockedAt: null predicate so a concurrent
+      // lockPeriod call cannot race past us. updateMany returns count=0 if
+      // the row was locked (or deleted) between our read and write.
+      const result = await this.prisma.timeEntry.updateMany({
+        where: { id, userId, lockedAt: null },
+        data,
+      });
+      if (result.count === 0) return Result.fail('Saisie verrouillée ou introuvable.');
+
+      const updated = await this.prisma.timeEntry.findUnique({ where: { id } });
       return Result.ok(updated);
-    } catch {
+    } catch (e) {
+      this.logger.error('update timeEntry failed', e);
       return Result.fail('Échec de la mise à jour.');
     }
   }
@@ -120,28 +139,65 @@ export class TimeTrackingService {
       const existing = await this.prisma.timeEntry.findUnique({ where: { id } });
       if (!existing) return Result.fail<void>('Saisie introuvable.');
       if (existing.userId !== userId) return Result.fail<void>('Accès refusé.');
-      if (existing.lockedAt) return Result.fail<void>('Saisie verrouillée.');
-      await this.prisma.timeEntry.delete({ where: { id } });
+
+      // [Fix-6] Atomic lock check: add lockedAt: null predicate.
+      const result = await this.prisma.timeEntry.deleteMany({
+        where: { id, userId, lockedAt: null },
+      });
+      if (result.count === 0) return Result.fail<void>('Saisie verrouillée ou introuvable.');
       return Result.ok<void>();
-    } catch {
+    } catch (e) {
+      this.logger.error('delete timeEntry failed', e);
       return Result.fail<void>('Échec de la suppression.');
     }
   }
 
-  async getWeeklyGrid(userId: string, weekStart: string) {
+  async getWeeklyGrid(userId: string, weekStart: string, timezone = 'Europe/Paris') {
     try {
-      const start = new Date(weekStart);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 6);
+      // [Fix-3] Parse weekStart as a plain YYYY-MM-DD date in the user's timezone
+      // to avoid UTC midnight misalignment on DST boundaries.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+        return Result.fail('weekStart doit être au format YYYY-MM-DD.');
+      }
+      const [year, month, day] = weekStart.split('-').map(Number);
+      // Build the start boundary as midnight in the target timezone expressed as UTC.
+      const startUtc = this.localMidnightUtc(year, month, day, timezone);
+      const endDate = new Date(startUtc.getTime() + 6 * 86400000); // +6 days in ms
+
       const entries = await this.prisma.timeEntry.findMany({
-        where: { userId, spentOn: { gte: start, lte: end } },
+        where: { userId, spentOn: { gte: startUtc, lte: endDate } },
         include: { project: { select: { id: true, name: true } }, workPackage: { select: { id: true, title: true } } },
         orderBy: { spentOn: 'asc' },
       });
-      return Result.ok({ start: start.toISOString().slice(0, 10), entries });
-    } catch {
+      return Result.ok({ start: weekStart, timezone, entries });
+    } catch (e) {
+      this.logger.error('getWeeklyGrid failed', e);
       return Result.fail('Échec du chargement de la semaine.');
     }
+  }
+
+  /**
+   * Returns a Date whose UTC value corresponds to midnight of (year, month, day)
+   * in the given IANA timezone. Uses Intl.DateTimeFormat to find the UTC offset
+   * at that instant without relying on a third-party date library.
+   */
+  private localMidnightUtc(year: number, month: number, day: number, timezone: string): Date {
+    // First approximation: midnight UTC for that date.
+    const approx = new Date(Date.UTC(year, month - 1, day));
+    // Use the formatter to find the local wall-clock reading at that UTC instant.
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(approx);
+    const p = (type: string) => Number(parts.find((x) => x.type === type)?.value ?? '0');
+    // The offset = approx(UTC) minus the local time it represents.
+    const localUtcMs = Date.UTC(p('year'), p('month') - 1, p('day'), p('hour'), p('minute'), p('second'));
+    const offsetMs = approx.getTime() - localUtcMs;
+    // Midnight local = UTC midnight of the target date + offset.
+    return new Date(Date.UTC(year, month - 1, day) + offsetMs);
   }
 
   async getSummary(projectId: string) {
@@ -202,18 +258,44 @@ export class TimeTrackingService {
 
   async createRate(dto: { userId: string; projectId?: string; rate: number; currency?: string; validFrom: string; validTo?: string }) {
     try {
+      const validFrom = new Date(dto.validFrom);
+      const validTo = dto.validTo ? new Date(dto.validTo) : null;
+
+      // [Fix-7] Reject if validTo is before validFrom.
+      if (validTo && validTo <= validFrom) {
+        return Result.fail('validTo doit être postérieur à validFrom.');
+      }
+
+      // [Fix-7] Reject overlapping rate windows for the same (userId, projectId).
+      // A conflict exists when an existing rate's interval overlaps [validFrom, validTo].
+      const projectId = dto.projectId ?? null;
+      const overlap = await this.prisma.hourlyRate.findFirst({
+        where: {
+          userId: dto.userId,
+          projectId,
+          validFrom: { lte: validTo ?? new Date('9999-12-31') },
+          OR: [{ validTo: null }, { validTo: { gte: validFrom } }],
+        },
+      });
+      if (overlap) {
+        return Result.fail(
+          'Un tarif horaire couvre déjà cette période. Fermez le tarif existant avant d\'en créer un nouveau.',
+        );
+      }
+
       const r = await this.prisma.hourlyRate.create({
         data: {
           userId: dto.userId,
-          projectId: dto.projectId ?? null,
+          projectId,
           rate: dto.rate,
           currency: dto.currency ?? 'EUR',
-          validFrom: new Date(dto.validFrom),
-          validTo: dto.validTo ? new Date(dto.validTo) : null,
+          validFrom,
+          validTo,
         },
       });
       return Result.ok(r);
-    } catch {
+    } catch (e) {
+      this.logger.error('createRate failed', e);
       return Result.fail('Échec.');
     }
   }

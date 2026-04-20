@@ -49,6 +49,16 @@ export function useNotificationSocket() {
       connected.value = true
     })
 
+    // On reconnect, refresh the auth token from the store before re-handshaking (#27)
+    socket.io.on('reconnect_attempt', () => {
+      import('@/stores/authStore').then(({ useAuthStore }) => {
+        const authStore = useAuthStore()
+        if (socket && authStore.jwt) {
+          socket.auth = { token: authStore.jwt }
+        }
+      }).catch(() => undefined)
+    })
+
     socket.on('disconnect', () => {
       connected.value = false
     })
@@ -85,5 +95,12 @@ export function useNotificationSocket() {
     connected.value = false
   }
 
-  return { connect, disconnect, connected }
+  /** Update the auth token on the live socket — useful after token refresh (#27) */
+  function updateAuth(newToken: string): void {
+    if (socket) {
+      socket.auth = { token: newToken }
+    }
+  }
+
+  return { connect, disconnect, connected, updateAuth }
 }

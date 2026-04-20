@@ -231,14 +231,17 @@ async function onBulkStatus(): Promise<void> {
   if (!bulkStatus.value || selectedIds.value.size === 0) return
   const ids = Array.from(selectedIds.value)
   const newStatus = bulkStatus.value as WpStatus
-  try {
-    await Promise.all(ids.map((id) => store.update(projectId.value, id, { status: newStatus })))
-    toast.add({ severity: 'success', detail: `${ids.length} WP mis à jour`, life: 3000 })
-    clearSelection()
-    bulkStatus.value = ''
-  } catch {
-    toast.add({ severity: 'error', detail: 'Échec de la mise à jour en lot', life: 4000 })
+  const results = await Promise.allSettled(ids.map((id) => store.update(projectId.value, id, { status: newStatus })))
+  const failures = results.filter((r) => r.status === 'rejected').length
+  const successes = results.length - failures
+  if (failures === 0) {
+    toast.add({ severity: 'success', detail: `${successes} WP mis à jour`, life: 3000 })
+  } else {
+    toast.add({ severity: 'warn', detail: `${successes} mis à jour, ${failures} échec(s)`, life: 4000 })
   }
+  clearSelection()
+  bulkStatus.value = ''
+  await load()
 }
 
 // Group-by

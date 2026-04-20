@@ -195,9 +195,10 @@ watch(collab.remoteCardMove, (payload) => {
   agileStore.fetchBoard(props.id, currentBoard.value.id)
 })
 
-onMounted(() => {
+onMounted(async () => {
   // Join project room for real-time events (sidebar already connects the socket)
   collab.joinProject(props.id)
+  await load()
 })
 onUnmounted(() => {
   collab.leaveProject(props.id)
@@ -220,8 +221,6 @@ async function onDrop(e: DragEvent, columnId: string) {
     toast.add({ severity: 'error', detail: 'Échec du déplacement.', life: 3000 })
   }
 }
-
-onMounted(load)
 </script>
 
 <style scoped>

@@ -169,11 +169,6 @@
           </div>
         </div>
       </div>
-      <!-- Portal tokens tab -->
-      <div v-if="activeTab === 'portal'" class="fields-card">
-        <PortalTokenManager :project-id="props.projectId" />
-      </div>
-
       <!-- Activity feed tab -->
       <div v-if="activeTab === 'activity'" class="fields-card" style="padding: 1rem 1.5rem;">
         <ActivityFeed :activities="store.activities" />
@@ -216,7 +211,6 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import ActivityFeed from '@/components/pm/ActivityFeed.vue'
 import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'
-import PortalTokenManager from '@/components/admin/PortalTokenManager.vue'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, FieldType } from '@/types/project.types'
 
@@ -252,14 +246,13 @@ const progressFillStyle = computed((): Record<string, string> => {
   return { width: `${pct}%`, background: color }
 })
 
-type PanelTabId = 'fields' | 'activity' | 'validations' | 'portal'
+type PanelTabId = 'fields' | 'activity' | 'validations'
 const activeTab = ref<PanelTabId>('fields')
 const validationsLoaded = ref(false)
 const panelTabs: { id: PanelTabId; label: string; icon: string }[] = [
   { id: 'fields',      label: 'Questionnaire',           icon: 'pi-list-check' },
   { id: 'validations', label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'activity',    label: 'Activité',                icon: 'pi-history' },
-  { id: 'portal',      label: 'Portail client',          icon: 'pi-share-alt' },
 ]
 
 const showTemplateDialog = ref(false)

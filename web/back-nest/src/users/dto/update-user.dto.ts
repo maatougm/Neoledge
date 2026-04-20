@@ -1,12 +1,14 @@
 import {
+  IsBoolean,
   IsEmail,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { PRESET_ROLE_PERMISSIONS } from '../../permissions/permission-keys.js';
 
-const UserRoleValues = ['Admin', 'ProjectManager', 'SpecificationTeam', 'RealizationTeam', 'DeploymentTeam', 'Viewer'] as const;
+const VALID_ROLES = Object.keys(PRESET_ROLE_PERMISSIONS);
 
 export class UpdateUserDto {
   @IsOptional()
@@ -27,6 +29,10 @@ export class UpdateUserDto {
   readonly email?: string;
 
   @IsOptional()
-  @IsEnum(UserRoleValues, { message: 'Le rôle sélectionné est invalide.' })
+  @IsIn(VALID_ROLES, { message: 'Le rôle sélectionné est invalide.' })
   readonly role?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  readonly isActive?: boolean;
 }

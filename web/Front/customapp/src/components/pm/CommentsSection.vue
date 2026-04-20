@@ -157,6 +157,7 @@ const currentUserInitials = computed<string>(() => {
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 async function submitComment(): Promise<void> {
+  if (submitting.value) return
   const content = newContent.value.trim()
   if (!content) return
   submitting.value = true

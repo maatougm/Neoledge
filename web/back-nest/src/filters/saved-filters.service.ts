@@ -25,6 +25,46 @@ interface UserPreferences {
   [key: string]: unknown;
 }
 
+const MAX_FILTERS_JSON_BYTES = 16 * 1024; // 16 KB — defensive upper bound.
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Recursively scans `value` to reject prototype-pollution payloads and other
+ * unsafe shapes. Returns an error message if the shape is unsafe.
+ */
+function validateFilterShape(value: unknown, depth = 0): string | null {
+  if (depth > 6) return 'Structure de filtre trop profonde.';
+  if (value === null || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const err = validateFilterShape(item, depth + 1);
+      if (err) return err;
+    }
+    return null;
+  }
+  // Reject anything other than a plain object literal.
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== null && proto !== Object.prototype) {
+    return 'Format de filtre invalide.';
+  }
+  for (const key of Object.keys(value)) {
+    if (FORBIDDEN_KEYS.has(key)) return 'Clé de filtre interdite.';
+    const err = validateFilterShape((value as Record<string, unknown>)[key], depth + 1);
+    if (err) return err;
+  }
+  return null;
+}
+
+function ensureSafeFilters(filters: unknown): string | null {
+  if (filters === undefined || filters === null) return null;
+  const shapeErr = validateFilterShape(filters);
+  if (shapeErr) return shapeErr;
+  // Size budget — reject absurdly large JSON blobs before persistence.
+  const size = Buffer.byteLength(JSON.stringify(filters), 'utf8');
+  if (size > MAX_FILTERS_JSON_BYTES) return 'Filtre trop volumineux (max 16 Ko).';
+  return null;
+}
+
 @Injectable()
 export class SavedFiltersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -57,6 +97,9 @@ export class SavedFiltersService {
     userId: string,
     dto: { name: string; filters: FilterCriteria; isDefault?: boolean },
   ): Promise<Result<SavedFilter>> {
+    const shapeErr = ensureSafeFilters(dto.filters);
+    if (shapeErr) return Result.fail(shapeErr);
+
     const user = await this.prisma.appUser.findUnique({ where: { id: userId } });
     if (!user) return Result.fail('Utilisateur non trouvé.');
 
@@ -84,6 +127,11 @@ export class SavedFiltersService {
     filterId: string,
     dto: { name?: string; filters?: FilterCriteria; isDefault?: boolean },
   ): Promise<Result<SavedFilter>> {
+    if (dto.filters !== undefined) {
+      const shapeErr = ensureSafeFilters(dto.filters);
+      if (shapeErr) return Result.fail(shapeErr);
+    }
+
     const user = await this.prisma.appUser.findUnique({ where: { id: userId } });
     if (!user) return Result.fail('Utilisateur non trouvé.');
 

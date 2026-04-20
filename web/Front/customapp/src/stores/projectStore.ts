@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 
 /** Extract a user-facing error message from an axios error response. */
 function extractApiError(e: unknown, fallback: string): string {
@@ -62,6 +63,8 @@ export const useProjectStore = defineStore('projects', () => {
   const statusFilter = ref<string>('')
   const totalProjects = ref<number>(0)
   const selectedProjectIds = ref<string[]>([])
+  /** AbortController for the in-flight searchProjects request. */
+  let _searchAbort: AbortController | null = null
 
   // ─── Getters ─────────────────────────────────────────────────────────────────
   const draftProjects = computed(() => projects.value.filter((p) => p.status === 'Draft'))
@@ -92,10 +95,19 @@ export const useProjectStore = defineStore('projects', () => {
     skip?: number
     take?: number
   }) => {
+    // Abort any in-flight search request before starting a new one
+    if (_searchAbort) {
+      _searchAbort.abort()
+    }
+    _searchAbort = new AbortController()
+    const signal = _searchAbort.signal
+
+    // Snapshot previous filter state so we can revert on failure
+    const prevQuery = searchQuery.value
+    const prevStatus = statusFilter.value
+
     loading.value = true
     error.value = null
-    searchQuery.value = params.search ?? ''
-    statusFilter.value = params.status ?? ''
     try {
       const queryParams = new URLSearchParams()
       if (params.search) queryParams.set('search', params.search)
@@ -105,12 +117,20 @@ export const useProjectStore = defineStore('projects', () => {
       const url = queryParams.toString()
         ? `/admin/project?${queryParams.toString()}`
         : '/admin/project'
-      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>(url)
+      const { data } = await api.get<{ items: ProjectSummary[]; total: number }>(url, { signal })
       const items = Array.isArray(data) ? data : (data.items ?? [])
       projects.value = [...items]
       totalProjects.value = Array.isArray(data) ? data.length : (data.total ?? items.length)
+      // Only update filter refs after a successful fetch so UI stays consistent
+      searchQuery.value = params.search ?? ''
+      statusFilter.value = params.status ?? ''
     } catch (e: unknown) {
+      // Ignore aborted requests — they are superseded by a newer call
+      if (e instanceof Error && e.name === 'CanceledError') return
       error.value = e instanceof Error ? e.message : 'Erreur lors de la recherche des projets.'
+      // Revert filter refs to previous values so they match the displayed list
+      searchQuery.value = prevQuery
+      statusFilter.value = prevStatus
     } finally {
       loading.value = false
     }
@@ -426,6 +446,29 @@ export const useProjectStore = defineStore('projects', () => {
     await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Wipe per-user state on logout. */
+  const reset = (): void => {
+    if (_searchAbort) {
+      _searchAbort.abort()
+      _searchAbort = null
+    }
+    projects.value = []
+    currentProject.value = null
+    activities.value = []
+    templates.value = []
+    deletedProjects.value = []
+    loading.value = false
+    error.value = null
+    searchQuery.value = ''
+    statusFilter.value = ''
+    totalProjects.value = 0
+    selectedProjectIds.value = []
+  }
+
+  onLogout(reset)
+
   return {
     projects,
     currentProject,
@@ -466,5 +509,6 @@ export const useProjectStore = defineStore('projects', () => {
     bulkArchive,
     bulkUpdateStatus,
     bulkAssignManager,
+    reset,
   }
 })

@@ -1,8 +1,9 @@
 /** @file src/stores/pmStore.ts — Pinia store for Project Manager module */
 
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -21,14 +22,24 @@ import type {
 } from '@/types/pm.types'
 
 export const usePmStore = defineStore('pm', () => {
-  const projects = ref<ProjectSummary[]>([])
+  /** Projects fetched via the PM's own list endpoint. */
+  const myProjects = ref<ProjectSummary[]>([])
+  /** Projects fetched via the team-member endpoint. */
+  const teamProjects = ref<ProjectSummary[]>([])
+  /** Tracks which list was last populated so callers can infer context. */
+  const projectsView = ref<'mine' | 'team'>('mine')
+  /** Computed view of the active project list — switches between myProjects and teamProjects. */
+  const projects = computed<ProjectSummary[]>(() =>
+    projectsView.value === 'team' ? teamProjects.value : myProjects.value,
+  )
   const currentProject = ref<ProjectDetail | null>(null)
   const validations = ref<ProjectValidation[]>([])
   const activities = ref<ProjectActivity[]>([])
   const meetings = ref<MeetingTranscriptSummary[]>([])
   const currentTranscript = ref<MeetingTranscriptDetail | null>(null)
   const aiResults = ref<AiResults | null>(null)
-  const aiPolling = ref<ReturnType<typeof setInterval> | null>(null)
+  /** Module-private interval handle — not a ref, avoids unnecessary reactivity. */
+  let _aiPolling: ReturnType<typeof setInterval> | null = null
   const automationRules = ref<AutomationRule[]>([])
   const automationLogs = ref<AutomationLog[]>([])
   const loading = ref(false)
@@ -42,7 +53,8 @@ export const usePmStore = defineStore('pm', () => {
     error.value = null
     try {
       const { data } = await api.get<ProjectSummary[]>('/pm/projects')
-      projects.value = [...data]
+      myProjects.value = [...data]
+      projectsView.value = 'mine'
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
     } finally {
@@ -55,7 +67,8 @@ export const usePmStore = defineStore('pm', () => {
     error.value = null
     try {
       const { data } = await api.get<ProjectSummary[]>('/pm/team-projects')
-      projects.value = [...data]
+      teamProjects.value = [...data]
+      projectsView.value = 'team'
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des projets.'
     } finally {
@@ -176,8 +189,8 @@ export const usePmStore = defineStore('pm', () => {
       await api.post(`/pm/projects/${projectId}/meetings/upload`, formData, { timeout: 300_000 })
       return true
     } catch (e: unknown) {
-      const axiosMsg = (e as any)?.response?.data?.message
-      error.value = axiosMsg ?? (e instanceof Error ? e.message : "Erreur lors de l'envoi de l'enregistrement.")
+      const msg = e instanceof Error ? e.message : String(e)
+      error.value = msg || "Erreur lors de l'envoi de l'enregistrement."
       return false
     } finally {
       saving.value = false
@@ -196,15 +209,15 @@ export const usePmStore = defineStore('pm', () => {
   }
 
   const stopAiPolling = () => {
-    if (aiPolling.value !== null) {
-      clearInterval(aiPolling.value)
-      aiPolling.value = null
+    if (_aiPolling !== null) {
+      clearInterval(_aiPolling)
+      _aiPolling = null
     }
   }
 
   const resumeAiPolling = (projectId: string, meetingId: string) => {
     stopAiPolling()
-    aiPolling.value = setInterval(() => {
+    _aiPolling = setInterval(() => {
       void fetchAiResults(projectId, meetingId)
     }, 5000)
   }
@@ -237,7 +250,7 @@ export const usePmStore = defineStore('pm', () => {
         decisions: [],
       }
       stopAiPolling()
-      aiPolling.value = setInterval(() => {
+      _aiPolling = setInterval(() => {
         void fetchAiResults(projectId, meetingId)
       }, 5000)
     } catch (e: unknown) {
@@ -340,7 +353,39 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Clear the currently selected project without a full store reset. */
+  const clearCurrent = (): void => {
+    currentProject.value = null
+    validations.value = []
+  }
+
+  /** Stop AI polling + wipe per-user state. Called on logout. */
+  const reset = (): void => {
+    stopAiPolling()
+    myProjects.value = []
+    teamProjects.value = []
+    projectsView.value = 'mine'
+    currentProject.value = null
+    validations.value = []
+    activities.value = []
+    meetings.value = []
+    currentTranscript.value = null
+    aiResults.value = null
+    automationRules.value = []
+    automationLogs.value = []
+    loading.value = false
+    saving.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
+    myProjects,
+    teamProjects,
+    projectsView,
     projects,
     currentProject,
     validations,
@@ -374,5 +419,7 @@ export const usePmStore = defineStore('pm', () => {
     toggleAutomationRule,
     deleteAutomationRule,
     fetchAutomationLogs,
+    clearCurrent,
+    reset,
   }
 })

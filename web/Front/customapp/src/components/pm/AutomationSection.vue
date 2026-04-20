@@ -78,11 +78,10 @@
     </div>
 
     <!-- Create Dialog -->
-    <Dialog
+    <AppModal
       v-model:visible="dialogVisible"
       header="Nouvelle règle d'automatisation"
-      modal
-      :style="{ width: '480px' }"
+      width="480px"
     >
       <div class="dialog-form">
         <div class="form-field">
@@ -143,14 +142,14 @@
         <NeoButton label="Annuler" outlined severity="secondary" @click="dialogVisible = false" />
         <NeoButton label="Enregistrer" :loading="saving" @click="submitRule" />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { NeoButton, NeoInputText, NeoSelect, NeoMessage } from '@neolibrary/components'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import { useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import type { AutomationRule } from '@/types/pm.types'
@@ -246,6 +245,19 @@ async function submitRule() {
   if (!form.value.actionType) {
     formError.value = "Le type d'action est requis."
     return
+  }
+
+  // Extra validation for send_notification (#12)
+  if (form.value.actionType === 'send_notification') {
+    if (!form.value.actionMessage.trim()) {
+      formError.value = 'Le message de notification ne peut pas être vide.'
+      return
+    }
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (form.value.actionUserId && !UUID_RE.test(form.value.actionUserId)) {
+      formError.value = "L'ID utilisateur doit être un UUID valide (ex : xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."
+      return
+    }
   }
 
   const actionConfig: Record<string, unknown> = {}

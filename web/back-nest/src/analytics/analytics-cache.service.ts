@@ -34,4 +34,21 @@ export class AnalyticsCacheService {
       update: { data: serialized, computedAt: new Date() },
     });
   }
+
+  /**
+   * Bust one or all analytics cache entries.
+   * Pass a key to invalidate a single entry; omit key to wipe all entries.
+   * Swallows errors so it never breaks the calling service.
+   */
+  async invalidate(key?: string): Promise<void> {
+    try {
+      if (key) {
+        await this.prisma.analyticsCache.deleteMany({ where: { cacheKey: key } });
+      } else {
+        await this.prisma.analyticsCache.deleteMany({});
+      }
+    } catch {
+      // Best-effort: cache invalidation must not break mutations.
+    }
+  }
 }

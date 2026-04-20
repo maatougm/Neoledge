@@ -16,19 +16,7 @@ import {
 import { SavedFiltersService } from './saved-filters.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
-import type { FilterCriteria } from './saved-filters.service.js';
-
-interface CreateSavedFilterDto {
-  name: string;
-  filters: FilterCriteria;
-  isDefault?: boolean;
-}
-
-interface UpdateSavedFilterDto {
-  name?: string;
-  filters?: FilterCriteria;
-  isDefault?: boolean;
-}
+import { CreateSavedFilterDto, UpdateSavedFilterDto } from './dto/saved-filter.dto.js';
 
 @Controller('api/saved-filters')
 @UseGuards(JwtAuthGuard)

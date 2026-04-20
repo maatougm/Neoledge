@@ -39,12 +39,25 @@ class TranscriptionService:
             savedir = os.path.join(os.path.dirname(__file__), "models", "spkrec-ecapa-voxceleb")
             os.makedirs(savedir, exist_ok=True)
 
-            # Download model files with copy strategy (no symlinks — avoids Windows privilege error)
-            snapshot_download(
-                repo_id="speechbrain/spkrec-ecapa-voxceleb",
-                local_dir=savedir,
-                local_dir_use_symlinks=False,
-            )
+            # Download model files with copy strategy (no symlinks — avoids Windows privilege error).
+            # On first boot the files are fetched from HuggingFace Hub; on subsequent boots
+            # (or when the network is unavailable) we fall back to local_files_only=True so
+            # the service starts without requiring internet access.
+            _required_file = os.path.join(savedir, "hyperparams.yaml")
+            if os.path.isfile(_required_file):
+                # Model already cached locally — skip network round-trip.
+                snapshot_download(
+                    repo_id="speechbrain/spkrec-ecapa-voxceleb",
+                    local_dir=savedir,
+                    local_dir_use_symlinks=False,
+                    local_files_only=True,
+                )
+            else:
+                snapshot_download(
+                    repo_id="speechbrain/spkrec-ecapa-voxceleb",
+                    local_dir=savedir,
+                    local_dir_use_symlinks=False,
+                )
 
             self._embedding_model = EncoderClassifier.from_hparams(
                 source=savedir,
@@ -84,7 +97,7 @@ class TranscriptionService:
                 "start": seg.start,
                 "end": seg.end,
                 "text": seg.text.strip(),
-                "confidence": np.exp(seg.avg_logprob) if seg.avg_logprob else 0.0,
+                "confidence": np.exp(seg.avg_logprob) if seg.avg_logprob is not None else 0.0,
                 "words": [
                     {"start": w.start, "end": w.end, "word": w.word}
                     for w in (seg.words or [])

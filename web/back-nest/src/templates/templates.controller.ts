@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { CreateTemplateDto, CreateFromProjectDto } from './dto/template.dto.js';
 
 @Controller('admin/projecttemplate')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -26,7 +27,7 @@ export class TemplatesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@CurrentUser() user: any, @Body() dto: any) {
+  async create(@CurrentUser() user: { userId: string }, @Body() dto: CreateTemplateDto) {
     const result = await this.service.create(dto, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -35,7 +36,11 @@ export class TemplatesController {
   // Specific static-prefix routes must come before dynamic :id routes
   @Post('from-project/:projectId')
   @HttpCode(HttpStatus.CREATED)
-  async createFromProject(@Param('projectId') projectId: string, @Body() dto: any, @CurrentUser() user: any) {
+  async createFromProject(
+    @Param('projectId') projectId: string,
+    @Body() dto: CreateFromProjectDto,
+    @CurrentUser() user: { userId: string },
+  ) {
     if (!dto?.name?.trim()) throw new BadRequestException('Le nom du modèle est requis.');
     const result = await this.service.createFromProject(projectId, dto, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);

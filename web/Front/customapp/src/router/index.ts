@@ -20,7 +20,7 @@ declare module 'vue-router' {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password', 'client-portal'])
+const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password'])
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -151,6 +151,11 @@ const router = createRouter({
               path: 'audit',
               name: 'admin-audit',
               component: () => import('@/views/AuditLogView.vue'),
+            },
+            {
+              path: 'roles',
+              name: 'admin-roles',
+              component: () => import('@/views/admin/RolesView.vue'),
             },
           ],
         },
@@ -306,13 +311,6 @@ const router = createRouter({
       ],
     },
 
-    // ── Client Portal (public, no auth) ──────────────────────────────────────
-    {
-      path: '/portal/:token',
-      name: 'client-portal',
-      component: () => import('@/views/ClientPortalView.vue'),
-    },
-
     // ── Legacy / Elise CustomAction root path ─────────────────────────────────
     // Kept for backwards compatibility with existing Elise iframe URLs
     {
@@ -350,6 +348,7 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
 
   // ── Elise GUID flow ────────────────────────────────────────────────────────
   // Elise passes ?Guid=<token> when loading the CustomAction in an iframe.
+  // Skip entirely when the user already has a valid session.
   const guid = to.query.Guid as string | undefined
   if (guid && !auth.isAuthenticated) {
     try {
@@ -357,6 +356,14 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
         config.apiUrl + '/hook/auth',
         { params: { guid } },
       )
+      // Only accept the JWT when the response came from the configured API host.
+      const responseOrigin = new URL(config.apiUrl).origin
+      const responseUrl = (response.config?.url) ?? ''
+      const isFromExpectedHost = responseUrl.startsWith(responseOrigin) || responseUrl.startsWith('/')
+      if (!isFromExpectedHost) {
+        console.warn('[router] Elise JWT response from unexpected origin, ignoring.')
+        return { name: 'unauthorized' }
+      }
       auth.setJwt(response.data.jwt)
     } catch {
       return { name: 'unauthorized' }
@@ -384,6 +391,15 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
     // Force password change
     if (auth.mustChangePassword && to.name !== 'force-change-password') {
       return { name: 'force-change-password' }
+    }
+
+    // Hydrate permission set on first authenticated navigation (or after login).
+    // fetchMe clears the token if it's been invalidated server-side.
+    if (auth.isAuthenticated && auth.globalPermissions.size === 0) {
+      await auth.fetchMe()
+      if (!auth.isAuthenticated) {
+        return { name: 'login' }
+      }
     }
   }
 

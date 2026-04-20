@@ -90,6 +90,9 @@ const store = useNotificationStore()
 const open = ref(false)
 const wrapRef = ref<HTMLElement | null>(null)
 
+// In-flight guard for markAsRead to prevent duplicate API calls (#21)
+const inFlight = new Set<string>()
+
 const MAX_VISIBLE = 10
 
 const unreadCount = computed(() => store.unreadCount)
@@ -122,7 +125,13 @@ function togglePanel(): void {
 
 async function handleMarkAsRead(id: string, alreadyRead: boolean): Promise<void> {
   if (alreadyRead) return
-  await store.markAsRead(id)
+  if (inFlight.has(id)) return
+  inFlight.add(id)
+  try {
+    await store.markAsRead(id)
+  } finally {
+    inFlight.delete(id)
+  }
 }
 
 async function handleMarkAllAsRead(): Promise<void> {

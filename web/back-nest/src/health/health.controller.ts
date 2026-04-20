@@ -24,8 +24,15 @@ export class HealthController {
       checks.db = false;
     }
     const healthy = checks.db && checks.api;
+    const status = healthy ? 'ok' : 'degraded';
+
+    // In production, return only the minimal status — no internals.
+    if (process.env.NODE_ENV === 'production') {
+      return { status };
+    }
+
     return {
-      status: healthy ? 'ok' : 'degraded',
+      status,
       version: process.env.npm_package_version ?? 'dev',
       uptime_seconds: Math.round((Date.now() - this.startedAt) / 1000),
       node: process.version,

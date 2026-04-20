@@ -38,6 +38,7 @@ model AppUser {
   totpSecret          String?   @db.VarChar(100)
   totpEnabled         Boolean   @default(false)
   totpVerifiedAt      DateTime?
+  tokenVersion        Int       @default(0)
 
   // Relations
   managedProjects  Project[]          @relation("ProjectManager")
@@ -52,8 +53,6 @@ model AppUser {
   checkedItems     PhaseChecklist[]
 
   auditLogs    AuditLog[]
-  portalTokens PortalToken[]
-
   // Sprint 0+ back-relations (work packages, time, wiki, etc.)
   wpAssignments      WorkPackage[]        @relation("WpAssignee")
   wpAuthored         WorkPackage[]        @relation("WpAuthor")
@@ -70,8 +69,67 @@ model AppUser {
   actedNotifications Notification[]       @relation("NotificationActor")
   wpComments         WorkPackageComment[] @relation("WpCommentAuthor")
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
+  roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
 
   @@map("AppUsers")
+}
+
+// ─── Permissions (Phase 1 — OpenProject-style data-driven roles) ─────────────
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique @db.VarChar(100)
+  resource    String   @db.VarChar(50)
+  description String   @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+
+  @@index([resource])
+  @@map("Permissions")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  isPreset    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  assignments UserRoleAssignment[]
+
+  @@map("Roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("RolePermissions")
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  projectId String?
+  createdAt DateTime @default(now())
+
+  user    AppUser  @relation("UserRoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  project Project? @relation("ProjectRoleAssignments", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, projectId], name: "user_role_project_uq")
+  @@index([roleId])
+  @@index([projectId])
+  @@map("UserRoleAssignments")
 }
 
 model Project {
@@ -93,6 +151,7 @@ model Project {
   deletedByUserId          String?
   tags                     String?  @db.VarChar(500)
   budget                   Decimal?
+  currentPhaseEnteredAt    DateTime?
 
   // Relations
   projectManager AppUser?         @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -107,7 +166,6 @@ model Project {
   transcripts    MeetingTranscript[]
   notifications  Notification[]
   checklists      PhaseChecklist[]
-  portalTokens    PortalToken[]
   automationRules AutomationRule[]
 
   // Sprint 0+ back-relations
@@ -120,8 +178,9 @@ model Project {
   projectBudget  ProjectBudget?
   milestones     Milestone[]
   ganttBaselines GanttBaseline[]
-  wikiPages      WikiPage[]
-  portfolioLinks PortfolioProject[]
+  wikiPages       WikiPage[]
+  portfolioLinks  PortfolioProject[]
+  roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
 
   @@index([status])
   @@index([projectManagerId])
@@ -291,6 +350,7 @@ model MeetingTranscript {
   createdAt         DateTime  @default(now())
   aiSummary         String?   @db.LongText
   aiStatus          String    @default("none") @db.VarChar(20)
+  aiStartedAt       DateTime?
   aiProcessedAt     DateTime?
   aiModel           String?   @db.VarChar(50)
   aiError           String?   @db.VarChar(500)
@@ -350,6 +410,7 @@ model TranscriptSegment {
   // Relations
   transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
 
+  @@index([transcriptId])
   @@map("TranscriptSegments")
 }
 
@@ -373,6 +434,7 @@ model Notification {
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   actor   AppUser? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@index([userId, isRead, createdAt(sort: Desc)])
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@index([entityType, entityId])
@@ -397,43 +459,6 @@ model PhaseChecklist {
 
   @@index([projectId, phase])
   @@map("PhaseChecklists")
-}
-
-model PortalToken {
-  id             String    @id @default(uuid())
-  projectId      String
-  token          String    @unique @db.VarChar(64)
-  createdById    String
-  label          String?   @db.VarChar(200)
-  expiresAt      DateTime
-  isRevoked      Boolean   @default(false)
-  lastAccessedAt DateTime?
-  accessCount    Int       @default(0)
-  createdAt      DateTime  @default(now())
-
-  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy AppUser         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  signoffs  PortalSignoff[]
-
-  @@index([token])
-  @@index([projectId])
-  @@map("PortalTokens")
-}
-
-model PortalSignoff {
-  id            String   @id @default(uuid())
-  portalTokenId String
-  clientName    String   @db.VarChar(200)
-  clientEmail   String?  @db.VarChar(256)
-  comment       String?  @db.Text
-  isApproved    Boolean
-  signedAt      DateTime @default(now())
-  ipAddress     String?  @db.VarChar(45)
-
-  portalToken PortalToken @relation(fields: [portalTokenId], references: [id], onDelete: Cascade)
-
-  @@index([portalTokenId])
-  @@map("PortalSignoffs")
 }
 
 model AuditLog {
@@ -514,6 +539,7 @@ model Board {
   columns BoardColumn[]
   sprints Sprint[]
 
+  @@unique([projectId, name])
   @@index([projectId])
   @@map("Boards")
 }
@@ -598,13 +624,13 @@ model WorkPackage {
   updatedAt      DateTime  @updatedAt
 
   project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   author          AppUser                  @relation("WpAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  parent          WorkPackage?             @relation("WpHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parent          WorkPackage?             @relation("WpHierarchy", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children        WorkPackage[]            @relation("WpHierarchy")
-  sprint          Sprint?                  @relation(fields: [sprintId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  version         Version?                 @relation(fields: [versionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  boardColumn     BoardColumn?             @relation(fields: [boardColumnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sprint          Sprint?                  @relation(fields: [sprintId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  version         Version?                 @relation(fields: [versionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  boardColumn     BoardColumn?             @relation(fields: [boardColumnId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   watchers        WorkPackageWatcher[]
   dependenciesOut WorkPackageDependency[]  @relation("DepFrom")
   dependenciesIn  WorkPackageDependency[]  @relation("DepTo")
@@ -616,7 +642,9 @@ model WorkPackage {
   comments        WorkPackageComment[]
   attachments     WorkPackageAttachment[]
 
+  @@index([projectId, isDeleted, status])
   @@index([projectId, status])
+  @@index([assigneeId, isDeleted])
   @@index([assigneeId])
   @@index([parentId])
   @@index([sprintId])
@@ -721,6 +749,7 @@ model GanttBaseline {
   workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
   createdBy   AppUser     @relation("GanttBaselineCreator", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@unique([projectId, snapshotName, workPackageId])
   @@index([projectId, snapshotName])
   @@index([workPackageId])
   @@map("GanttBaselines")
@@ -763,6 +792,11 @@ model HourlyRate {
   user    AppUser  @relation("HourlyRateUser", fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  // NOTE: MySQL/MariaDB treats NULL as distinct in UNIQUE indexes, so
+  // (userId, NULL, validFrom) does not collide with another (userId, NULL, validFrom) row
+  // at the DB level. Application code must use findFirst + create (never upsert) for global
+  // rates (projectId = NULL) to prevent duplicate global-rate rows.
+  @@unique([userId, projectId, validFrom])
   @@index([userId, projectId, validFrom])
   @@map("HourlyRates")
 }
@@ -774,6 +808,7 @@ model ProjectBudget {
   materialBudget Decimal  @default(0) @db.Decimal(14, 2)
   currency       String   @default("EUR") @db.VarChar(8)
   notes          String?  @db.Text
+  version        Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -788,6 +823,7 @@ model BudgetLineItem {
   budgetId    String
   description String   @db.VarChar(255)
   type        String   @default("material") @db.VarChar(16)
+  kind        String   @default("actual") @db.VarChar(16)
   unitCost    Decimal  @db.Decimal(14, 2)
   units       Decimal  @db.Decimal(10, 2)
   total       Decimal  @db.Decimal(14, 2)
@@ -798,6 +834,7 @@ model BudgetLineItem {
   budget ProjectBudget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
 
   @@index([budgetId, position])
+  @@index([budgetId, kind])
   @@map("BudgetLineItems")
 }
 
@@ -822,6 +859,7 @@ model WikiPage {
 
   @@unique([projectId, slug])
   @@index([parentId])
+  @@index([projectId, title])
   @@map("WikiPages")
 }
 

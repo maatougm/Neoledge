@@ -12,6 +12,11 @@
               v-model="query"
               class="cmdk-input"
               type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="cmdk-listbox"
+              :aria-activedescendant="selIdx >= 0 ? `cmdk-option-${selIdx}` : undefined"
+              :aria-expanded="flatItems.length > 0"
               placeholder="Tapez une commande ou recherchez…"
               @input="onInput"
               @keydown.down.prevent="moveSel(1)"
@@ -23,16 +28,19 @@
           </div>
 
           <!-- Results -->
-          <div class="cmdk-results">
-            <div v-if="loading" class="cmdk-state">Recherche…</div>
-            <div v-else-if="flatItems.length === 0" class="cmdk-state">Aucun résultat.</div>
+          <div class="cmdk-results" id="cmdk-listbox" role="listbox" aria-label="Résultats de recherche">
+            <div v-if="loading" class="cmdk-state" aria-live="polite">Recherche…</div>
+            <div v-else-if="flatItems.length === 0" class="cmdk-state" aria-live="polite">Aucun résultat.</div>
             <template v-else>
               <div v-for="group in groupedItems" :key="group.label" class="cmdk-group">
                 <div class="cmdk-group-label">{{ group.label }}</div>
-                <ul class="cmdk-list">
+                <ul class="cmdk-list" role="presentation">
                   <li
                     v-for="item in group.items"
                     :key="item._idx"
+                    :id="`cmdk-option-${item._idx}`"
+                    role="option"
+                    :aria-selected="item._idx === selIdx"
                     class="cmdk-item"
                     :class="{ 'cmdk-item--active': item._idx === selIdx }"
                     @mouseenter="selIdx = item._idx"
@@ -65,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/lib/api'
 import { useDarkMode } from '@/composables/useDarkMode'
@@ -102,22 +110,30 @@ const searchHits = ref<PaletteItem[]>([])
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
+function clearDebounce(): void {
+  if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null }
+}
+
 watch(() => props.visible, async (v) => {
   if (v) {
     await nextTick()
     inputRef.value?.focus()
     inputRef.value?.select()
   } else {
+    clearDebounce()
     query.value = ''
     searchHits.value = []
     selIdx.value = 0
   }
 })
 
+onUnmounted(clearDebounce)
+
 function close(): void { emit('update:visible', false) }
 
 function onInput(): void {
-  if (debounceTimer) clearTimeout(debounceTimer)
+  clearDebounce()
+  selIdx.value = 0  // reset selection on input change (#19)
   if (query.value.trim().length < 2) { searchHits.value = []; return }
   debounceTimer = setTimeout(runServerSearch, 180)
 }
@@ -155,7 +171,7 @@ const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
     { kind: 'command', id: 'dark',   title: dark.isDark.value ? 'Thème clair' : 'Thème sombre', icon: dark.isDark.value ? 'pi-sun' : 'pi-moon', action: () => { void dark.toggle() } },
     { kind: 'command', id: 'prof',   title: 'Mon profil',               icon: 'pi-user',      action: () => router.push('/app/profile') },
   ]
-  if (authStore.userRole === 'Admin' || authStore.userRole === 'ProjectManager') {
+  if (authStore.can('team_planner.view')) {
     cmds.push({ kind: 'command', id: 'planner', title: 'Planif. équipe', icon: 'pi-calendar', action: () => router.push(authStore.userRole === 'Admin' ? '/app/admin/team-planner' : '/app/pm/team-planner') })
   }
   if (isInProject && projectId) {
@@ -235,7 +251,8 @@ function openItem(item: PaletteItem): void {
   backdrop-filter: blur(4px);
   display: flex; align-items: flex-start; justify-content: center;
   padding-top: 10vh;
-  z-index: 1100;
+  /* Above UserMenu/NotificationPanel (9500) + row menus (9500), below PrimeVue overlays (10000). */
+  z-index: 9800;
 }
 .cmdk-box {
   background: var(--nl-surface);

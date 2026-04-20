@@ -17,6 +17,11 @@ export interface JwtPayload {
 /**
  * Safely decode the middle (payload) segment of a JWT using atob.
  * Returns null on any failure — never throws.
+ *
+ * UI DISPLAY ONLY. NEVER use for access control — the signature is NOT
+ * verified here. All authoritative permission checks must go through the
+ * backend (JwtAuthGuard + RolesGuard) or the server-hydrated `can()` helper
+ * in authStore which is backed by /auth/me.
  */
 export function decodeJwt(token: string): JwtPayload | null {
   try {
@@ -117,12 +122,16 @@ export function getUserId(token: string): string | null {
 }
 
 /**
- * Returns true when the JWT's `exp` claim is in the past.
- * Returns false if `exp` is absent (treat as non-expiring).
+ * Returns true when the JWT's `exp` claim is in the past, or when `exp` is
+ * absent (no unbounded sessions — treat missing exp as expired to be safe).
+ *
+ * NOTE: `decodeJwt` performs base64 decode only and does NOT verify the
+ * signature. Never use it as an authoritative authentication decision — only
+ * for client-side UI hints (e.g. proactively refreshing before an API call).
  */
 export function isTokenExpired(token: string): boolean {
   const payload = decodeJwt(token)
   if (!payload) return true
-  if (payload.exp === undefined) return false
+  if (payload.exp === undefined) return true
   return payload.exp < Date.now() / 1000
 }

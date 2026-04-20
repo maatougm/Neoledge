@@ -3,10 +3,13 @@ import {
 } from '@nestjs/common';
 import { ChecklistsService } from './checklists.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('api/projects/:projectId/checklists')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class ChecklistsController {
   constructor(private readonly service: ChecklistsService) {}
 

@@ -1,9 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
 
+/** Strip API keys and auth tokens from error messages before persisting. */
+function sanitizeAiError(message: string): string {
+  return message
+    .replace(/sk-[A-Za-z0-9\-_]{20,}/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/AIza[0-9A-Za-z\-_]{35}/g, '[REDACTED_GEMINI_KEY]')
+    .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9\-_\.]+/gi, 'Bearer [REDACTED]')
+    .substring(0, 500)
+}
+
+/** Rows stuck in 'processing' for longer than this are considered abandoned. */
+const AI_STUCK_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
+
 @Injectable()
-export class AiService {
+export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name)
 
   constructor(
@@ -11,12 +24,33 @@ export class AiService {
     private readonly providerFactory: AiProviderFactory,
   ) {}
 
+  /** On startup, mark any rows stuck in processing as failed. */
+  async onModuleInit(): Promise<void> {
+    try {
+      const stuckBefore = new Date(Date.now() - AI_STUCK_THRESHOLD_MS)
+      const { count } = await this.prisma.meetingTranscript.updateMany({
+        where: { aiStatus: 'processing', aiStartedAt: { lt: stuckBefore } },
+        data: { aiStatus: 'failed', aiError: 'Timed out (abandoned on restart)' },
+      })
+      if (count > 0) {
+        this.logger.warn(`Marked ${count} stuck AI processing row(s) as failed on startup.`)
+      }
+    } catch (e: unknown) {
+      this.logger.error(`onModuleInit stuck-sweep failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   async analyzeTranscript(transcriptId: string): Promise<void> {
-    // 1. Mark as processing
-    await this.prisma.meetingTranscript.update({
-      where: { id: transcriptId },
-      data: { aiStatus: 'processing', aiError: null },
+    // 1. Mark as processing — only if not already processing (concurrency guard).
+    const { count } = await this.prisma.meetingTranscript.updateMany({
+      where: { id: transcriptId, aiStatus: { not: 'processing' } },
+      data: { aiStatus: 'processing', aiError: null, aiStartedAt: new Date() },
     })
+    if (count === 0) {
+      // Either the row doesn't exist or it's already processing — bail out.
+      this.logger.warn(`analyzeTranscript: transcript ${transcriptId} is already processing or missing — skipping.`)
+      return
+    }
 
     try {
       // 2. Fetch segments and build transcript text
@@ -92,7 +126,7 @@ export class AiService {
         where: { id: transcriptId },
         data: {
           aiStatus: 'failed',
-          aiError: message.substring(0, 500),
+          aiError: sanitizeAiError(message),
         },
       })
     }

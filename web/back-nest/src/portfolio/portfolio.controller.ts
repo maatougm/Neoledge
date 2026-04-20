@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string }
 
@@ -80,7 +82,8 @@ export class PortfolioController {
 }
 
 @Controller('pm/projects/:projectId/versions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class VersionsController {
   constructor(private readonly service: PortfolioService) {}
 

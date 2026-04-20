@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 
@@ -72,11 +73,21 @@ export class PortfolioService {
   }
 
   async deletePortfolio(id: string) {
+    // Verify existence before deletion so we can distinguish 404 from other errors.
+    const existing = await this.prisma.portfolio.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!existing) return Result.fail<void>('Portfolio introuvable.');
+
     try {
       await this.prisma.portfolio.delete({ where: { id } });
+      this.logger.log(`Portfolio deleted: id=${id} name="${existing.name}"`);
       return Result.ok<void>();
-    } catch {
-      return Result.fail<void>('Échec.');
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === 'P2025') return Result.fail<void>('Portfolio introuvable.');
+        if (e.code === 'P2003') return Result.fail<void>('Impossible de supprimer : des références existent encore.');
+      }
+      this.logger.error('deletePortfolio failed', e);
+      return Result.fail<void>('Échec de la suppression du portfolio.');
     }
   }
 
@@ -104,13 +115,35 @@ export class PortfolioService {
   }
 
   async reorderProjects(portfolioId: string, order: string[]) {
+    if (!Array.isArray(order) || order.length === 0) {
+      return Result.fail<void>('La liste de réordonnancement est invalide.');
+    }
+
     try {
-      await Promise.all(order.map((projectId, idx) =>
-        this.prisma.portfolioProject.updateMany({ where: { portfolioId, projectId }, data: { position: idx } })
-      ));
+      // Validate that all supplied project IDs actually belong to this portfolio.
+      const existing = await this.prisma.portfolioProject.findMany({
+        where: { portfolioId },
+        select: { projectId: true },
+      });
+      const knownIds = new Set(existing.map((p) => p.projectId));
+      const unknown = order.filter((id) => !knownIds.has(id));
+      if (unknown.length > 0) {
+        return Result.fail<void>(`Projet(s) inconnu(s) dans ce portfolio : ${unknown.join(', ')}`);
+      }
+
+      // Run all position updates atomically.
+      await this.prisma.$transaction(
+        order.map((projectId, idx) =>
+          this.prisma.portfolioProject.updateMany({
+            where: { portfolioId, projectId },
+            data: { position: idx },
+          }),
+        ),
+      );
       return Result.ok<void>();
-    } catch {
-      return Result.fail<void>('Échec.');
+    } catch (e) {
+      this.logger.error('reorderProjects failed', e);
+      return Result.fail<void>('Échec du réordonnancement.');
     }
   }
 

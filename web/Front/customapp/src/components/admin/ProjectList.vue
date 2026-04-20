@@ -112,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NeoButton, NeoMessage, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
@@ -168,6 +168,13 @@ function prevPage() { if (currentSkip.value === 0) return; currentSkip.value = M
 function nextPage() { if (currentSkip.value + PAGE_SIZE >= store.totalProjects) return; currentSkip.value += PAGE_SIZE; runSearch() }
 
 onMounted(() => { runSearch(); userStore.fetchAll() })
+
+onUnmounted(() => {
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+})
 
 // ─── Selection ────────────────────────────────────────────────────────────────
 

@@ -6,10 +6,11 @@ import { AttendeesService } from './attendees.service.js'
 import { OutcomesService } from './outcomes.service.js'
 import { MeetingExtrasController } from './meeting-extras.controller.js'
 import { AiModule } from '../ai/ai.module.js'
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
 
 @Module({
   imports: [AiModule],
   controllers: [MeetingsController, MeetingExtrasController],
-  providers: [MeetingsService, AgendaService, AttendeesService, OutcomesService],
+  providers: [MeetingsService, AgendaService, AttendeesService, OutcomesService, ProjectAccessGuard],
 })
 export class MeetingsModule {}

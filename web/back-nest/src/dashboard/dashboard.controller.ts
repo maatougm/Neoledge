@@ -30,7 +30,9 @@ export class DashboardController {
 
   @Get('recent-activity')
   async getRecentActivity(@Query('count') count = '10') {
-    const result = await this.service.getRecentActivity(+count);
+    const parsed = parseInt(count, 10);
+    const safeCount = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 500) : 10;
+    const result = await this.service.getRecentActivity(safeCount);
     return result.value;
   }
 

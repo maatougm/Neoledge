@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
@@ -42,6 +43,7 @@ export class AuthController {
   // ── TOTP Login (step 2) ─────────────────────────────────────────────────────
 
   @Post('auth/login/totp')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete TOTP challenge after step-1 login' })
   @ApiResponse({ status: 200, description: 'TOTP verified — full JWT returned' })
@@ -55,6 +57,18 @@ export class AuthController {
       }
       throw new UnauthorizedException('Code invalide.');
     }
+  }
+
+  // ── Current session info ────────────────────────────────────────────────────
+
+  @Get('auth/me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Return the current user, their roles, and granted permissions' })
+  @ApiResponse({ status: 200, description: 'Session info returned' })
+  async getMe(@CurrentUser() user: { userId: string }) {
+    return this.authService.getMe(user.userId);
   }
 
   // ── Password Change ─────────────────────────────────────────────────────────
@@ -101,6 +115,7 @@ export class AuthController {
   }
 
   @Post('auth/2fa/enable')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -116,6 +131,7 @@ export class AuthController {
   }
 
   @Post('auth/2fa/disable')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)

@@ -1,12 +1,15 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { WpCommentsService } from './wp-comments.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId/work-packages/:wpId/comments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class WpCommentsController {
   constructor(private readonly service: WpCommentsService) {}
 

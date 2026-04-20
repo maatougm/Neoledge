@@ -84,12 +84,26 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import DOMPurify from 'dompurify'
 import { NeoButton, NeoInputText, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import { formatDate } from '@/lib/formatDate'
 import { useWikiStore } from '@/stores/wikiStore'
 import type { WikiPage } from '@/stores/wikiStore'
+
+// XSS hardening: only allow safe http/https/mailto schemes inside Markdown links.
+// Rejects javascript:, data:, vbscript:, file:, etc.
+const SAFE_URL_SCHEME = /^(?:https?:|mailto:|\/|#)/i
+
+// Ensure anchors opened in a new tab get rel="noopener noreferrer" to block
+// reverse tabnabbing and referrer leakage.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('rel', 'noopener noreferrer')
+    node.setAttribute('target', '_blank')
+  }
+})
 
 const props = defineProps<{ id: string; slug?: string }>()
 const route = useRoute()
@@ -126,15 +140,26 @@ const renderedContent = computed(() => renderMarkdown(wikiStore.currentPage?.con
 
 function renderMarkdown(text: string): string {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped
+  const html = escaped
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label: string, url: string) => {
+      // Reject javascript:/data:/vbscript:/file: and other unsafe schemes.
+      const safe = SAFE_URL_SCHEME.test(url.trim()) ? url.trim() : '#'
+      return `<a href="${safe}">${label}</a>`
+    })
     .replace(/\n/g, '<br>')
+
+  // Defense-in-depth: run the final HTML through DOMPurify with a strict allow-list.
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['h1', 'h2', 'h3', 'p', 'strong', 'em', 'code', 'a', 'ul', 'ol', 'li', 'br'],
+    ALLOWED_ATTR: ['href', 'target', 'rel'],
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+  })
 }
 
 async function loadPage(slug: string) {
@@ -174,7 +199,6 @@ function confirmDelete() {
   confirm.require({
     message: 'Supprimer cette page ?',
     header: 'Confirmation',
-    acceptClass: 'p-button-danger',
     accept: async () => {
       await wikiStore.deletePage(props.id, wikiStore.currentPage!.slug)
       currentSlug.value = null
@@ -205,10 +229,16 @@ function onSearch() {
   }, 300)
 }
 
+// Generation counter prevents stale slug-fetch responses from overwriting
+// the result of a more-recently requested page when the user navigates quickly.
+let _fetchGen = 0
 watch(() => props.slug, async (s) => {
   if (s) {
     currentSlug.value = s
+    const gen = ++_fetchGen
     await wikiStore.fetchPage(props.id, s)
+    // Discard if a newer request has already been dispatched.
+    if (gen !== _fetchGen) return
   }
 })
 

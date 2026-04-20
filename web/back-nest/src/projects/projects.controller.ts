@@ -11,9 +11,13 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { CreateProjectDto } from './dto/create-project.dto.js';
 import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { AssignManagerDto } from './dto/assign-manager.dto.js';
+import { AddFieldDto } from './dto/add-field.dto.js';
+import { UpdateStatusDto } from './dto/update-status.dto.js';
+import { ToggleManagerFieldsDto } from './dto/toggle-manager-fields.dto.js';
+import { DuplicateProjectDto } from './dto/duplicate-project.dto.js';
+import { BulkIdsDto, BulkStatusDto, BulkAssignManagerDto } from './dto/bulk.dto.js';
 
 interface JwtUser { userId: string; role: string; }
-interface AddFieldDto { label: string; fieldType?: string; isRequired?: boolean; options?: string; }
 
 @Controller('admin/project')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -98,29 +102,29 @@ export class ProjectsController {
 
   @Delete(':id/hard-delete')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async hardDelete(@Param('id') id: string) {
-    const result = await this.service.hardDeleteProjectAsync(id);
+  async hardDelete(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const result = await this.service.hardDeleteProjectAsync(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/assign-manager')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async assignManager(@Param('id') id: string, @Body() dto: AssignManagerDto) {
-    const result = await this.service.assignManager(id, dto.projectManagerId);
+  async assignManager(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() dto: AssignManagerDto) {
+    const result = await this.service.assignManager(id, dto.projectManagerId, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Post(':id/status')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
-    const result = await this.service.updateStatus(id, body.status);
+  async updateStatus(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: UpdateStatusDto) {
+    const result = await this.service.updateStatus(id, body.status, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Patch(':id/archive')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async archive(@Param('id') id: string) {
-    const result = await this.service.archive(id);
+  async archive(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const result = await this.service.archive(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
@@ -141,14 +145,14 @@ export class ProjectsController {
 
   @Patch(':id/toggle-manager-fields')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async toggleManagerFields(@Param('id') id: string, @Body() body: { allow: boolean }) {
+  async toggleManagerFields(@Param('id') id: string, @Body() body: ToggleManagerFieldsDto) {
     const result = await this.service.toggleManagerFields(id, body.allow);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/duplicate')
   @HttpCode(HttpStatus.CREATED)
-  async duplicate(@Param('id') id: string, @Body() body: { name: string }) {
+  async duplicate(@Param('id') id: string, @Body() body: DuplicateProjectDto) {
     const result = await this.service.duplicate(id, body.name);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -156,20 +160,20 @@ export class ProjectsController {
 
   @Post('bulk-archive')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async bulkArchive(@Body() body: { projectIds: string[] }) {
-    await this.service.bulkArchive(body.projectIds);
+  async bulkArchive(@CurrentUser() user: JwtUser, @Body() body: BulkIdsDto) {
+    await this.service.bulkArchive(body.projectIds, user.userId);
   }
 
   @Post('bulk-status')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async bulkStatus(@Body() body: { projectIds: string[]; status: string }) {
-    await this.service.bulkUpdateStatus(body.projectIds, body.status);
+  async bulkStatus(@CurrentUser() user: JwtUser, @Body() body: BulkStatusDto) {
+    await this.service.bulkUpdateStatus(body.projectIds, body.status, user.userId);
   }
 
   @Post('bulk-assign-manager')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async bulkAssignManager(@Body() body: { projectIds: string[]; managerId: string }) {
-    await this.service.bulkAssignManager(body.projectIds, body.managerId);
+  async bulkAssignManager(@CurrentUser() user: JwtUser, @Body() body: BulkAssignManagerDto) {
+    await this.service.bulkAssignManager(body.projectIds, body.managerId, user.userId);
   }
 
   @Get(':id/activity')

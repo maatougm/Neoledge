@@ -1,4 +1,4 @@
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { Result } from '../common/result.js';
@@ -23,6 +23,8 @@ interface UserPreferences {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -51,6 +53,9 @@ export class NotificationsService {
    * Creates the in-app notification, then attempts to send an email if the
    * user has `emailNotifications` enabled (default: true when key is absent).
    * Swallows ALL errors to never break the calling flow.
+   *
+   * When `actorId` equals `userId` the notification is skipped (self-notify).
+   * When `projectId` is provided the target user must be a project member.
    */
   async notify(
     userId: string,
@@ -58,15 +63,42 @@ export class NotificationsService {
     title: string,
     message: string,
     projectId?: string,
+    actorId?: string,
   ): Promise<void> {
+    // Skip self-notifications.
+    if (actorId && actorId === userId) return;
+
+    // Scope check: when a projectId is provided, verify the target user is a project member.
+    if (projectId) {
+      try {
+        const [asPm, asAssignment] = await Promise.all([
+          this.prisma.project.findFirst({
+            where: { id: projectId, isDeleted: false, projectManagerId: userId },
+            select: { id: true },
+          }),
+          this.prisma.userRoleAssignment.findFirst({
+            where: { userId, OR: [{ projectId }, { projectId: null }] },
+            select: { id: true },
+          }),
+        ]);
+        if (!asPm && !asAssignment) {
+          this.logger.warn(`notify: user ${userId} is not a member of project ${projectId} — skipping`);
+          return;
+        }
+      } catch (e) {
+        this.logger.error('notify: project member check failed', e);
+        // Fail open: if the check itself errors, proceed rather than drop the notification.
+      }
+    }
+
     // 1. Persist in-app notification
     let created: NotificationPayload | null = null;
     try {
       created = await this.prisma.notification.create({
         data: { userId, type, title, message, projectId: projectId ?? null },
       }) as NotificationPayload;
-    } catch {
-      // Intentionally swallowed — notification failure must never break business logic
+    } catch (e) {
+      this.logger.error('notify: failed to persist notification', e);
     }
 
     if (this.gateway && created) {
@@ -91,8 +123,8 @@ export class NotificationsService {
         const html = buildGenericHtml(title, message);
         await this.mail.send(user.email, title, html);
       }
-    } catch {
-      // Intentionally swallowed — email failure must never break business logic
+    } catch (e) {
+      this.logger.error('notify: email delivery failed', e);
     }
   }
 
@@ -100,6 +132,9 @@ export class NotificationsService {
    * Enhanced notify supporting Notifications 2.0 fields (reason, entityType, entityId, actorId, link).
    * Use for work package assignments, status changes, mentions, deadlines, etc.
    * Swallows errors so it never breaks business logic.
+   *
+   * When `actorId` equals `userId` the notification is skipped (self-notify).
+   * When `projectId` is provided the target user must be a project member.
    */
   async notifyEnhanced(params: {
     userId: string;
@@ -113,6 +148,32 @@ export class NotificationsService {
     actorId?: string | null;
     link?: string | null;
   }): Promise<void> {
+    // Skip self-notifications.
+    if (params.actorId && params.actorId === params.userId) return;
+
+    // Scope check: when a projectId is provided, verify the target user is a project member.
+    if (params.projectId) {
+      try {
+        const [asPm, asAssignment] = await Promise.all([
+          this.prisma.project.findFirst({
+            where: { id: params.projectId, isDeleted: false, projectManagerId: params.userId },
+            select: { id: true },
+          }),
+          this.prisma.userRoleAssignment.findFirst({
+            where: { userId: params.userId, OR: [{ projectId: params.projectId }, { projectId: null }] },
+            select: { id: true },
+          }),
+        ]);
+        if (!asPm && !asAssignment) {
+          this.logger.warn(`notifyEnhanced: user ${params.userId} is not a member of project ${params.projectId} — skipping`);
+          return;
+        }
+      } catch (e) {
+        this.logger.error('notifyEnhanced: project member check failed', e);
+        // Fail open: if the check itself errors, proceed.
+      }
+    }
+
     let created: NotificationPayload | null = null;
     try {
       created = await this.prisma.notification.create({
@@ -129,20 +190,29 @@ export class NotificationsService {
           link: params.link ?? null,
         },
       }) as NotificationPayload;
-    } catch {
+    } catch (e) {
+      this.logger.error('notifyEnhanced: failed to persist notification', e);
       return;
     }
     if (this.gateway && created) this.gateway.emitToUser(params.userId, created);
   }
 
-  async getForUser(userId: string): Promise<Result<NotificationRecord[]>> {
+  async getForUser(
+    userId: string,
+    options: { cursor?: string; take?: number } = {},
+  ): Promise<Result<{ items: NotificationRecord[]; nextCursor: string | null }>> {
     try {
+      const take = Math.min(options.take ?? 50, 100);
       const notifications = await this.prisma.notification.findMany({
         where: { userId },
         orderBy: [{ isRead: 'asc' }, { createdAt: 'desc' }],
-        take: 50,
+        take: take + 1,
+        ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
       });
-      return Result.ok(notifications);
+      const hasMore = notifications.length > take;
+      const items = hasMore ? notifications.slice(0, take) : notifications;
+      const nextCursor = hasMore ? (items[items.length - 1]?.id ?? null) : null;
+      return Result.ok({ items, nextCursor });
     } catch {
       return Result.fail('Impossible de récupérer les notifications.');
     }
@@ -196,6 +266,19 @@ export class NotificationsService {
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
+/**
+ * Minimal HTML escaping for user-supplied strings inserted into email templates.
+ * Prevents XSS via crafted rule names / WP titles delivered in notification emails.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function parsePreferences(raw: string | null | undefined): UserPreferences {
   if (!raw) return {};
   try {
@@ -211,9 +294,11 @@ function parsePreferences(raw: string | null | undefined): UserPreferences {
 
 function buildGenericHtml(title: string, message: string): string {
   const BRAND = '#0d9488';
+  const safeTitle = escapeHtml(title);
+  const safeMessage = escapeHtml(message);
   return `<!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="UTF-8" /><title>${title}</title></head>
+<head><meta charset="UTF-8" /><title>${safeTitle}</title></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
     <tr><td align="center">
@@ -222,8 +307,8 @@ function buildGenericHtml(title: string, message: string): string {
           <span style="color:#fff;font-size:20px;font-weight:700;">NeoLeadge</span>
         </td></tr>
         <tr><td style="padding:28px;">
-          <h2 style="margin:0 0 12px 0;font-size:18px;color:#111827;">${title}</h2>
-          <p style="margin:0;font-size:15px;color:#374151;line-height:1.6;">${message}</p>
+          <h2 style="margin:0 0 12px 0;font-size:18px;color:#111827;">${safeTitle}</h2>
+          <p style="margin:0;font-size:15px;color:#374151;line-height:1.6;">${safeMessage}</p>
         </td></tr>
         <tr><td style="background:#f9fafb;padding:14px 28px;border-top:1px solid #e5e7eb;">
           <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Email automatique — merci de ne pas y répondre.</p>

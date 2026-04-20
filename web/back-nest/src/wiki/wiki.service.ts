@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 
+// Prisma unique-constraint violation (e.g. duplicate slug on concurrent create).
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
 function slugify(title: string): string {
   return title
     .toLowerCase()
@@ -51,9 +54,13 @@ export class WikiService {
   async create(projectId: string, dto: { title: string; content: string; parentId?: string }, authorId: string) {
     try {
       if (!dto.title?.trim()) return Result.fail('Titre requis.');
+      // Content is stored as raw markdown. XSS sanitisation is performed on
+      // render by DOMPurify in the frontend (WikiView.vue, Sprint 6).
       let slug = slugify(dto.title);
       let i = 1;
-      while (await this.prisma.wikiPage.findFirst({ where: { projectId, slug } })) {
+      // Only consider non-deleted pages when deduplicating the slug — a deleted
+      // page with the same slug must not block re-creation of the same title.
+      while (await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } })) {
         slug = `${slugify(dto.title)}-${i++}`;
       }
       const page = await this.prisma.wikiPage.create({
@@ -79,6 +86,12 @@ export class WikiService {
       });
       return Result.ok(page);
     } catch (e) {
+      const code = (e as { code?: string })?.code;
+      if (code === PRISMA_UNIQUE_VIOLATION) {
+        // Concurrent create won the slug race — return a clear error instead
+        // of a generic server failure.
+        return Result.fail('Ce titre de page existe déjà dans ce projet.');
+      }
       this.logger.error('create failed', e);
       return Result.fail('Échec de la création.');
     }
@@ -118,7 +131,7 @@ export class WikiService {
 
   async softDelete(projectId: string, slug: string) {
     try {
-      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug } });
+      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } });
       if (!p) return Result.fail<void>('Page introuvable.');
       await this.prisma.wikiPage.update({ where: { id: p.id }, data: { isDeleted: true } });
       return Result.ok<void>();
@@ -129,18 +142,48 @@ export class WikiService {
 
   async movePage(projectId: string, slug: string, parentId: string | null) {
     try {
-      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug } });
+      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } });
       if (!p) return Result.fail('Page introuvable.');
+
+      if (parentId !== null) {
+        // Self-parent check.
+        if (parentId === p.id) return Result.fail('Une page ne peut pas être son propre parent.');
+
+        // Validate parent exists and belongs to the same project.
+        const parent = await this.prisma.wikiPage.findUnique({
+          where: { id: parentId },
+          select: { id: true, projectId: true, isDeleted: true },
+        });
+        if (!parent || parent.isDeleted) return Result.fail('Page parente introuvable.');
+        if (parent.projectId !== projectId) return Result.fail('Page parente hors projet.');
+
+        // Cycle detection: walk up from the candidate parent to the root.
+        // If we encounter p.id anywhere in the ancestor chain, it is a cycle.
+        let cursor: string | null = parentId;
+        const visited = new Set<string>();
+        while (cursor !== null) {
+          if (cursor === p.id) return Result.fail('Déplacement impossible: cycle détecté dans la hiérarchie.');
+          if (visited.has(cursor)) break; // safety — should not happen with valid data
+          visited.add(cursor);
+          const ancestor = await this.prisma.wikiPage.findUnique({
+            where: { id: cursor },
+            select: { parentId: true },
+          });
+          cursor = ancestor?.parentId ?? null;
+        }
+      }
+
       const updated = await this.prisma.wikiPage.update({ where: { id: p.id }, data: { parentId } });
       return Result.ok(updated);
-    } catch {
+    } catch (e) {
+      this.logger.error('movePage failed', e);
       return Result.fail('Échec.');
     }
   }
 
   async listRevisions(projectId: string, slug: string) {
     try {
-      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug } });
+      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } });
       if (!p) return Result.fail('Page introuvable.');
       const revs = await this.prisma.wikiRevision.findMany({
         where: { wikiPageId: p.id },
@@ -155,7 +198,7 @@ export class WikiService {
 
   async getRevision(projectId: string, slug: string, version: number) {
     try {
-      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug } });
+      const p = await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } });
       if (!p) return Result.fail('Page introuvable.');
       const rev = await this.prisma.wikiRevision.findUnique({
         where: { wikiPageId_version: { wikiPageId: p.id, version } },
@@ -169,7 +212,7 @@ export class WikiService {
 
   async restoreRevision(projectId: string, slug: string, version: number, authorId: string) {
     try {
-      const page = await this.prisma.wikiPage.findFirst({ where: { projectId, slug } });
+      const page = await this.prisma.wikiPage.findFirst({ where: { projectId, slug, isDeleted: false } });
       if (!page) return Result.fail('Page introuvable.');
       const rev = await this.prisma.wikiRevision.findUnique({
         where: { wikiPageId_version: { wikiPageId: page.id, version } },
@@ -188,18 +231,21 @@ export class WikiService {
 
   async search(projectId: string, q: string) {
     try {
-      if (!q?.trim()) return Result.ok([]);
+      const trimmed = q?.trim() ?? '';
+      if (!trimmed) return Result.ok([]);
+      if (trimmed.length > 200) return Result.fail('Requête trop longue (max 200 caractères).');
       const pages = await this.prisma.wikiPage.findMany({
         where: {
           projectId,
           isDeleted: false,
-          OR: [{ title: { contains: q } }, { content: { contains: q } }],
+          OR: [{ title: { contains: trimmed } }, { content: { contains: trimmed } }],
         },
         select: { id: true, title: true, slug: true, updatedAt: true },
         take: 50,
       });
       return Result.ok(pages);
-    } catch {
+    } catch (e) {
+      this.logger.error('search failed', e);
       return Result.fail('Échec.');
     }
   }

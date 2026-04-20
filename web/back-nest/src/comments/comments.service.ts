@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { Result } from '../common/result.js';
 
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CommentsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async getProjectComments(projectId: string) {
     const comments = await this.prisma.projectComment.findMany({
@@ -38,6 +44,9 @@ export class CommentsService {
   }
 
   async create(projectId: string, userId: string, content: string, parentCommentId?: string) {
+    if (!content?.trim()) return Result.fail<unknown>('Contenu requis.');
+    if (content.length > 20_000) return Result.fail<unknown>('Commentaire trop long (max 20 000 caractères).');
+
     const mentions = this.extractMentions(content);
     const comment = await this.prisma.projectComment.create({
       data: {
@@ -45,11 +54,62 @@ export class CommentsService {
         userId,
         content,
         parentCommentId: parentCommentId ?? null,
-        mentions: mentions.length ? JSON.stringify(mentions) : null,
+        mentions: mentions.length ? JSON.stringify(mentions.slice(0, 10)) : null,
       },
       include: { user: { select: { id: true, firstName: true, lastName: true, avatarPath: true } } },
     });
+
+    // Notify mentioned users who are active members of the project.
+    void this.notifyMentions(projectId, userId, comment.id, mentions);
+
     return Result.ok(this.toDto({ ...comment, replies: [] }));
+  }
+
+  /**
+   * Resolve @-mention usernames/ids against active project members and
+   * send a 'mention' notification to each.  Fire-and-forget — never throws.
+   */
+  private async notifyMentions(
+    projectId: string,
+    actorId: string,
+    commentId: string,
+    rawMentions: string[],
+  ): Promise<void> {
+    if (rawMentions.length === 0) return;
+    try {
+      // Pull active users whose firstName, lastName, or id matches any mention token.
+      const users = await this.prisma.appUser.findMany({
+        where: {
+          isActive: true,
+          OR: rawMentions.map((m) => [
+            { id: m },
+            { firstName: { equals: m } },
+            { lastName: { equals: m } },
+          ]).flat(),
+        },
+        select: { id: true },
+      });
+
+      // Filter to project members only by checking notification delivery via notifyEnhanced
+      // (which already does project-membership scoping internally).
+      for (const user of users) {
+        if (user.id === actorId) continue;
+        void this.notifications.notifyEnhanced({
+          userId: user.id,
+          type: 'comment_mention',
+          title: 'Vous avez été mentionné(e)',
+          message: 'Vous avez été mentionné(e) dans un commentaire.',
+          projectId,
+          reason: 'Mention',
+          entityType: 'comment',
+          entityId: commentId,
+          actorId,
+          link: `/app/pm/projects/${projectId}/activity`,
+        }).catch((e) => this.logger.error('mention notification failed', e));
+      }
+    } catch (e) {
+      this.logger.error('notifyMentions failed', e);
+    }
   }
 
   async update(commentId: string, userId: string, isAdmin: boolean, content: string) {

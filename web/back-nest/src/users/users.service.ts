@@ -27,7 +27,7 @@ export interface PaginatedResult<T> {
   readonly take: number;
 }
 
-const BCRYPT_ROUNDS = 10;
+const BCRYPT_ROUNDS = 12;
 const TEMP_PASSWORD_LENGTH = 12;
 const TEMP_PASSWORD_CHARS =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*';
@@ -190,7 +190,7 @@ export class UsersService {
 
   async resetPassword(
     id: string,
-  ): Promise<Result<{ tempPassword: string }>> {
+  ): Promise<Result<{ success: true }>> {
     const user = await this.prisma.appUser.findUnique({ where: { id } });
 
     if (!user) {
@@ -202,10 +202,16 @@ export class UsersService {
 
     await this.prisma.appUser.update({
       where: { id },
-      data: { passwordHash, mustChangePassword: true },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+        tokenVersion: { increment: 1 },
+      },
     });
 
-    // Fire-and-forget: send email with temp password — never throws
+    // Fire-and-forget: send email with temp password — never throws.
+    // The temp password must only leave the server via email (or a dev log),
+    // never in the HTTP response body.
     void this.mail
       .send(
         user.email,
@@ -214,7 +220,14 @@ export class UsersService {
       )
       .catch(() => undefined);
 
-    return Result.ok({ tempPassword });
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[dev] Reset password for ${user.email}: tempPassword=${tempPassword}`,
+      );
+    }
+
+    return Result.ok({ success: true });
   }
 
   async deactivate(
@@ -233,7 +246,10 @@ export class UsersService {
 
     await this.prisma.appUser.update({
       where: { id },
-      data: { isActive: false },
+      data: {
+        isActive: false,
+        tokenVersion: { increment: 1 },
+      },
     });
 
     return Result.ok();

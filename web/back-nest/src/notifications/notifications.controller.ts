@@ -4,12 +4,14 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
   NotFoundException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { NotificationsService } from './notifications.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -25,8 +27,15 @@ export class NotificationsController {
   constructor(private readonly service: NotificationsService) {}
 
   @Get()
-  async getMyNotifications(@CurrentUser() user: JwtUser) {
-    const result = await this.service.getForUser(user.userId);
+  async getMyNotifications(
+    @CurrentUser() user: JwtUser,
+    @Query('cursor') cursor?: string,
+    @Query('take') take?: string,
+  ) {
+    const result = await this.service.getForUser(user.userId, {
+      cursor,
+      take: take ? Math.min(parseInt(take, 10) || 50, 100) : undefined,
+    });
     if (result.isFailure) throw new InternalServerErrorException(result.error);
     return result.value;
   }
@@ -38,7 +47,9 @@ export class NotificationsController {
     return { count: result.value };
   }
 
+  /** Throttle write mutations: max 30 per minute per user. */
   @Patch(':id/read')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   async markAsRead(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     const result = await this.service.markAsRead(id, user.userId);
@@ -52,7 +63,9 @@ export class NotificationsController {
     if (result.isFailure) throw new InternalServerErrorException(result.error);
   }
 
+  /** Throttle write mutations: max 30 per minute per user. */
   @Delete(':id')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     const result = await this.service.delete(id, user.userId);

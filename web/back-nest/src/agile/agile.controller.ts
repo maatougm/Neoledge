@@ -1,9 +1,12 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { AgileService } from './agile.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('pm/projects/:projectId')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class AgileController {
   constructor(private readonly service: AgileService) {}
 

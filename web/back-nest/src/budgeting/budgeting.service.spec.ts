@@ -48,7 +48,7 @@ describe('BudgetingService', () => {
   });
 
   it('updateLineItem recomputes total when unitCost changes', async () => {
-    const r = await svc.updateLineItem('li1', { unitCost: 200 });
+    const r = await svc.updateLineItem('p1', 'li1', { unitCost: 200 });
     expect(r.isSuccess).toBe(true);
     expect(prisma.budgetLineItem.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ total: 600 }) }),
@@ -77,6 +77,6 @@ describe('BudgetingService', () => {
     });
     prisma.budgetLineItem.aggregate.mockResolvedValueOnce({ _sum: { total: 0 } });
     const r = await svc.getBurnReport('p1');
-    expect(r.value?.percentUsed).toBe(0);
+    expect((r.value as { percentUsed: number } | undefined)?.percentUsed).toBe(0);
   });
 });

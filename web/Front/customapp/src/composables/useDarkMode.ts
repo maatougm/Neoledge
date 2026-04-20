@@ -8,11 +8,15 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
-// Module-level singleton so all consumers share the same reactive state
-const isDark = ref(localStorage.getItem('darkMode') === 'true')
+// Module-level singleton so all consumers share the same reactive state (#30)
+const isDark = ref(
+  typeof window !== 'undefined' && localStorage.getItem('darkMode') === 'true',
+)
 
 // Apply class immediately on module load — before any Vue component mounts
-document.documentElement.classList.toggle('dark', isDark.value)
+if (typeof window !== 'undefined') {
+  document.documentElement.classList.toggle('dark', isDark.value)
+}
 
 // Internal references set once loadFromBackend is called
 let _token = ''

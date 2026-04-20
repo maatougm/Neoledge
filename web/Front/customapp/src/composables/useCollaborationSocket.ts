@@ -6,6 +6,7 @@
 
 import { ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
+import { onLogout } from '@/stores/logoutBus'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,13 @@ const remoteFieldChange = ref<RemoteFieldChange | null>(null)
 const remoteCardMove = ref<RemoteCardMove | null>(null)
 const pendingJoins = new Set<string>()
 
+// Clear pending joins on logout so stale project rooms are not re-joined (#29)
+onLogout(() => {
+  pendingJoins.clear()
+  presenceList.value = []
+  remoteFieldChange.value = null
+})
+
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export function useCollaborationSocket() {
@@ -85,7 +93,24 @@ export function useCollaborationSocket() {
         for (const projectId of pendingJoins) {
           socket?.emit('join-project', projectId)
         }
-        pendingJoins.clear()
+        // Note: we do NOT clear pendingJoins here — they stay so reconnects re-join (#28)
+      })
+
+      // On reconnect: refresh token from store, then re-join all pending rooms (#27, #28)
+      socket.io.on('reconnect_attempt', () => {
+        import('@/stores/authStore').then(({ useAuthStore }) => {
+          const authStore = useAuthStore()
+          if (socket && authStore.jwt) {
+            socket.auth = { token: authStore.jwt }
+          }
+        }).catch(() => undefined)
+      })
+
+      socket.io.on('reconnect', () => {
+        // Re-emit join-project for every entry in pendingJoins (#28)
+        for (const projectId of pendingJoins) {
+          socket?.emit('join-project', projectId)
+        }
       })
 
       socket.on('disconnect', () => {
@@ -135,6 +160,13 @@ export function useCollaborationSocket() {
     remoteFieldChange.value = null
   }
 
+  /** Update the auth token on the live socket — useful after token refresh (#27) */
+  function updateAuth(newToken: string): void {
+    if (socket) {
+      socket.auth = { token: newToken }
+    }
+  }
+
   function joinProject(projectId: string): void {
     if (!socket?.connected) {
       // Buffer the join — flushed in the 'connect' handler once handshake completes.
@@ -169,6 +201,7 @@ export function useCollaborationSocket() {
     connect,
     disconnect,
     connected,
+    updateAuth,
     joinProject,
     leaveProject,
     sendFieldUpdate,

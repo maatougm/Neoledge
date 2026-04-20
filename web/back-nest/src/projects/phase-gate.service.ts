@@ -62,10 +62,18 @@ export class PhaseGateService {
       return Result.ok();
     }
 
+    // Fetch the project's `currentPhaseEnteredAt` so `hasRequiredApprovals`
+    // can ignore stale approvals from previous cycles of the same phase.
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { currentPhaseEnteredAt: true },
+    });
+
     const approved = await this.hasRequiredApprovals(
       projectId,
       fromStatus,
       gate.requiredRole,
+      project?.currentPhaseEnteredAt ?? null,
     );
 
     if (!approved) {
@@ -121,12 +129,16 @@ export class PhaseGateService {
 
   /**
    * Returns true if there is at least one approved validation for the given
-   * project+phase combination from a user with the required role.
+   * project+phase combination from a user with the required role, AND whose
+   * `validatedAt` is newer than the project's `currentPhaseEnteredAt` so that
+   * approvals captured during a previous traversal of the same phase cannot
+   * replay the gate after the phase is re-entered.
    */
   private async hasRequiredApprovals(
     projectId: string,
     phase: string,
     requiredRole: string,
+    phaseEnteredAt: Date | null,
   ): Promise<boolean> {
     const count = await this.prisma.projectValidation.count({
       where: {
@@ -134,6 +146,9 @@ export class PhaseGateService {
         phase,
         isApproved: true,
         validatedByRole: requiredRole,
+        ...(phaseEnteredAt
+          ? { validatedAt: { gt: phaseEnteredAt } }
+          : {}),
       },
     });
 

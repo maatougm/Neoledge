@@ -4,7 +4,7 @@ export interface Status {
 }
 export interface ResponseModel {
   message: string
-  aomalies: string[]
+  anomalies: string[]
 }
 
 export interface SampleResponse extends ResponseModel {

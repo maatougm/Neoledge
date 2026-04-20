@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type { Notification } from '@/types/notification.types'
 
 // Re-export for consumers that import from this module directly
@@ -103,6 +104,18 @@ export const useNotificationStore = defineStore('notifications', () => {
     }
   }
 
+  // ── Logout reset ───────────────────────────────────────────────────────────
+
+  /** Tear down polling + wipe per-user state. Called on logout. */
+  const reset = (): void => {
+    stopPolling()
+    notifications.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
     notifications,
     loading,
@@ -116,5 +129,6 @@ export const useNotificationStore = defineStore('notifications', () => {
     addNotification,
     startPolling,
     stopPolling,
+    reset,
   }
 })

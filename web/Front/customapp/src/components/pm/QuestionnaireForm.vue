@@ -55,7 +55,7 @@
           maxlength="500"
           class="w-full"
           @input="() => { dirty = true; debouncedSendUpdate(field.id, String(values[field.id] ?? '')) }"
-          @blur="() => { validateField(field.id, field.isRequired); collab.sendFieldBlur(props.project.id) }"
+          @blur="() => { debouncedSendUpdate.flush(); validateField(field.id, field.isRequired); collab.sendFieldBlur(props.project.id) }"
           @focus="collab.sendFieldFocus(props.project.id, field.id)"
         />
 
@@ -67,7 +67,7 @@
           :disabled="readonly"
           class="w-full"
           @input="() => { dirty = true; debouncedSendUpdate(field.id, String(values[field.id] ?? '')) }"
-          @blur="() => { validateField(field.id, field.isRequired); collab.sendFieldBlur(props.project.id) }"
+          @blur="() => { debouncedSendUpdate.flush(); validateField(field.id, field.isRequired); collab.sendFieldBlur(props.project.id) }"
           @focus="collab.sendFieldFocus(props.project.id, field.id)"
         />
 
@@ -203,17 +203,28 @@ const fieldTypeOptions = [
   { value: 'Checkbox', label: 'Case à cocher' },
 ]
 
-// ─── Debounce utility ─────────────────────────────────────────────────────────
+// ─── Debounce utility (with flush) ────────────────────────────────────────────
 
-function debounce<T extends (...args: never[]) => unknown>(fn: T, delay: number) {
+function debounceWithFlush<T extends (...args: never[]) => unknown>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout> | null = null
-  return (...args: Parameters<T>): void => {
+  let lastArgs: Parameters<T> | null = null
+  const debounced = (...args: Parameters<T>): void => {
+    lastArgs = args
     if (timer) clearTimeout(timer)
-    timer = setTimeout(() => fn(...args), delay)
+    timer = setTimeout(() => { fn(...args); timer = null; lastArgs = null }, delay)
   }
+  debounced.flush = (): void => {
+    if (timer !== null && lastArgs !== null) {
+      clearTimeout(timer)
+      fn(...lastArgs)
+      timer = null
+      lastArgs = null
+    }
+  }
+  return debounced
 }
 
-const debouncedSendUpdate = debounce((fieldId: string, value: string) => {
+const debouncedSendUpdate = debounceWithFlush((fieldId: string, value: string) => {
   collab.sendFieldUpdate(props.project.id, fieldId, value)
 }, 500)
 
@@ -237,6 +248,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  debouncedSendUpdate.flush()
   collab.leaveProject(props.project.id)
 })
 

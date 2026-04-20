@@ -37,6 +37,7 @@ const WARNING_DAYS = 7;
 @Injectable()
 export class DeadlinesService {
   private readonly logger = new Logger(DeadlinesService.name);
+  private running = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -47,9 +48,16 @@ export class DeadlinesService {
   /** Runs every day at 08:00. */
   @Cron('0 8 * * *', { name: 'deadline-check' })
   async checkDeadlines(): Promise<void> {
-    this.logger.log('Deadline check started');
+    // Re-entrance guard — skip if a previous run is still in progress.
+    if (this.running) {
+      this.logger.warn('Deadline check already running — skipping overlapping run');
+      return;
+    }
+    this.running = true;
 
     try {
+      this.logger.log('Deadline check started');
+
       const now = new Date();
       const todayStart = startOfDay(now);
       const windowEnd = addDays(todayStart, WARNING_DAYS);
@@ -84,7 +92,8 @@ export class DeadlinesService {
 
         const recipientIds = buildRecipients(project.projectManagerId, admins);
 
-        await Promise.all(
+        // Use allSettled so a failure for one recipient does not abort the rest.
+        await Promise.allSettled(
           recipientIds.map((userId) =>
             this.notifications.notify(userId, type, title, message, project.id),
           ),
@@ -98,7 +107,7 @@ export class DeadlinesService {
           : `Rappel d'échéance — ${project.name}`;
         const emailHtml = deadlineWarningEmail(project.name, daysUntilEnd, endDateStr);
 
-        await Promise.all(
+        await Promise.allSettled(
           recipientsWithEmail.map((r) =>
             this.mail.send(r.email, emailSubject, emailHtml).catch(() => undefined),
           ),
@@ -110,6 +119,8 @@ export class DeadlinesService {
       this.logger.log(`Deadline check completed — ${notified} notification(s) sent`);
     } catch (err: unknown) {
       this.logger.error('Deadline check failed', err instanceof Error ? err.stack : String(err));
+    } finally {
+      this.running = false;
     }
   }
 

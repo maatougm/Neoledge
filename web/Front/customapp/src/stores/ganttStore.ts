@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type { WorkPackage } from '@/types/work-package.types'
 
 export interface Milestone {
@@ -29,56 +30,115 @@ export const useGanttStore = defineStore('gantt', () => {
   const dependencies = ref<{ fromWpId: string; toWpId: string; type: string }[]>([])
   const baselines = ref<Baseline[]>([])
   const loading = ref(false)
+  const error = ref<string | null>(null)
+
+  function _errMsg(err: unknown): string {
+    return err instanceof Error ? err.message : String(err)
+  }
 
   async function fetchGantt(projectId: string) {
     loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<{ workPackages: WorkPackage[]; milestones: Milestone[]; dependencies: typeof dependencies.value }>(`/pm/projects/${projectId}/gantt`)
       workPackages.value = data.workPackages
       milestones.value = data.milestones
       dependencies.value = data.dependencies
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] fetchGantt', err)
     } finally {
       loading.value = false
     }
   }
 
   async function createMilestone(projectId: string, payload: { title: string; date: string; description?: string; color?: string; workPackageId?: string }) {
-    const { data } = await api.post<Milestone>(`/pm/projects/${projectId}/milestones`, payload)
-    milestones.value = [...milestones.value, data]
-    return data
+    try {
+      const { data } = await api.post<Milestone>(`/pm/projects/${projectId}/milestones`, payload)
+      milestones.value = [...milestones.value, data]
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] createMilestone', err)
+      throw err
+    }
   }
 
   async function updateMilestone(projectId: string, id: string, payload: Partial<Milestone>) {
-    const { data } = await api.patch<Milestone>(`/pm/projects/${projectId}/milestones/${id}`, payload)
-    const idx = milestones.value.findIndex((m) => m.id === id)
-    if (idx >= 0) milestones.value = [...milestones.value.slice(0, idx), data, ...milestones.value.slice(idx + 1)]
-    return data
+    try {
+      const { data } = await api.patch<Milestone>(`/pm/projects/${projectId}/milestones/${id}`, payload)
+      const idx = milestones.value.findIndex((m) => m.id === id)
+      if (idx >= 0) milestones.value = [...milestones.value.slice(0, idx), data, ...milestones.value.slice(idx + 1)]
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] updateMilestone', err)
+      throw err
+    }
   }
 
   async function deleteMilestone(projectId: string, id: string) {
-    await api.delete(`/pm/projects/${projectId}/milestones/${id}`)
-    milestones.value = milestones.value.filter((m) => m.id !== id)
+    try {
+      await api.delete(`/pm/projects/${projectId}/milestones/${id}`)
+      milestones.value = milestones.value.filter((m) => m.id !== id)
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] deleteMilestone', err)
+      throw err
+    }
   }
 
   async function fetchBaselines(projectId: string) {
-    const { data } = await api.get<Baseline[]>(`/pm/projects/${projectId}/baselines`)
-    baselines.value = data
+    try {
+      const { data } = await api.get<Baseline[]>(`/pm/projects/${projectId}/baselines`)
+      baselines.value = data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] fetchBaselines', err)
+      throw err
+    }
   }
 
   async function captureBaseline(projectId: string, snapshotName: string) {
-    const { data } = await api.post<{ snapshotName: string; count: number }>(`/pm/projects/${projectId}/baselines`, { snapshotName })
-    await fetchBaselines(projectId)
-    return data
+    try {
+      const { data } = await api.post<{ snapshotName: string; count: number }>(`/pm/projects/${projectId}/baselines`, { snapshotName })
+      await fetchBaselines(projectId)
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] captureBaseline', err)
+      throw err
+    }
   }
 
   async function compareBaseline(projectId: string, snapshotName: string) {
-    const { data } = await api.get(`/pm/projects/${projectId}/baselines/${snapshotName}/compare`)
-    return data
+    try {
+      const { data } = await api.get(`/pm/projects/${projectId}/baselines/${snapshotName}/compare`)
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[ganttStore] compareBaseline', err)
+      throw err
+    }
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  function reset(): void {
+    workPackages.value = []
+    milestones.value = []
+    dependencies.value = []
+    baselines.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
-    workPackages, milestones, dependencies, baselines, loading,
+    workPackages, milestones, dependencies, baselines, loading, error,
     fetchGantt, createMilestone, updateMilestone, deleteMilestone,
     fetchBaselines, captureBaseline, compareBaseline,
+    reset,
   }
 })

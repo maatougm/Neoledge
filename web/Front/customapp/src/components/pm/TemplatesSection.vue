@@ -1,7 +1,7 @@
 <template>
   <div class="section">
     <!-- Modal de création -->
-    <Dialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
+    <AppModal v-model:visible="showCreateDialog" header="Nouveau modèle" width="600px">
       <div class="create-form">
         <NeoInputText
           v-model="form.name"
@@ -43,7 +43,7 @@
         <NeoButton label="Annuler" severity="secondary" outlined @click="showCreateDialog = false" />
         <NeoButton label="Créer" :loading="saving" :disabled="!form.name.trim()" @click="handleCreate" />
       </template>
-    </Dialog>
+    </AppModal>
 
     <!-- Header -->
     <div class="section-header">
@@ -117,7 +117,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Checkbox from 'primevue/checkbox'
 import { useTemplateStore } from '@/stores/templateStore'

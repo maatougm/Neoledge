@@ -61,7 +61,7 @@ const activeSection = computed<Section>(() =>
 const selectedProjectId = ref<string | null>(null)
 
 onMounted(async () => {
-  if (store.projects.length === 0) {
+  if (store.teamProjects.length === 0) {
     await store.fetchTeamProjects()
   }
 

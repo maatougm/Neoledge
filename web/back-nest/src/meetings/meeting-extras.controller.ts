@@ -3,12 +3,15 @@ import { AgendaService } from './agenda.service.js';
 import { AttendeesService } from './attendees.service.js';
 import { OutcomesService } from './outcomes.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId/meetings/:meetingId')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class MeetingExtrasController {
   constructor(
     private readonly agenda: AgendaService,

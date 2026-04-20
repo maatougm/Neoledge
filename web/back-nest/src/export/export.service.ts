@@ -2,12 +2,37 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 
+/**
+ * Sanitise a value for inclusion in a CSV cell.
+ *
+ * - Neutralises formula-injection payloads (Excel / Google Sheets execute any
+ *   cell starting with `=`, `+`, `-`, `@`, `\t` or `\r`) by prefixing a single
+ *   quote.
+ * - Follows RFC 4180 quoting: doubles any internal `"` and wraps the cell in
+ *   `"` when it contains a comma, quote, or newline.
+ */
+function safeCsvCell(value: unknown): string {
+  const s = value == null ? '' : String(value);
+  // Prefix dangerous leading chars with a single quote to neutralise
+  // Excel/Sheets formula execution on cell open.
+  const needsEscape = /^[=+\-@\t\r]/.test(s);
+  const escaped = needsEscape ? `'${s}` : s;
+  // Double internal quotes per RFC 4180 + wrap in quotes if contains
+  // comma / quote / newline.
+  if (/[",\r\n]/.test(escaped)) return `"${escaped.replace(/"/g, '""')}"`;
+  return escaped;
+}
+
 @Injectable()
 export class ExportService {
   constructor(private readonly prisma: PrismaService) {}
 
   async exportCsv(ids?: string[]) {
-    const where: any = { isDeleted: false };
+    if (ids && ids.length > 10_000) {
+      return Result.fail<{ content: string; contentType: string; fileName: string }>('Trop d\'identifiants (max 10 000).');
+    }
+
+    const where: { isDeleted: boolean; id?: { in: string[] } } = { isDeleted: false };
     if (ids?.length) where.id = { in: ids };
 
     const projects = await this.prisma.project.findMany({
@@ -21,22 +46,52 @@ export class ExportService {
     const rows = projects.map((p) => {
       const pm = p.projectManager ? `${p.projectManager.firstName} ${p.projectManager.lastName}` : '';
       const pmEmail = p.projectManager?.email ?? '';
-      return `"${p.name}";"${p.clientName}";"${pm}";"${pmEmail}";"${p.status}";"${p.priority}";"${p.startDate.toISOString().slice(0, 10)}";"${p.endDate.toISOString().slice(0, 10)}";"${p.createdAt.toISOString().slice(0, 10)}"`;
+      return [
+        safeCsvCell(p.name),
+        safeCsvCell(p.clientName),
+        safeCsvCell(pm),
+        safeCsvCell(pmEmail),
+        safeCsvCell(p.status),
+        safeCsvCell(p.priority),
+        safeCsvCell(p.startDate.toISOString().slice(0, 10)),
+        safeCsvCell(p.endDate.toISOString().slice(0, 10)),
+        safeCsvCell(p.createdAt.toISOString().slice(0, 10)),
+      ].join(';');
     });
 
     return Result.ok({ content: BOM + header + rows.join('\n'), contentType: 'text/csv; charset=utf-8', fileName: `projets-export-${Date.now()}.csv` });
   }
 
   async exportJson(ids?: string[]) {
-    const where: any = { isDeleted: false };
+    if (ids && ids.length > 10_000) {
+      return Result.fail<unknown[]>('Trop d\'identifiants (max 10 000).');
+    }
+
+    const where: { isDeleted: boolean; id?: { in: string[] } } = { isDeleted: false };
     if (ids?.length) where.id = { in: ids };
 
     const projects = await this.prisma.project.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        clientName: true,
+        status: true,
+        priority: true,
+        startDate: true,
+        endDate: true,
+        createdAt: true,
         projectManager: { select: { firstName: true, lastName: true, email: true } },
-        fields: true,
-        fieldValues: { include: { field: true } },
+        fields: { select: { id: true, label: true, fieldType: true, orderIndex: true } },
+        fieldValues: {
+          select: {
+            id: true,
+            projectFieldId: true,
+            value: true,
+            updatedAt: true,
+            field: { select: { id: true, label: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

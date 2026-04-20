@@ -55,7 +55,7 @@
               <NeoSelect
                 v-model="form.role"
                 label="Rôle"
-                :options="USER_ROLE_OPTIONS"
+                :options="filteredRoleOptions"
                 optionLabel="label"
                 optionValue="value"
                 :error="errors.role"
@@ -87,6 +87,7 @@ import { reactive, watch, computed } from 'vue'
 import { NeoInputText, NeoPassword, NeoSelect, NeoButton, NeoTag } from '@neolibrary/components'
 import { USER_ROLE_OPTIONS, USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserResponse, CreateUserPayload, UpdateUserPayload, UserRole } from '@/types/user.types'
+import { useAuthStore } from '@/stores/authStore'
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   Admin:              'Accès complet — gestion des utilisateurs et des projets.',
@@ -109,7 +110,16 @@ const emit = defineEmits<{
   update: [id: string, payload: UpdateUserPayload]
 }>()
 
+const authStore = useAuthStore()
+
 const isEdit = computed(() => !!props.user)
+
+/** Filter the Admin option out when the current user is not Admin */
+const filteredRoleOptions = computed(() => {
+  const canManageAdmins = authStore.can('user.manage_admins') || authStore.userRole === 'Admin'
+  if (canManageAdmins) return USER_ROLE_OPTIONS
+  return USER_ROLE_OPTIONS.filter((o) => o.value !== 'Admin')
+})
 
 const submitLabel = computed(() => isEdit.value ? 'Enregistrer les modifications' : "Créer l'utilisateur")
 
@@ -152,8 +162,8 @@ const validate = (): boolean => {
   if (!form.lastName.trim())  errors.lastName  = 'Le nom est requis.'
   if (!form.email.trim() || !/^\S+@\S+\.\S+$/.test(form.email))
     errors.email = 'Adresse e-mail invalide.'
-  if (!isEdit.value && form.password.length < 8)
-    errors.password = 'Au moins 8 caractères.'
+  if (!isEdit.value && !/^(?=.*[A-Z])(?=.*\d).{8,}$/.test(form.password))
+    errors.password = 'Au moins 8 caractères, 1 majuscule et 1 chiffre.'
   return Object.keys(errors).length === 0
 }
 
@@ -183,9 +193,8 @@ const handleSubmit = () => {
 .modal-scrim {
   position: fixed;
   inset: 0;
-  /* Keep below PrimeVue/NeoLibrary overlay panels (z-index: 10000) so
-     Select/DatePicker dropdowns inside this dialog render above it. */
-  z-index: 900;
+  /* Stack above topbar dropdowns (9500), below Cmd-K (9800) and PrimeVue overlays. */
+  z-index: 9600;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;

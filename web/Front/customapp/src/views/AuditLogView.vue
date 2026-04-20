@@ -71,7 +71,6 @@ const entityOptions = [
   { label: 'AppUser', value: 'AppUser' },
   { label: 'WorkPackage', value: 'WorkPackage' },
   { label: 'Meeting', value: 'Meeting' },
-  { label: 'PortalToken', value: 'PortalToken' },
 ]
 
 async function load() {

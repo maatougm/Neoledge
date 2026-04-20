@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
@@ -165,13 +165,16 @@ const myStats = computed<StatEntry[]>(() => {
   }))
 })
 
-const NOW_MS = Date.now()
+// Reactive "now" — refreshed every 60 s so deadline calculations stay current (#8)
+const nowMs = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | null = null
+
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
 
 const upcomingDeadlines = computed<ProjectSummary[]>(() =>
   myProjects.value.filter((p) => {
     if (!p.endDate) return false
-    const diff = new Date(p.endDate).getTime() - NOW_MS
+    const diff = new Date(p.endDate).getTime() - nowMs.value
     return diff <= FOURTEEN_DAYS_MS
   }),
 )
@@ -182,7 +185,7 @@ const formatDeadline = (dateStr: string): string => {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
 }
 
-const isOverdue = (dateStr: string): boolean => new Date(dateStr).getTime() < NOW_MS
+const isOverdue = (dateStr: string): boolean => new Date(dateStr).getTime() < nowMs.value
 
 const formatTime = (dateStr: string): string => {
   if (!dateStr) return ''
@@ -228,11 +231,19 @@ const applyFilter = (filter: SavedFilter): void => {
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(async () => {
+  nowTimer = setInterval(() => { nowMs.value = Date.now() }, 60_000)
   await Promise.all([
     fetchMyProjects(),
     filtersStore.fetchAll(),
   ])
   await fetchRecentActivity()
+})
+
+onUnmounted(() => {
+  if (nowTimer !== null) {
+    clearInterval(nowTimer)
+    nowTimer = null
+  }
 })
 </script>
 

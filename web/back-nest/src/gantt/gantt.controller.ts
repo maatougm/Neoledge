@@ -1,12 +1,15 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { GanttService } from './gantt.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class GanttController {
   constructor(private readonly service: GanttService) {}
 
@@ -46,14 +49,14 @@ export class GanttController {
 
   @Delete('milestones/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteMs(@Param('id') id: string) {
-    const r = await this.service.deleteMilestone(id);
+  async deleteMs(@Param('projectId') projectId: string, @Param('id') id: string) {
+    const r = await this.service.deleteMilestone(id, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
   }
 
   @Post('milestones/:id/reach')
-  async reachMs(@Param('id') id: string) {
-    const r = await this.service.markMilestoneReached(id);
+  async reachMs(@Param('projectId') projectId: string, @Param('id') id: string) {
+    const r = await this.service.markMilestoneReached(id, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

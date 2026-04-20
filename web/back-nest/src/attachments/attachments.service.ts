@@ -3,9 +3,27 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'attachments');
+const ALLOWED_EXT = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.csv',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.zip',
+]);
 
 @Injectable()
 export class AttachmentsService {
@@ -33,12 +51,27 @@ export class AttachmentsService {
     const buffer = Buffer.from(dto.base64Content, 'base64');
     if (buffer.length > MAX_FILE_SIZE) return Result.fail<any>('Fichier trop volumineux (max 10 Mo).');
 
-    const ext = path.extname(dto.fileName).toLowerCase();
+    const ext = path.extname(dto.fileName ?? '').toLowerCase();
+    if (!ALLOWED_EXT.has(ext)) {
+      return Result.fail<any>('Extension de fichier non autorisée.');
+    }
+
     const dir = path.join(UPLOAD_DIR, projectId);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const storageName = `${crypto.randomUUID()}${ext}`;
+    const storageName = `${randomUUID()}${ext}`;
     const storagePath = path.join(dir, storageName);
+
+    // Path-traversal containment: reject anything resolving outside UPLOAD_DIR.
+    const resolved = path.resolve(storagePath);
+    const uploadRoot = path.resolve(UPLOAD_DIR);
+    if (
+      !resolved.startsWith(uploadRoot + path.sep) &&
+      resolved !== uploadRoot
+    ) {
+      return Result.fail<any>('Invalid path');
+    }
+
     fs.writeFileSync(storagePath, buffer);
 
     const attachment = await this.prisma.projectAttachment.create({

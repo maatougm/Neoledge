@@ -113,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { NeoButton, NeoSelect, NeoInputText, NeoDatePicker, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import AppModal from '@/components/common/AppModal.vue'
@@ -181,7 +181,9 @@ const dateRange = computed(() => {
 })
 
 const totalDays = computed(() => Math.max(1, Math.ceil((dateRange.value.max.getTime() - dateRange.value.min.getTime()) / DAY_MS)))
-const totalWidth = computed(() => totalDays.value * (colWidth.value / (zoom.value === 'day' ? 1 : zoom.value === 'week' ? 7 : 30)))
+// Derive width from the actual column count produced by headerCols to avoid
+// off-by-one drift when month lengths differ from the hardcoded 30-day constant.
+const totalWidth = computed(() => headerCols.value.length * colWidth.value)
 
 const headerCols = computed(() => {
   const { min, max } = dateRange.value
@@ -374,7 +376,6 @@ function deleteCurrentMs() {
   confirm.require({
     message: 'Supprimer ce jalon ?',
     header: 'Confirmation',
-    acceptClass: 'p-button-danger',
     accept: async () => {
       await ganttStore.deleteMilestone(props.id, id)
       closeMsDialog()
@@ -384,6 +385,10 @@ function deleteCurrentMs() {
 }
 
 onMounted(() => ganttStore.fetchGantt(props.id))
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+})
 </script>
 
 <style scoped>

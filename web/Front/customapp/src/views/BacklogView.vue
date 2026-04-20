@@ -77,7 +77,6 @@ import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
 import { useAgileStore } from '@/stores/agileStore'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
-import api from '@/lib/api'
 
 const props = defineProps<{ id: string }>()
 const toast = useNeoToast()
@@ -136,14 +135,15 @@ async function submitCreateSprint() {
 
 async function onDrop() {
   if (!draggedWp.value || !activeSprintId.value) return
-  try {
-    await api.patch(`/pm/projects/${props.id}/work-packages/${draggedWp.value}/move`, { sprintId: activeSprintId.value })
+  const wpId = draggedWp.value
+  draggedWp.value = null
+  const ok = await wpStore.moveCard(props.id, wpId, { sprintId: activeSprintId.value })
+  if (ok) {
     await wpStore.fetchAll(props.id)
     toast.add({ severity: 'success', detail: 'Ajouté au sprint.', life: 2000 })
-  } catch {
+  } else {
     toast.add({ severity: 'error', detail: 'Échec.', life: 3000 })
   }
-  draggedWp.value = null
 }
 
 async function startSprint() {

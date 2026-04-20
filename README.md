@@ -1,6 +1,6 @@
 # NeoLeadge — Deployment Manager
 
-Full-stack project management platform for deployment projects. Manage projects, work packages, sprints, Gantt timelines, budgets, time tracking, wiki documentation, meetings with AI transcription, real-time collaboration, and client sign-offs.
+Full-stack project management platform for deployment projects. Manage projects, work packages, sprints, Gantt timelines, budgets, time tracking, wiki documentation, meetings with AI transcription, and real-time collaboration.
 
 **Live:** https://neoleadge.pythagore-init.com
 
@@ -65,7 +65,6 @@ neoleadge/
         automation/         Workflow rule engine
         collaboration/      WebSocket real-time collab
         notifications/      In-app notifications + socket push
-        portal/             Public client portal + sign-off
         search/             Global search (projects, WPs, wiki, users)
         health/             /health endpoint
         prisma/             Global DB client (MariaDB + Postgres)
@@ -130,7 +129,6 @@ neoleadge/
 - Validation submission
 
 ### Public
-- Client Portal — token-based access, project phase stepper, sign-off form
 - Login with quick-access demo buttons + TOTP 2FA support
 
 ## Roles
@@ -176,7 +174,6 @@ See `deploy/neoleadge/README.md` for the full deploy + update + rollback runbook
 - `GET/PUT /pm/projects/:id/budget` — budget management
 - `GET/POST /api/time-entries` — time tracking
 - `GET /api/analytics/*` — dashboard metrics
-- `GET /api/portal/:token` — public project view
 - `GET /health` — server health check
 
 Full API documentation available at `/api` (Swagger UI) when the backend is running.
@@ -193,7 +190,7 @@ Full API documentation available at `/api` (Swagger UI) when the backend is runn
 | `smoke-darkmode.mjs` | All routes in dark mode |
 | `smoke-mobile.mjs` | iPhone SE viewport + overflow detection |
 | `smoke-rbac.mjs` | 6 roles x API+UI matrix (85+75 cases) |
-| `smoke-public.mjs` | Login, lockout, portal flows |
+| `smoke-public.mjs` | Login, lockout flows |
 | `smoke-every-button.mjs` | 48 clickable elements |
 | `smoke-collab.mjs` | Two-browser real-time card move |
 | Jest (backend) | 66 specs |

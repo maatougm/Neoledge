@@ -8,6 +8,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/lib/api'
 import { useAuthStore } from './authStore'
+import { onLogout } from './logoutBus'
 
 export interface CommentUser {
   id: string
@@ -35,17 +36,8 @@ export const useCommentStore = defineStore('comments', () => {
   const error = ref<string | null>(null)
 
   // ─── Getters ─────────────────────────────────────────────────────────────────
-  /** Decode the current user's ID from the JWT `sub` claim. */
-  const currentUserId = computed<string | null>(() => {
-    const jwt = useAuthStore().jwt
-    if (!jwt) return null
-    try {
-      const payload = JSON.parse(atob(jwt.split('.')[1]))
-      return payload['sub'] ?? null
-    } catch {
-      return null
-    }
-  })
+  /** Current user ID from authStore — avoids duplicating JWT decode logic. */
+  const currentUserId = computed<string | null>(() => useAuthStore().userId)
 
   // ─── Actions ─────────────────────────────────────────────────────────────────
 
@@ -131,6 +123,17 @@ export const useCommentStore = defineStore('comments', () => {
     }
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Wipe per-user state on logout. */
+  const reset = (): void => {
+    comments.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
     comments,
     loading,
@@ -141,5 +144,6 @@ export const useCommentStore = defineStore('comments', () => {
     addReply,
     editComment,
     removeComment,
+    reset,
   }
 })

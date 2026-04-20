@@ -334,10 +334,13 @@ CREATE TABLE IF NOT EXISTS MeetingOutcomes (
   CONSTRAINT fk_mo_wp FOREIGN KEY (workPackageId) REFERENCES WorkPackages(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Extend Notifications table (one column at a time; IF NOT EXISTS not supported for ADD COLUMN on MariaDB 10.x)
-ALTER TABLE Notifications ADD COLUMN reason VARCHAR(40) NOT NULL DEFAULT 'system';
-ALTER TABLE Notifications ADD COLUMN entityType VARCHAR(40) NULL;
-ALTER TABLE Notifications ADD COLUMN entityId VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL;
-ALTER TABLE Notifications ADD COLUMN actorId VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL;
-ALTER TABLE Notifications ADD COLUMN link VARCHAR(500) NULL;
+-- Extend Notifications table.
+-- IF NOT EXISTS is supported from MariaDB 10.2+ (XAMPP ships 10.4+), making these idempotent.
+ALTER TABLE Notifications ADD COLUMN IF NOT EXISTS reason VARCHAR(40) NOT NULL DEFAULT 'system';
+ALTER TABLE Notifications ADD COLUMN IF NOT EXISTS entityType VARCHAR(40) NULL;
+ALTER TABLE Notifications ADD COLUMN IF NOT EXISTS entityId VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL;
+ALTER TABLE Notifications ADD COLUMN IF NOT EXISTS actorId VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL;
+ALTER TABLE Notifications ADD COLUMN IF NOT EXISTS link VARCHAR(500) NULL;
+-- Idempotent FK: drop if exists before re-adding to avoid "Duplicate key name" on re-run.
+ALTER TABLE Notifications DROP FOREIGN KEY IF EXISTS fk_notif_actor;
 ALTER TABLE Notifications ADD CONSTRAINT fk_notif_actor FOREIGN KEY (actorId) REFERENCES AppUsers(id) ON DELETE SET NULL;

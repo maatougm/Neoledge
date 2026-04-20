@@ -159,28 +159,31 @@ function exportPdf(): void {
   if (!printArea) return
   const win = window.open('', '_blank')
   if (!win) return
-  win.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>${props.project.name}</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 2rem; color: #111827; }
-        h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
-        .meta { color: #6b7280; font-size: 0.9rem; margin-bottom: 1.5rem; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: #f3f4f6; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.8rem; text-transform: uppercase; }
-        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
-        .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.75rem; }
-      </style>
-    </head>
-    <body>
-      ${printArea.innerHTML}
-    </body>
-    </html>
-  `)
-  win.document.close()
+
+  // Build DOM safely — no innerHTML injection from user data (#11)
+  const doc = win.document
+  doc.open()
+  doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+    'body{font-family:Arial,sans-serif;padding:2rem;color:#111827}' +
+    'h1{font-size:1.4rem;margin-bottom:0.5rem}' +
+    '.meta{color:#6b7280;font-size:0.9rem;margin-bottom:1.5rem}' +
+    'table{width:100%;border-collapse:collapse}' +
+    'th{background:#f3f4f6;padding:0.5rem 0.75rem;text-align:left;font-size:0.8rem;text-transform:uppercase}' +
+    'td{padding:0.5rem 0.75rem;border-bottom:1px solid #e5e7eb;font-size:0.9rem}' +
+    '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem}' +
+    '</style></head><body></body></html>')
+  doc.close()
+
+  // Set title via textContent — safe against HTML injection
+  const titleEl = doc.createElement('title')
+  titleEl.textContent = props.project.name
+  doc.head.appendChild(titleEl)
+
+  // Clone the print area into the popup body — field values rendered by Vue are already text nodes
+  const clone = printArea.cloneNode(true) as HTMLElement
+  clone.style.display = 'block'
+  doc.body.appendChild(clone)
+
   win.print()
 }
 </script>

@@ -3,6 +3,12 @@ import type { Response } from 'express';
 import { ProfileService } from './profile.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import {
+  UpdateProfileDto,
+  ChangePasswordDto,
+  UploadAvatarDto,
+  UpdatePreferencesDto,
+} from './dto/profile.dto.js';
 
 @Controller('api/userprofile')
 @UseGuards(JwtAuthGuard)
@@ -17,7 +23,7 @@ export class ProfileController {
   }
 
   @Put()
-  async updateProfile(@CurrentUser() user: { userId: string }, @Body() dto: Record<string, unknown>) {
+  async updateProfile(@CurrentUser() user: { userId: string }, @Body() dto: UpdateProfileDto) {
     const result = await this.service.updateProfile(user.userId, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -25,13 +31,13 @@ export class ProfileController {
 
   @Post('change-password')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async changePassword(@CurrentUser() user: { userId: string }, @Body() body: { currentPassword: string; newPassword: string }) {
+  async changePassword(@CurrentUser() user: { userId: string }, @Body() body: ChangePasswordDto) {
     const result = await this.service.changePassword(user.userId, body.currentPassword, body.newPassword);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Post('avatar')
-  async uploadAvatar(@CurrentUser() user: { userId: string }, @Body() body: { base64Image: string; fileExtension: string }) {
+  async uploadAvatar(@CurrentUser() user: { userId: string }, @Body() body: UploadAvatarDto) {
     const result = await this.service.uploadAvatar(user.userId, body.base64Image, body.fileExtension);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -52,8 +58,8 @@ export class ProfileController {
 
   @Put('preferences')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async updatePreferences(@CurrentUser() user: { userId: string }, @Body() dto: Record<string, unknown>) {
-    const result = await this.service.updatePreferences(user.userId, dto);
+  async updatePreferences(@CurrentUser() user: { userId: string }, @Body() dto: UpdatePreferencesDto) {
+    const result = await this.service.updatePreferences(user.userId, { ...dto });
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 }

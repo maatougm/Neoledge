@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsInt, IsDateString, IsBoolean, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsDateString, IsBoolean, IsNumber, Min, Max, IsArray, ValidateNested, ArrayMaxSize, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateWorkPackageDto {
   @IsString() title!: string;
@@ -49,9 +50,13 @@ export class AddDependencyDto {
 
 export class CustomValueDto {
   @IsString() customFieldId!: string;
-  @IsOptional() @IsString() value?: string;
+  @IsOptional() @IsString() @MaxLength(4096) value?: string;
 }
 
 export class UpsertCustomValuesDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => CustomValueDto)
   values!: CustomValueDto[];
 }

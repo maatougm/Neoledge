@@ -86,6 +86,7 @@
         label="Créer le projet"
         icon="pi pi-check"
         :loading="submitting || applyingTemplate"
+        :disabled="submitting || applyingTemplate"
         @click="handleSubmit"
       />
     </div>

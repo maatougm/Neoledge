@@ -4,7 +4,12 @@ import { UsersService } from '../users/users.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { SaveFieldValuesDto } from './dto/save-field-values.dto.js';
+import { AddFieldDto } from './dto/add-field.dto.js';
+import { SubmitValidationDto } from './dto/submit-validation.dto.js';
 
 interface JwtUser {
   userId: string;
@@ -12,7 +17,7 @@ interface JwtUser {
 }
 
 @Controller('pm')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
 export class PmController {
   constructor(
     private readonly service: ProjectsService,
@@ -28,6 +33,7 @@ export class PmController {
   }
 
   @Get('projects/:id')
+  @ProjectAccess('id')
   async getProject(@Param('id') id: string) {
     const result = await this.service.getById(id);
     if (result.isFailure) throw new NotFoundException(result.error);
@@ -35,25 +41,33 @@ export class PmController {
   }
 
   @Patch('projects/:id/field-values')
-  async saveFieldValues(@Param('id') id: string, @Body() body: { fieldValues: { projectFieldId: string; value: string | null }[] }) {
-    const result = await this.service.saveFieldValues(id, body.fieldValues);
+  @ProjectAccess('id')
+  async saveFieldValues(
+    @Param('id') id: string,
+    @Body() body: SaveFieldValuesDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    const result = await this.service.saveFieldValues(id, user.userId, body.fieldValues);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Post('projects/:id/fields')
-  async addField(@Param('id') id: string, @Body() dto: { label: string; fieldType?: string; isRequired?: boolean; options?: string }) {
+  @ProjectAccess('id')
+  async addField(@Param('id') id: string, @Body() dto: AddFieldDto) {
     const result = await this.service.addField(id, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
   }
 
   @Get('projects/:id/validations')
+  @ProjectAccess('id')
   async getValidations(@Param('id') id: string) {
     const result = await this.service.getValidations(id);
     return result.value;
   }
 
   @Get('projects/:id/activity')
+  @ProjectAccess('id')
   async getActivity(@Param('id') id: string) {
     const result = await this.service.getActivity(id);
     return result.value;
@@ -76,10 +90,11 @@ export class PmController {
   }
 
   @Post('projects/:id/validations')
+  @ProjectAccess('id')
   async submitValidation(
     @Param('id') id: string,
     @CurrentUser() user: JwtUser,
-    @Body() dto: { isApproved: boolean; comment?: string },
+    @Body() dto: SubmitValidationDto,
   ) {
     const result = await this.service.submitValidation(id, user.userId, user.role, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
@@ -96,8 +111,9 @@ export class PmController {
     isApproved: boolean,
     phase: string,
   ): Promise<void> {
+    // Exclude soft-deleted projects from notification fan-out
     const project = await this.prisma.project.findFirst({
-      where: { id: projectId },
+      where: { id: projectId, isDeleted: false },
       select: { name: true, projectManagerId: true },
     });
     if (!project) return;
@@ -107,12 +123,17 @@ export class PmController {
     const title = isApproved ? 'Validation approuvée' : 'Validation rejetée';
     const message = `Validation ${status} pour le projet "${project.name}" — phase: ${phase}`;
 
+    const notifyTargets: Promise<void>[] = [];
+
     // Notify PM if they are not the submitter
     if (project.projectManagerId && project.projectManagerId !== submitterId) {
-      await this.notifications.notify(project.projectManagerId, type, title, message, projectId);
+      notifyTargets.push(
+        this.notifications.notify(project.projectManagerId, type, title, message, projectId),
+      );
     }
 
-    // Notify all admins except the submitter
+    // Notify all admins except the submitter — batch in parallel to avoid
+    // O(admins) sequential round-trips blocking the HTTP response.
     const admins = await this.prisma.appUser.findMany({
       where: { role: 'Admin', isActive: true },
       select: { id: true },
@@ -120,8 +141,12 @@ export class PmController {
 
     for (const admin of admins) {
       if (admin.id !== submitterId) {
-        await this.notifications.notify(admin.id, type, title, message, projectId);
+        notifyTargets.push(
+          this.notifications.notify(admin.id, type, title, message, projectId),
+        );
       }
     }
+
+    await Promise.all(notifyTargets);
   }
 }

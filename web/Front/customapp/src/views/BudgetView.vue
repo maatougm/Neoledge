@@ -188,11 +188,8 @@ function format(n: number): string {
 
 async function load() {
   await budgetStore.fetchBudget(props.id)
-  if (!budget.value) {
-    await budgetStore.upsertBudget(props.id, {})
-  }
-  await budgetStore.fetchBurn(props.id)
   if (budget.value) {
+    await budgetStore.fetchBurn(props.id)
     budgetFormText.laborBudget = String(budget.value.laborBudget)
     budgetFormText.materialBudget = String(budget.value.materialBudget)
     budgetFormText.currency = budget.value.currency
@@ -230,7 +227,6 @@ function deleteLine(id: string) {
   confirm.require({
     message: 'Supprimer cette ligne ?',
     header: 'Confirmation',
-    acceptClass: 'p-button-danger',
     accept: async () => {
       await budgetStore.deleteLineItem(props.id, id)
       await budgetStore.fetchBurn(props.id)

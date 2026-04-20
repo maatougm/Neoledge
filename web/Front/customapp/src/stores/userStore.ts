@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type {
   UserResponse,
   CreateUserPayload,
@@ -130,6 +131,17 @@ export const useUserStore = defineStore('users', () => {
     }
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Wipe per-user state on logout. */
+  const reset = (): void => {
+    users.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
     users,
     loading,
@@ -143,5 +155,6 @@ export const useUserStore = defineStore('users', () => {
     resetPassword,
     deactivateUser,
     reactivateUser,
+    reset,
   }
 })

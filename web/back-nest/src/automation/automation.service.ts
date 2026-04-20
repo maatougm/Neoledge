@@ -1,37 +1,55 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AutomationRule } from '@prisma/client';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
+import {
+  CreateRuleDto,
+  UpdateRuleDto,
+  SendNotificationConfig,
+  UpdateFieldConfig,
+  KNOWN_ACTION_TYPES,
+  KNOWN_TRIGGER_EVENTS,
+  KNOWN_OPERATORS,
+  isSafeField,
+  isUnsafeKey,
+} from './dto/automation.dto.js';
 
-export interface CreateRuleDto {
-  name: string;
-  triggerEvent: string;
-  triggerCondition?: Record<string, unknown> | null;
-  actionType: string;
-  actionConfig: Record<string, unknown>;
-}
-
-export interface UpdateRuleDto {
-  name?: string;
-  triggerEvent?: string;
-  triggerCondition?: Record<string, unknown> | null;
-  actionType?: string;
-  actionConfig?: Record<string, unknown>;
-}
+export { CreateRuleDto, UpdateRuleDto };
 
 export interface EventContext {
   [key: string]: unknown;
 }
 
+interface RuleExecutionFrame {
+  depth: number;
+}
+
+const MAX_RULE_DEPTH = 3;
+
 @Injectable()
 export class AutomationService {
   private readonly logger = new Logger(AutomationService.name);
+  private readonly executionStorage = new AsyncLocalStorage<RuleExecutionFrame>();
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async createRule(projectId: string, dto: CreateRuleDto) {
+  async createRule(projectId: string, dto: CreateRuleDto): Promise<Result<unknown>> {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
+
+    const validationError = await this.validateActionConfig(dto.actionType, dto.actionConfig);
+    if (validationError) return Result.fail(validationError);
+
+    if (dto.actionType === 'send_notification') {
+      const userId = (dto.actionConfig as { userId?: string }).userId;
+      if (userId) {
+        const memberError = await this.assertProjectMember(userId, projectId);
+        if (memberError) return Result.fail(memberError);
+      }
+    }
 
     const rule = await this.prisma.automationRule.create({
       data: {
@@ -55,9 +73,25 @@ export class AutomationService {
     return Result.ok(rules.map((r) => this.toRuleDto(r)));
   }
 
-  async updateRule(ruleId: string, dto: UpdateRuleDto) {
-    const rule = await this.prisma.automationRule.findUnique({ where: { id: ruleId } });
+  async updateRule(ruleId: string, projectId: string, dto: UpdateRuleDto): Promise<Result<unknown>> {
+    // Defense-in-depth: confirm ruleId belongs to projectId (Sprint 2's ProjectAccessGuard
+    // already blocks cross-project access at the controller layer).
+    const rule = await this.prisma.automationRule.findFirst({ where: { id: ruleId, projectId } });
     if (!rule) return Result.fail('Règle non trouvée.');
+
+    const effectiveActionType = dto.actionType ?? rule.actionType;
+    if (dto.actionConfig !== undefined) {
+      const validationError = await this.validateActionConfig(effectiveActionType, dto.actionConfig);
+      if (validationError) return Result.fail(validationError);
+
+      if (effectiveActionType === 'send_notification') {
+        const userId = (dto.actionConfig as { userId?: string }).userId;
+        if (userId) {
+          const memberError = await this.assertProjectMember(userId, projectId);
+          if (memberError) return Result.fail(memberError);
+        }
+      }
+    }
 
     const updated = await this.prisma.automationRule.update({
       where: { id: ruleId },
@@ -75,16 +109,16 @@ export class AutomationService {
     return Result.ok(this.toRuleDto(updated));
   }
 
-  async deleteRule(ruleId: string) {
-    const rule = await this.prisma.automationRule.findUnique({ where: { id: ruleId } });
+  async deleteRule(ruleId: string, projectId: string) {
+    const rule = await this.prisma.automationRule.findFirst({ where: { id: ruleId, projectId } });
     if (!rule) return Result.fail('Règle non trouvée.');
 
     await this.prisma.automationRule.delete({ where: { id: ruleId } });
     return Result.ok();
   }
 
-  async toggleRule(ruleId: string, isActive: boolean) {
-    const rule = await this.prisma.automationRule.findUnique({ where: { id: ruleId } });
+  async toggleRule(ruleId: string, projectId: string, isActive: boolean) {
+    const rule = await this.prisma.automationRule.findFirst({ where: { id: ruleId, projectId } });
     if (!rule) return Result.fail('Règle non trouvée.');
 
     const updated = await this.prisma.automationRule.update({
@@ -95,14 +129,26 @@ export class AutomationService {
     return Result.ok(this.toRuleDto(updated));
   }
 
-  async executeRulesForEvent(projectId: string, event: string, context: EventContext) {
-    const rules = await this.prisma.automationRule.findMany({
-      where: { projectId, triggerEvent: event, isActive: true },
-    });
+  async executeRulesForEvent(projectId: string, event: string, context: EventContext): Promise<void> {
+    const parentFrame = this.executionStorage.getStore();
+    const nextDepth = (parentFrame?.depth ?? 0) + 1;
 
-    for (const rule of rules) {
-      await this.executeRule(rule, projectId, context);
+    if (nextDepth > MAX_RULE_DEPTH) {
+      this.logger.warn(
+        `Rule execution rejected: depth ${nextDepth} exceeds MAX_RULE_DEPTH=${MAX_RULE_DEPTH} for project ${projectId}, event ${event}`,
+      );
+      return;
     }
+
+    await this.executionStorage.run({ depth: nextDepth }, async () => {
+      const rules = await this.prisma.automationRule.findMany({
+        where: { projectId, triggerEvent: event, isActive: true },
+      });
+
+      for (const rule of rules) {
+        await this.executeRule(rule, projectId, context);
+      }
+    });
   }
 
   async getLogs(projectId: string, limit = 50) {
@@ -122,6 +168,80 @@ export class AutomationService {
       select: { id: true },
     });
     return project !== null;
+  }
+
+  /**
+   * Verify `userId` is a legitimate member of `projectId` — either a per-project
+   * UserRoleAssignment exists, a global role assignment exists (projectId = null),
+   * OR they are the assigned project manager.
+   * Returns null on success, an error message on failure.
+   */
+  private async assertProjectMember(userId: string, projectId: string): Promise<string | null> {
+    const user = await this.prisma.appUser.findFirst({
+      where: { id: userId, isActive: true },
+      select: { id: true },
+    });
+    if (!user) return 'Utilisateur cible introuvable ou désactivé.';
+
+    const [project, assignment] = await Promise.all([
+      this.prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false, projectManagerId: userId },
+        select: { id: true },
+      }),
+      this.prisma.userRoleAssignment.findFirst({
+        where: {
+          userId,
+          OR: [{ projectId }, { projectId: null }],
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!project && !assignment) {
+      return 'Utilisateur cible n\'a pas accès à ce projet.';
+    }
+    return null;
+  }
+
+  /** Validate `actionConfig` against the schema corresponding to `actionType`. */
+  private async validateActionConfig(
+    actionType: string,
+    actionConfig: Record<string, unknown>,
+  ): Promise<string | null> {
+    // Reject prototype-polluting top-level keys up front.
+    for (const key of Object.keys(actionConfig)) {
+      if (isUnsafeKey(key)) {
+        return `Clé interdite dans actionConfig: ${key}`;
+      }
+    }
+
+    if (!(KNOWN_ACTION_TYPES as readonly string[]).includes(actionType)) {
+      return `actionType inconnu: ${actionType}`;
+    }
+
+    if (actionType === 'send_notification') {
+      const instance = plainToInstance(SendNotificationConfig, actionConfig, {
+        excludeExtraneousValues: false,
+      });
+      const errs = await validate(instance, { whitelist: true, forbidNonWhitelisted: true });
+      if (errs.length > 0) {
+        return `actionConfig invalide: ${errs.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; ')}`;
+      }
+      return null;
+    }
+
+    if (actionType === 'update_field') {
+      const instance = plainToInstance(UpdateFieldConfig, actionConfig, {
+        excludeExtraneousValues: false,
+      });
+      const errs = await validate(instance, { whitelist: true, forbidNonWhitelisted: true });
+      if (errs.length > 0) {
+        return `actionConfig invalide: ${errs.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; ')}`;
+      }
+      return null;
+    }
+
+    return `actionType non pris en charge: ${actionType}`;
   }
 
   private async executeRule(rule: AutomationRule, projectId: string, context: EventContext) {
@@ -172,13 +292,33 @@ export class AutomationService {
     };
     if (!field || !operator) return true;
 
+    // Reject prototype-polluting / unsafe keys BEFORE bracket-access.
+    if (!isSafeField(field)) {
+      this.logger.warn(`evaluateCondition: unsafe field rejected: ${field}`);
+      return false;
+    }
+
+    // Use hasOwnProperty to guarantee we never pick up inherited / prototype values.
+    if (!Object.prototype.hasOwnProperty.call(context, field)) {
+      return false;
+    }
+
+    if (!(KNOWN_OPERATORS as readonly string[]).includes(operator)) {
+      this.logger.warn(`evaluateCondition: unknown operator "${operator}" — fail-closed`);
+      return false;
+    }
+
     const contextValue = context[field];
     switch (operator) {
-      case 'equals': return contextValue === value;
-      case 'not_equals': return contextValue !== value;
+      case 'equals':
+        return contextValue === value;
+      case 'not_equals':
+        return contextValue !== value;
       case 'contains':
         return typeof contextValue === 'string' && contextValue.includes(String(value));
-      default: return true;
+      default:
+        // Unreachable due to the allow-list check above; fail-closed for safety.
+        return false;
     }
   }
 
@@ -188,9 +328,20 @@ export class AutomationService {
     projectId: string,
     ruleName: string,
   ) {
+    // Defense-in-depth: reject any prototype-polluting keys that somehow bypassed
+    // the DTO layer (e.g. legacy rules persisted before this guard existed).
+    for (const key of Object.keys(actionConfig)) {
+      if (isUnsafeKey(key)) {
+        throw new Error(`Clé interdite dans actionConfig: ${key}`);
+      }
+    }
+
     if (actionType === 'send_notification') {
-      let userId = actionConfig['userId'] as string | undefined;
-      const message = (actionConfig['message'] as string | undefined) ?? ruleName;
+      const getOwn = <T>(obj: Record<string, unknown>, key: string): T | undefined =>
+        Object.prototype.hasOwnProperty.call(obj, key) ? (obj[key] as T) : undefined;
+
+      let userId = getOwn<string>(actionConfig, 'userId');
+      const message = getOwn<string>(actionConfig, 'message') ?? ruleName;
 
       // Fallback to the project's assigned project manager when userId is not set
       if (!userId) {
@@ -206,12 +357,19 @@ export class AutomationService {
         return;
       }
 
+      // Defense-in-depth: re-verify the recipient belongs to the project at
+      // execution time (rule config can be stale if the user was removed).
+      const memberError = await this.assertProjectMember(userId, projectId);
+      if (memberError) {
+        throw new Error(`send_notification: ${memberError}`);
+      }
+
       await this.prisma.notification.create({
         data: {
           userId,
           type: 'automation',
           title: ruleName,
-          message: message.slice(0, 499),
+          message: safeTruncate(message, 499),
           projectId,
         },
       });
@@ -219,8 +377,11 @@ export class AutomationService {
     }
 
     if (actionType === 'update_field') {
-      const fieldId = actionConfig['fieldId'] as string | undefined;
-      const value = actionConfig['value'] as string | undefined;
+      const getOwn = <T>(obj: Record<string, unknown>, key: string): T | undefined =>
+        Object.prototype.hasOwnProperty.call(obj, key) ? (obj[key] as T) : undefined;
+
+      const fieldId = getOwn<string>(actionConfig, 'fieldId');
+      const value = getOwn<string>(actionConfig, 'value');
 
       if (!fieldId) {
         this.logger.warn(`update_field: missing fieldId in actionConfig`);
@@ -251,20 +412,54 @@ export class AutomationService {
   }
 
   private toRuleDto(rule: AutomationRule) {
+    let triggerCondition: unknown = null;
+    let configCorrupted = false;
+
+    if (rule.triggerCondition) {
+      try {
+        triggerCondition = JSON.parse(rule.triggerCondition);
+      } catch (err) {
+        this.logger.warn(`toRuleDto: rule ${rule.id} has invalid triggerCondition JSON: ${String(err)}`);
+        configCorrupted = true;
+        triggerCondition = null;
+      }
+    }
+
+    let actionConfig: Record<string, unknown> = {};
+    try {
+      actionConfig = JSON.parse(rule.actionConfig);
+    } catch (err) {
+      this.logger.error(`toRuleDto: rule ${rule.id} has invalid actionConfig JSON: ${String(err)}`);
+      configCorrupted = true;
+      actionConfig = {};
+    }
+
     return {
       id: rule.id,
       projectId: rule.projectId,
       name: rule.name,
       triggerEvent: rule.triggerEvent,
-      triggerCondition: rule.triggerCondition
-        ? (() => { try { return JSON.parse(rule.triggerCondition); } catch { return null; } })()
-        : null,
+      triggerCondition,
       actionType: rule.actionType,
-      actionConfig: (() => { try { return JSON.parse(rule.actionConfig); } catch { return {}; } })(),
+      actionConfig,
       isActive: rule.isActive,
       executionCount: rule.executionCount,
       lastExecutedAt: rule.lastExecutedAt,
       createdAt: rule.createdAt,
+      configCorrupted,
     };
   }
 }
+
+/**
+ * Grapheme-aware truncation: uses `Array.from` to split on UTF-16 surrogate
+ * pairs so emoji/high-codepoint characters are not cut in half.
+ */
+function safeTruncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const chars = Array.from(text);
+  return chars.slice(0, maxLength).join('');
+}
+
+// Keep KNOWN_TRIGGER_EVENTS referenced so tree-shaking doesn't drop it in builds.
+void KNOWN_TRIGGER_EVENTS;

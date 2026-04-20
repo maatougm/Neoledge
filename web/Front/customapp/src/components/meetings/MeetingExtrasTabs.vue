@@ -104,7 +104,7 @@ const activeTab = ref<(typeof tabs)[number]>('Ordre du jour')
 
 const newAgenda = reactive<{ title: string; durationText: string }>({ title: '', durationText: '' })
 const newAtt = reactive<{ externalName: string; externalEmail: string }>({ externalName: '', externalEmail: '' })
-const newOutcome = reactive<{ type: string; description: string }>({ type: 'Decision', description: '' })
+const newOutcome = reactive<{ type: 'Decision' | 'Action' | 'Note' | 'Risk'; description: string }>({ type: 'Decision', description: '' })
 
 const outcomeTypes = [
   { label: 'Décision', value: 'Decision' },
@@ -137,9 +137,16 @@ async function loadAll() {
 async function addAgenda() {
   if (!newAgenda.title.trim()) return
   const duration = newAgenda.durationText ? parseInt(newAgenda.durationText, 10) : undefined
+  // Validate duration is a positive integer (#23)
+  if (newAgenda.durationText.trim() !== '' && (
+    !Number.isFinite(duration) || (duration as number) <= 0 || !Number.isInteger(duration)
+  )) {
+    toast.add({ severity: 'warn', detail: 'La durée doit être un entier positif (ex : 30).', life: 4000 })
+    return
+  }
   await store.addAgenda(props.projectId, props.meetingId, {
     title: newAgenda.title.trim(),
-    duration: Number.isFinite(duration) ? duration : null,
+    duration: Number.isFinite(duration) && (duration as number) > 0 ? duration : null,
   })
   newAgenda.title = ''
   newAgenda.durationText = ''

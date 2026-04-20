@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NeoLeadge Deployment Manager** — a full-stack project management platform for deployment projects. Administrators manage users, projects, field data, meetings, and client sign-offs.
+**NeoLeadge Deployment Manager** — a full-stack project management platform for deployment projects. Administrators manage users, projects, field data, and meetings.
 
 **Active stack:**
 - `web/back-nest/` — **NestJS (TypeScript) — ACTIVE backend** — port 5122
@@ -73,7 +73,6 @@ GEMINI_API_KEY=...
 | `AnalyticsModule` | `src/analytics/` | Dashboard metrics with 15-min cache |
 | `AutomationModule` | `src/automation/` | Workflow rule engine, event triggers |
 | `CollaborationModule` | `src/collaboration/` | Real-time WebSocket collaboration |
-| `PortalModule` | `src/portal/` | Public client portal with token-based access |
 | `NotificationsModule` | `src/notifications/` | Real-time notification delivery (+ reason/entityType since v2.0) |
 | `PrismaModule` | `src/prisma/` | Global DB client (MariaDB adapter) |
 | `WorkPackagesModule` | `src/work-packages/` | Issues / tasks / features with hierarchy, watchers, dependencies, custom fields |
@@ -129,13 +128,6 @@ GEMINI_API_KEY=...
 - `DELETE /pm/projects/:id/automation/rules/:ruleId`
 - `PATCH /pm/projects/:id/automation/rules/:ruleId/toggle`
 - `GET /pm/projects/:id/automation/logs`
-
-**Client Portal**
-- `POST /admin/projects/:id/portal-tokens` — generate token (JWT)
-- `GET /admin/projects/:id/portal-tokens` — list tokens (JWT)
-- `DELETE /admin/portal-tokens/:id` — revoke (JWT)
-- `GET /portal/:token` — public project view (no auth)
-- `POST /portal/:token/signoff` — client sign-off (no auth)
 
 **Work Packages** (PM / Admin)
 - `GET /pm/projects/:id/work-packages` — list (filters: status, type, priority, assigneeId, sprintId, versionId, parentId, q, page, limit)
@@ -232,8 +224,6 @@ MeetingActionItem — AI-extracted action items per transcript
 MeetingDecision   — AI-extracted decisions/risks per transcript
 AutomationRule    — workflow rules (triggerEvent, actionType, actionConfig JSON, isActive)
 AutomationLog     — execution history per rule
-PortalToken       — public access tokens (crypto.randomBytes(32), expiry, revocation)
-PortalSignoff     — client sign-off records (clientName, clientEmail, isApproved, ipAddress)
 AnalyticsCache    — 15-min TTL cache for analytics queries (cacheKey, data JSON)
 Notification      — per-user notifications with reason/entityType/entityId/actorId/link (v2.0)
 PhaseChecklist    — per-phase checklist items
@@ -367,7 +357,6 @@ npm run lint
 
 **Admin:**
 - `components/admin/sections/AnalyticsSection.vue` — Chart.js dashboard (phase velocity, bottleneck, deadline risk, team workload)
-- `components/admin/PortalTokenManager.vue` — generate/revoke/copy portal tokens
 
 **PM module:**
 - `components/pm/QuestionnaireForm.vue` — field form with real-time collaboration (presence avatars, field focus indicators)
@@ -378,9 +367,6 @@ npm run lint
 
 **Common:**
 - `components/common/PresenceAvatars.vue` — colored avatar circles with initials, up to 5 + overflow
-
-**Views:**
-- `views/ClientPortalView.vue` — public (no auth), route `/portal/:token`; phase stepper, field values, sign-off form
 
 **v2.0 Views (OpenProject parity):** — all under `/app/pm/projects/:id/*`, wrapped by `ProjectModuleShell` for breadcrumbs + header
 - `WorkPackagesView.vue` — split-panel WP list + detail (tabs: Détails, Relations, Observateurs), create dialog
@@ -414,7 +400,6 @@ npm run lint
 ### Router (`src/router/index.ts`)
 
 - `/login` — LoginView (public)
-- `/portal/:token` — ClientPortalView (public, outside auth guard)
 - `/app/admin/*` — AdminLayout (requires Admin role) — includes `portfolio`, `team-planner`
 - `/app/pm/*` — PmLayout (requires ProjectManager or Admin) — includes project module routes:
   - `/app/pm/projects/:id` — project overview

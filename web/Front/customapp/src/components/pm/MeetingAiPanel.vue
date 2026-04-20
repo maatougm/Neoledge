@@ -159,6 +159,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import DOMPurify from 'dompurify'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
@@ -218,10 +219,12 @@ async function handleAnalyze() {
 
 /**
  * Converts plain-text summary with Markdown-like headings and lists
- * into safe HTML for prose rendering. No external lib required.
+ * into safe HTML for prose rendering. AI content is externally influenced
+ * (prompt injection risk), so the output is sanitised with DOMPurify as
+ * defense in depth even though inputs are HTML-escaped.
  */
 function renderSummary(text: string): string {
-  return text
+  const html = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -235,6 +238,12 @@ function renderSummary(text: string): string {
       return `<p class="prose-p">${line}</p>`
     })
     .join('')
+
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['h1', 'h2', 'p', 'li', 'br', 'strong', 'em'],
+    ALLOWED_ATTR: ['class'],
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+  })
 }
 
 /**

@@ -33,13 +33,50 @@ docker build -t neoleadge-transcription .
 docker run -p 8000:8000 neoleadge-transcription
 ```
 
+## Security (Sprint 7 lockdown)
+
+This service is intended to be called **only** by the NestJS backend on the
+same host. It enforces:
+
+- **Loopback binding** — `run.bat` and `run.sh` start uvicorn on
+  `127.0.0.1:8000`. Do not change this unless you also place the service on
+  a private / firewalled network.
+- **Shared-secret auth** — every `POST /transcribe` must include the header
+  `X-Transcription-Secret: <value>`, matching the `TRANSCRIPTION_SECRET`
+  environment variable. The service **refuses to start** if the env var is
+  unset or empty.
+- **CORS lock** — only the origin in `ALLOWED_ORIGIN` (default
+  `http://localhost:5122`) is permitted, restricted to `POST` and `OPTIONS`.
+- **Upload guard** — 100 MB hard cap (Content-Length header + streaming
+  check) and magic-bytes sniffing on the uploaded file.
+- **Error hygiene** — 500 responses carry a generic message; full stack
+  traces only go to server logs.
+
+### Required environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TRANSCRIPTION_SECRET` | **yes** | Random string (32+ chars). Must match the value in the NestJS `.env`. |
+| `ALLOWED_ORIGIN` | no | CORS origin, default `http://localhost:5122`. |
+
+Generate a secret with either of:
+
+```bash
+# macOS / Linux / Git Bash
+openssl rand -hex 32
+
+# Windows PowerShell
+powershell -c "[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))"
+```
+
 ## API
 
 ### POST /transcribe
 Upload audio file, get transcript with speaker labels.
 
 ```bash
-curl -X POST http://localhost:8000/transcribe \
+curl -X POST http://127.0.0.1:8000/transcribe \
+  -H "X-Transcription-Secret: $TRANSCRIPTION_SECRET" \
   -F "audio=@meeting.mp3"
 ```
 

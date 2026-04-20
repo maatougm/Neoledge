@@ -124,9 +124,9 @@ function handleItemClick(id: string, isRead: boolean): void {
     if (role === 'Admin') {
       router.push({ name: 'admin-project-detail', params: { id: notif.projectId } })
     } else if (role === 'ProjectManager') {
-      router.push({ name: 'pm-projects', query: { projectId: notif.projectId } })
+      router.push({ name: 'pm-project-detail', params: { id: notif.projectId } })
     } else {
-      router.push({ name: 'team-projects', query: { projectId: notif.projectId } })
+      router.push({ name: 'team-project-detail', params: { id: notif.projectId } })
     }
   }
 }

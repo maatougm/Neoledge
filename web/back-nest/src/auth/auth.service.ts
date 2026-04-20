@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TotpService } from './totp.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { getJwtSecret } from './jwt-secret.js';
 
 interface TestUser {
   id: string;
@@ -121,6 +122,14 @@ const TEST_USERS: readonly TestUser[] = [
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 15;
 const TEMP_TOKEN_EXPIRES_IN = '5m';
+const BCRYPT_ROUNDS = 12;
+
+// Precomputed bcrypt hash of a value no real user will ever supply. We run
+// `bcrypt.compare` against it when the email is unknown so the login endpoint
+// takes the same wall-clock time whether or not the user exists — closes a
+// user-enumeration timing side-channel.
+const DUMMY_BCRYPT_HASH =
+  '$2a$12$CwTycUXWue0Thq9StjUM0uJ8oNO.KsVqxjB5lK5OoT0uU4cEO4SGu';
 
 type LoginResult =
   | { jwt: string; mustChangePassword: boolean; requiresTotp?: never }
@@ -168,14 +177,14 @@ export class AuthService {
             firstName: testUser.firstName,
             lastName: testUser.lastName,
             role: testUser.role,
-            passwordHash: await bcrypt.hash(testUser.password, 10),
+            passwordHash: await bcrypt.hash(testUser.password, BCRYPT_ROUNDS),
             isActive: true,
             mustChangePassword: testUser.mustChangePassword,
           },
         });
 
-        const jwt = this.generateToken({
-          sub: testUser.id,
+        const jwt = await this.generateTokenForUser({
+          id: testUser.id,
           email: testUser.email,
           role: testUser.role,
           firstName: testUser.firstName,
@@ -186,26 +195,35 @@ export class AuthService {
       }
     }
 
-    throw new UnauthorizedException('Invalid email or password');
+    // Equalise response time for unknown emails / wrong dev passwords with the
+    // bcrypt.compare executed on the happy path. Without this, an attacker can
+    // enumerate valid accounts by measuring the faster failure timing.
+    await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+
+    throw new UnauthorizedException(this.authFailureMessage('Invalid email or password'));
   }
 
   async loginWithTotp(
     tempToken: string,
     code: string,
   ): Promise<{ jwt: string; mustChangePassword: boolean }> {
-    let payload: { sub: string; totpPending: boolean };
+    let payload: { sub: string; totpPending: boolean; aud?: string };
 
     try {
-      payload = this.jwtService.verify<{ sub: string; totpPending: boolean }>(
-        tempToken,
-        { secret: this.configService.get<string>('JWT_SECRET', 'dev-secret-change-me') },
-      );
+      payload = this.jwtService.verify<{
+        sub: string;
+        totpPending: boolean;
+        aud?: string;
+      }>(tempToken, { secret: getJwtSecret(this.configService) });
     } catch {
-      throw new UnauthorizedException('Token expiré ou invalide.');
+      throw new UnauthorizedException(this.authFailureMessage('Token expiré ou invalide.'));
     }
 
-    if (!payload.totpPending) {
-      throw new UnauthorizedException('Token non valide pour la 2FA.');
+    // Temp token must carry our `aud: 'totp'` claim AND `totpPending: true`.
+    // Reject access-audience tokens and legacy tokens missing the claim —
+    // this is a defence-in-depth check on top of `JwtStrategy`.
+    if (payload.aud !== 'totp' || !payload.totpPending) {
+      throw new UnauthorizedException(this.authFailureMessage('Token non valide pour la 2FA.'));
     }
 
     const user = await this.prisma.appUser.findUnique({
@@ -213,11 +231,18 @@ export class AuthService {
     });
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Utilisateur introuvable ou inactif.');
+      throw new UnauthorizedException(this.authFailureMessage('Utilisateur introuvable ou inactif.'));
+    }
+
+    // TOTP path must honour the same lockout window as the password path —
+    // otherwise an attacker who captured a temp token could brute-force the
+    // 6-digit code without rate limiting.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new UnauthorizedException(this.authFailureMessage('Account is locked. Please try again later.'));
     }
 
     if (!user.totpSecret || !user.totpEnabled) {
-      throw new UnauthorizedException('La 2FA n\'est pas activée pour ce compte.');
+      throw new UnauthorizedException(this.authFailureMessage('La 2FA n\'est pas activée pour ce compte.'));
     }
 
     const isValid = await this.totpService.verify(code, user.totpSecret);
@@ -229,7 +254,7 @@ export class AuthService {
           failedLoginAttempts: { increment: 1 },
         },
       });
-      throw new UnauthorizedException('Code TOTP invalide.');
+      throw new UnauthorizedException(this.authFailureMessage('Code TOTP invalide.'));
     }
 
     await this.prisma.appUser.update({
@@ -241,8 +266,8 @@ export class AuthService {
       },
     });
 
-    const jwt = this.generateToken({
-      sub: user.id,
+    const jwt = await this.generateTokenForUser({
+      id: user.id,
       email: user.email,
       role: user.role,
       firstName: user.firstName,
@@ -352,16 +377,22 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    const isCurrentValid = await bcrypt.compare(
-      currentPassword,
-      user.passwordHash,
-    );
-
-    if (!isCurrentValid) {
-      throw new UnauthorizedException('Current password is incorrect');
+    // When a user is required to change their password (freshly-seeded or
+    // admin-reset accounts), the UI cannot supply the temp password — they
+    // already used it to log in, and the JwtAuthGuard on the endpoint has
+    // re-verified the session. Skip the bcrypt re-check in that case to
+    // unblock the force-change flow; otherwise require the current password.
+    if (!user.mustChangePassword) {
+      const isCurrentValid = await bcrypt.compare(
+        currentPassword,
+        user.passwordHash,
+      );
+      if (!isCurrentValid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
     }
 
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
     const newHash = await bcrypt.hash(newPassword, salt);
 
     await this.prisma.appUser.update({
@@ -369,6 +400,7 @@ export class AuthService {
       data: {
         passwordHash: newHash,
         mustChangePassword: false,
+        tokenVersion: { increment: 1 },
       },
     });
   }
@@ -391,12 +423,12 @@ export class AuthService {
     password: string,
   ): Promise<LoginResult> {
     if (!user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
+      throw new UnauthorizedException(this.authFailureMessage('Account is deactivated'));
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       throw new UnauthorizedException(
-        'Account is locked. Please try again later.',
+        this.authFailureMessage('Account is locked. Please try again later.'),
       );
     }
 
@@ -424,18 +456,35 @@ export class AuthService {
         data: updateData,
       });
 
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException(this.authFailureMessage('Invalid email or password'));
     }
 
-    // If TOTP is enabled, issue a short-lived temp token instead of the full JWT
+    // If TOTP is enabled, issue a short-lived temp token instead of the full JWT.
+    // Reset the failed-login counter at this point — the password has already
+    // been validated — so a subsequent wrong TOTP code cannot compound with
+    // prior password mistakes and prematurely lock the account. Audit-log the
+    // partial success so security forensics can see "password OK / TOTP pending".
     if (user.totpEnabled) {
+      await this.prisma.appUser.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+
       const tempToken = this.jwtService.sign(
-        { sub: user.id, totpPending: true },
+        { sub: user.id, totpPending: true, aud: 'totp' },
         {
-          secret: this.configService.get<string>('JWT_SECRET', 'dev-secret-change-me'),
+          secret: getJwtSecret(this.configService),
           expiresIn: TEMP_TOKEN_EXPIRES_IN,
         },
       );
+
+      void this.audit.log('AppUser', user.id, 'LOGIN', user.id, undefined, {
+        stage: 'password-ok-totp-pending',
+      });
+
       return { requiresTotp: true, tempToken };
     }
 
@@ -449,8 +498,8 @@ export class AuthService {
       },
     });
 
-    const jwt = this.generateToken({
-      sub: user.id,
+    const jwt = await this.generateTokenForUser({
+      id: user.id,
       email: user.email,
       role: user.role,
       firstName: user.firstName,
@@ -461,12 +510,128 @@ export class AuthService {
     return { jwt, mustChangePassword: user.mustChangePassword };
   }
 
+  async getMe(userId: string): Promise<{
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: string;
+    };
+    permissions: { global: string[]; perProject: Record<string, string[]> };
+    roles: { id: string; name: string; projectId: string | null }[];
+  }> {
+    const user = await this.prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const [assignments, permissionsSet] = await Promise.all([
+      this.prisma.userRoleAssignment.findMany({
+        where: { userId },
+        select: {
+          projectId: true,
+          role: { select: { id: true, name: true } },
+        },
+      }),
+      this.loadUserPermissions(userId),
+    ]);
+
+    return {
+      user,
+      permissions: permissionsSet,
+      roles: assignments.map((a) => ({
+        id: a.role.id,
+        name: a.role.name,
+        projectId: a.projectId,
+      })),
+    };
+  }
+
+  private async loadUserPermissions(
+    userId: string,
+  ): Promise<{ global: string[]; perProject: Record<string, string[]> }> {
+    const rows = await this.prisma.userRoleAssignment.findMany({
+      where: { userId },
+      select: {
+        projectId: true,
+        role: {
+          select: {
+            permissions: { select: { permission: { select: { key: true } } } },
+          },
+        },
+      },
+    });
+    const global = new Set<string>();
+    const perProject = new Map<string, Set<string>>();
+    for (const a of rows) {
+      const keys = a.role.permissions.map((rp) => rp.permission.key);
+      if (a.projectId === null) {
+        keys.forEach((k) => global.add(k));
+      } else {
+        let bucket = perProject.get(a.projectId);
+        if (!bucket) {
+          bucket = new Set<string>();
+          perProject.set(a.projectId, bucket);
+        }
+        keys.forEach((k) => bucket!.add(k));
+      }
+    }
+    const perProjectObj: Record<string, string[]> = {};
+    for (const [pid, set] of perProject.entries()) {
+      perProjectObj[pid] = Array.from(set);
+    }
+    return { global: Array.from(global), perProject: perProjectObj };
+  }
+
+  private async generateTokenForUser(user: {
+    id: string;
+    email: string;
+    role: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<string> {
+    const { tokenVersion } = await this.prisma.appUser.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { tokenVersion: true },
+    });
+    return this.jwtService.sign({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      tokenVersion,
+      aud: 'access',
+    });
+  }
+
+  /**
+   * Collapse role-revealing login failure messages down to a generic string
+   * in production so an attacker can't distinguish "user not found" from
+   * "password wrong" from "account locked". Keeps the verbose message in dev
+   * so local debugging stays productive.
+   */
+  private authFailureMessage(verbose: string): string {
+    const isProduction =
+      this.configService.get<string>('NODE_ENV') === 'production';
+    return isProduction ? 'Authentication failed' : verbose;
+  }
+
   private generateToken(payload: {
     sub: string;
     email: string;
     role: string;
     firstName: string;
     lastName: string;
+    tokenVersion?: number;
   }): string {
     return this.jwtService.sign(payload);
   }

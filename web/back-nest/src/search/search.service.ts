@@ -11,39 +11,63 @@ export interface SearchHit {
   link: string;
 }
 
+const MAX_QUERY_LENGTH = 200;
+const MAX_TAKE = 50;
+
 @Injectable()
 export class SearchService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async search(q: string, limit = 8): Promise<Result<SearchHit[]>> {
-    const query = (q || '').trim();
+  async search(q: string, callerId: string, limit = 8): Promise<Result<SearchHit[]>> {
+    const query = (q || '').trim().substring(0, MAX_QUERY_LENGTH);
     if (query.length < 2) return Result.ok([]);
 
+    const take = Math.min(Math.max(1, limit), MAX_TAKE);
+
     try {
+      // Resolve the set of project IDs the caller has any role assignment for.
+      const assignments = await this.prisma.userRoleAssignment.findMany({
+        where: { userId: callerId },
+        select: { projectId: true },
+      });
+      const accessibleProjectIds = [
+        ...new Set(
+          assignments
+            .map((a) => a.projectId)
+            .filter((id): id is string => id !== null),
+        ),
+      ];
+
       const [projects, wps, wikis, users] = await Promise.all([
         this.prisma.project.findMany({
           where: {
             isDeleted: false,
+            id: { in: accessibleProjectIds },
             OR: [{ name: { contains: query } }, { clientName: { contains: query } }],
           },
-          select: { id: true, name: true, clientName: true, status: true },
-          take: limit,
+          select: { id: true, name: true, clientName: true, status: true, updatedAt: true },
+          orderBy: { updatedAt: 'desc' },
+          take,
         }),
         this.prisma.workPackage.findMany({
           where: {
             isDeleted: false,
+            projectId: { in: accessibleProjectIds },
             OR: [{ title: { contains: query } }, { description: { contains: query } }],
           },
-          select: { id: true, title: true, status: true, projectId: true, type: true },
-          take: limit,
+          select: { id: true, title: true, status: true, projectId: true, type: true, updatedAt: true },
+          orderBy: { updatedAt: 'desc' },
+          take,
         }),
         this.prisma.wikiPage.findMany({
           where: {
             isDeleted: false,
+            projectId: { in: accessibleProjectIds },
             OR: [{ title: { contains: query } }, { content: { contains: query } }],
           },
-          select: { id: true, title: true, slug: true, projectId: true },
-          take: limit,
+          select: { id: true, title: true, slug: true, projectId: true, updatedAt: true },
+          orderBy: { updatedAt: 'desc' },
+          take,
         }),
         this.prisma.appUser.findMany({
           where: {
@@ -55,7 +79,7 @@ export class SearchService {
             ],
           },
           select: { id: true, firstName: true, lastName: true, email: true, role: true },
-          take: Math.min(4, limit),
+          take: Math.min(4, take),
         }),
       ]);
 
@@ -87,7 +111,7 @@ export class SearchService {
           type: 'user',
           id: u.id,
           title: `${u.firstName} ${u.lastName}`,
-          subtitle: `${u.role} · ${u.email}`,
+          subtitle: u.role,
           link: '',
         })),
       ];

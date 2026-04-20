@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { randomUUID } from 'node:crypto';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { PermissionsModule } from './permissions/permissions.module.js';
+import { RolesModule } from './roles/roles.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ProjectsModule } from './projects/projects.module.js';
@@ -21,7 +25,6 @@ import { ChecklistsModule } from './checklists/checklists.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { SystemStatusModule } from './system-status/system-status.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
-import { PortalModule } from './portal/portal.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { CollaborationModule } from './collaboration/collaboration.module.js';
 import { AutomationModule } from './automation/automation.module.js';
@@ -37,8 +40,46 @@ import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
 
 @Module({
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate(config: Record<string, unknown>) {
+        const errors: string[] = [];
+
+        // Required variables
+        const required: Array<{ key: string; minLen?: number }> = [
+          { key: 'JWT_SECRET', minLen: 32 },
+          { key: 'DATABASE_URL' },
+          { key: 'TRANSCRIPTION_URL' },
+          { key: 'TRANSCRIPTION_SECRET' },
+        ];
+        for (const { key, minLen } of required) {
+          const val = config[key];
+          if (!val || String(val).trim() === '') {
+            errors.push(`${key} is required`);
+          } else if (minLen !== undefined && String(val).length < minLen) {
+            errors.push(`${key} must be at least ${minLen} characters`);
+          }
+        }
+
+        // CORS_ORIGINS — warn but allow default in dev
+        if (!config['CORS_ORIGINS'] && config['NODE_ENV'] === 'production') {
+          errors.push('CORS_ORIGINS is required in production');
+        }
+
+        if (errors.length > 0) {
+          throw new Error(`Environment validation failed:\n  - ${errors.join('\n  - ')}`);
+        }
+        return config;
+      },
+    }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     LoggerModule.forRoot({
       pinoHttp: {
         // Generate / propagate a request ID per HTTP call so every log line
@@ -63,7 +104,14 @@ import { HealthModule } from './health/health.module.js';
           paths: [
             'req.headers.authorization',
             'req.headers.cookie',
+            'req.headers["x-transcription-secret"]',
+            'req.headers["x-api-key"]',
             'req.body.password',
+            'req.body.currentPassword',
+            'req.body.newPassword',
+            'req.body.tempPassword',
+            'req.body.token',
+            'req.body.tempToken',
             'req.body.jwt',
             'res.headers["set-cookie"]',
           ],
@@ -84,9 +132,11 @@ import { HealthModule } from './health/health.module.js';
       },
     }),
     PrismaModule,
+    PermissionsModule,
     MailModule,
     AuditModule,
     AuthModule,
+    RolesModule,
     UsersModule,
     ProjectsModule,
     MeetingsModule,
@@ -102,7 +152,6 @@ import { HealthModule } from './health/health.module.js';
     ChecklistsModule,
     SystemStatusModule,
     AnalyticsModule,
-    PortalModule,
     AiModule,
     CollaborationModule,
     AutomationModule,

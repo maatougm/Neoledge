@@ -1,10 +1,13 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException } from '@nestjs/common';
 import { CommentsService } from './comments.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('api/projects/:projectId/comments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class CommentsController {
   constructor(private readonly service: CommentsService) {}
 
@@ -17,8 +20,10 @@ export class CommentsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Param('projectId') projectId: string, @CurrentUser() user: any, @Body() body: { content: string }) {
-    if (!body.content?.trim()) throw new BadRequestException('Contenu requis.');
-    const result = await this.service.create(projectId, user.userId, body.content);
+    const content = body.content;
+    if (!content?.trim()) throw new BadRequestException('Contenu requis.');
+    if (typeof content === 'string' && content.length > 20_000) throw new BadRequestException('Commentaire trop long (max 20 000 caractères).');
+    const result = await this.service.create(projectId, user.userId, content);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
   }
@@ -47,7 +52,10 @@ export class CommentsController {
   @Post(':commentId/replies')
   @HttpCode(HttpStatus.CREATED)
   async reply(@Param('projectId') projectId: string, @Param('commentId') commentId: string, @CurrentUser() user: any, @Body() body: { content: string }) {
-    const result = await this.service.create(projectId, user.userId, body.content, commentId);
+    const content = body.content;
+    if (!content?.trim()) throw new BadRequestException('Contenu requis.');
+    if (typeof content === 'string' && content.length > 20_000) throw new BadRequestException('Commentaire trop long (max 20 000 caractères).');
+    const result = await this.service.create(projectId, user.userId, content, commentId);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
   }

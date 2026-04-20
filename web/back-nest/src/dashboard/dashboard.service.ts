@@ -65,13 +65,15 @@ export class DashboardService {
   }
 
   async getRecentActivity(count = 10) {
+    // Cap to [1, 500] and reject NaN/negative inputs.
+    const safeCount = Number.isFinite(count) && count > 0 ? Math.min(Math.floor(count), 500) : 10;
     const activities = await this.prisma.projectActivity.findMany({
       include: {
         project: { select: { id: true, name: true, clientName: true } },
         user: { select: { id: true, firstName: true, lastName: true, role: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: count,
+      take: safeCount,
     });
 
     return Result.ok(

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
+import type { CreateTemplateDto, CreateFromProjectDto, TemplateFieldDto } from './dto/template.dto.js';
 
 @Injectable()
 export class TemplatesService {
@@ -34,14 +35,14 @@ export class TemplatesService {
     });
   }
 
-  async create(dto: any, adminId: string) {
+  async create(dto: CreateTemplateDto, adminId: string) {
     const template = await this.prisma.projectTemplate.create({
       data: {
         name: dto.name,
         description: dto.description ?? null,
         createdByAdminId: adminId,
         fields: {
-          create: (dto.fields ?? []).map((f: any, i: number) => ({
+          create: (dto.fields ?? []).map((f: TemplateFieldDto, i: number) => ({
             label: f.label,
             type: f.type ?? 'Text',
             category: f.category ?? 'Custom',
@@ -63,12 +64,17 @@ export class TemplatesService {
     return Result.ok();
   }
 
-  async createFromProject(projectId: string, dto: { name: string; description?: string }, adminId: string) {
+  async createFromProject(projectId: string, dto: CreateFromProjectDto, adminId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
       include: { fields: { where: { fieldCategory: { in: ['Dynamic', 'Custom'] } }, orderBy: { orderIndex: 'asc' } } },
     });
     if (!project) return Result.fail<any>('Projet non trouvé.');
+
+    // Strip private fields: label starting with '_' or category 'Private'.
+    const publicFields = project.fields.filter(
+      (f) => !f.label.startsWith('_') && f.fieldCategory !== 'Private',
+    );
 
     const template = await this.prisma.projectTemplate.create({
       data: {
@@ -76,7 +82,7 @@ export class TemplatesService {
         description: dto.description ?? null,
         createdByAdminId: adminId,
         fields: {
-          create: project.fields.map((f, i) => ({
+          create: publicFields.map((f, i) => ({
             label: f.label,
             type: f.fieldType,
             category: f.fieldCategory,
@@ -101,7 +107,20 @@ export class TemplatesService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
+    // Fetch existing field labels to detect duplicates.
+    const existingFields = await this.prisma.projectField.findMany({
+      where: { projectId },
+      select: { label: true },
+    });
+    const existingLabels = new Set(existingFields.map((f) => f.label.toLowerCase()));
+
+    const skipped: string[] = [];
+
     for (const tf of template.fields) {
+      if (existingLabels.has(tf.label.toLowerCase())) {
+        skipped.push(tf.label);
+        continue;
+      }
       const field = await this.prisma.projectField.create({
         data: {
           projectId,
@@ -116,8 +135,9 @@ export class TemplatesService {
       await this.prisma.projectFieldValue.create({
         data: { projectId, projectFieldId: field.id, value: null },
       });
+      existingLabels.add(tf.label.toLowerCase());
     }
 
-    return Result.ok();
+    return Result.ok({ skipped });
   }
 }

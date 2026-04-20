@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 
 export interface BudgetLineItem {
   id: string
@@ -41,52 +42,100 @@ export const useBudgetStore = defineStore('budget', () => {
   const budget = ref<ProjectBudget | null>(null)
   const burn = ref<BurnReport | null>(null)
   const loading = ref(false)
+  const error = ref<string | null>(null)
+
+  function _errMsg(err: unknown): string {
+    return err instanceof Error ? err.message : String(err)
+  }
 
   async function fetchBudget(projectId: string) {
     loading.value = true
+    error.value = null
     try {
       const { data } = await api.get<ProjectBudget>(`/pm/projects/${projectId}/budget`)
       budget.value = data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] fetchBudget', err)
     } finally {
       loading.value = false
     }
   }
 
   async function upsertBudget(projectId: string, payload: { laborBudget?: number; materialBudget?: number; currency?: string; notes?: string }) {
-    const { data } = await api.put<ProjectBudget>(`/pm/projects/${projectId}/budget`, payload)
-    budget.value = data
-    return data
+    try {
+      const { data } = await api.put<ProjectBudget>(`/pm/projects/${projectId}/budget`, payload)
+      budget.value = data
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] upsertBudget', err)
+      throw err
+    }
   }
 
   async function createLineItem(projectId: string, payload: { description: string; type?: string; unitCost: number; units: number }) {
-    const { data } = await api.post<BudgetLineItem>(`/pm/projects/${projectId}/budget/line-items`, payload)
-    if (budget.value) budget.value = { ...budget.value, lineItems: [...budget.value.lineItems, data] }
-    return data
+    try {
+      const { data } = await api.post<BudgetLineItem>(`/pm/projects/${projectId}/budget/line-items`, payload)
+      if (budget.value) budget.value = { ...budget.value, lineItems: [...budget.value.lineItems, data] }
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] createLineItem', err)
+      throw err
+    }
   }
 
   async function updateLineItem(projectId: string, id: string, payload: Partial<BudgetLineItem>) {
-    const { data } = await api.patch<BudgetLineItem>(`/pm/projects/${projectId}/budget/line-items/${id}`, payload)
-    if (budget.value) {
-      const idx = budget.value.lineItems.findIndex((l) => l.id === id)
-      if (idx >= 0) {
-        const newLines = [...budget.value.lineItems.slice(0, idx), data, ...budget.value.lineItems.slice(idx + 1)]
-        budget.value = { ...budget.value, lineItems: newLines }
+    try {
+      const { data } = await api.patch<BudgetLineItem>(`/pm/projects/${projectId}/budget/line-items/${id}`, payload)
+      if (budget.value) {
+        const idx = budget.value.lineItems.findIndex((l) => l.id === id)
+        if (idx >= 0) {
+          const newLines = [...budget.value.lineItems.slice(0, idx), data, ...budget.value.lineItems.slice(idx + 1)]
+          budget.value = { ...budget.value, lineItems: newLines }
+        }
       }
+      return data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] updateLineItem', err)
+      throw err
     }
-    return data
   }
 
   async function deleteLineItem(projectId: string, id: string) {
-    await api.delete(`/pm/projects/${projectId}/budget/line-items/${id}`)
-    if (budget.value) {
-      budget.value = { ...budget.value, lineItems: budget.value.lineItems.filter((l) => l.id !== id) }
+    try {
+      await api.delete(`/pm/projects/${projectId}/budget/line-items/${id}`)
+      if (budget.value) {
+        budget.value = { ...budget.value, lineItems: budget.value.lineItems.filter((l) => l.id !== id) }
+      }
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] deleteLineItem', err)
+      throw err
     }
   }
 
   async function fetchBurn(projectId: string) {
-    const { data } = await api.get<BurnReport>(`/pm/projects/${projectId}/budget/burn`)
-    burn.value = data
+    try {
+      const { data } = await api.get<BurnReport>(`/pm/projects/${projectId}/budget/burn`)
+      burn.value = data
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[budgetStore] fetchBurn', err)
+      throw err
+    }
   }
 
-  return { budget, burn, loading, fetchBudget, upsertBudget, createLineItem, updateLineItem, deleteLineItem, fetchBurn }
+  function reset(): void {
+    budget.value = null
+    burn.value = null
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
+  return { budget, burn, loading, error, fetchBudget, upsertBudget, createLineItem, updateLineItem, deleteLineItem, fetchBurn, reset }
 })

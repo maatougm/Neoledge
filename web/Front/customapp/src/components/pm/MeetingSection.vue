@@ -195,12 +195,35 @@ function triggerFileUpload() {
   fileInput.value?.click()
 }
 
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024 // 200 MB
+const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm',
+  'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/flac',
+  'video/mp4', 'video/webm',
+])
+
+function validateAudioFile(file: File): string | null {
+  if (!ALLOWED_AUDIO_TYPES.has(file.type) && !/\.(mp3|wav|webm|ogg|m4a|mp4|flac)$/i.test(file.name)) {
+    return 'Format non supporté. Utilisez MP3, WAV, WebM, OGG, M4A, MP4 ou FLAC.'
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `Le fichier est trop volumineux (max 200 Mo). Taille actuelle : ${(file.size / 1024 / 1024).toFixed(1)} Mo.`
+  }
+  return null
+}
+
 function onFileSelected(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0] ?? null
   if (file) {
-    uploadFile.value = file
-    uploadTitle.value = file.name.replace(/\.[^.]+$/, '')
-    view.value = 'upload'
+    const err = validateAudioFile(file)
+    if (err) {
+      uploadError.value = err
+      view.value = 'upload'
+    } else {
+      uploadFile.value = file
+      uploadTitle.value = file.name.replace(/\.[^.]+$/, '')
+      view.value = 'upload'
+    }
   }
   // Reset input so same file can be re-selected
   if (fileInput.value) fileInput.value.value = ''
@@ -210,8 +233,15 @@ function onDrop(e: DragEvent) {
   isDragOver.value = false
   const file = e.dataTransfer?.files?.[0] ?? null
   if (file) {
-    uploadFile.value = file
-    uploadTitle.value = file.name.replace(/\.[^.]+$/, '')
+    const err = validateAudioFile(file)
+    if (err) {
+      uploadFile.value = null
+      uploadError.value = err
+    } else {
+      uploadFile.value = file
+      uploadTitle.value = file.name.replace(/\.[^.]+$/, '')
+      uploadError.value = ''
+    }
   }
 }
 

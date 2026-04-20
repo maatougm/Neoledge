@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,45 +49,68 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const teamWorkload = ref<TeamWorkloadRow[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Per-metric errors so the dashboard can render partial results when one
+  // endpoint fails instead of hiding everything behind a single `error` ref.
+  const phaseVelocityError = ref<string | null>(null)
+  const bottleneckError = ref<string | null>(null)
+  const deadlineRiskError = ref<string | null>(null)
+  const teamWorkloadError = ref<string | null>(null)
+
+  function _msg(e: unknown, fallback: string): string {
+    return e instanceof Error ? e.message : fallback
+  }
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
   const fetchPhaseVelocity = async (): Promise<void> => {
+    phaseVelocityError.value = null
     try {
       const { data } = await api.get<PhaseVelocityRow[]>('/api/analytics/phase-velocity')
       phaseVelocity.value = [...data]
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la vélocité.'
+      const msg = _msg(e, 'Erreur lors du chargement de la vélocité.')
+      phaseVelocityError.value = msg
+      error.value = msg
+      throw e
     }
   }
 
   const fetchBottleneck = async (): Promise<void> => {
+    bottleneckError.value = null
     try {
       const { data } = await api.get<BottleneckRow[]>('/api/analytics/bottleneck')
       bottleneck.value = [...data]
     } catch (e: unknown) {
-      error.value =
-        e instanceof Error ? e.message : "Erreur lors du chargement des goulots d'étranglement."
+      const msg = _msg(e, "Erreur lors du chargement des goulots d'étranglement.")
+      bottleneckError.value = msg
+      error.value = msg
+      throw e
     }
   }
 
   const fetchDeadlineRisk = async (): Promise<void> => {
+    deadlineRiskError.value = null
     try {
       const { data } = await api.get<DeadlineRiskRow[]>('/api/analytics/deadline-risk')
       deadlineRisk.value = [...data]
     } catch (e: unknown) {
-      error.value =
-        e instanceof Error ? e.message : 'Erreur lors du chargement des risques de délai.'
+      const msg = _msg(e, 'Erreur lors du chargement des risques de délai.')
+      deadlineRiskError.value = msg
+      error.value = msg
+      throw e
     }
   }
 
   const fetchTeamWorkload = async (): Promise<void> => {
+    teamWorkloadError.value = null
     try {
       const { data } = await api.get<TeamWorkloadRow[]>('/api/analytics/team-workload')
       teamWorkload.value = [...data]
     } catch (e: unknown) {
-      error.value =
-        e instanceof Error ? e.message : 'Erreur lors du chargement de la charge équipe.'
+      const msg = _msg(e, 'Erreur lors du chargement de la charge équipe.')
+      teamWorkloadError.value = msg
+      error.value = msg
+      throw e
     }
   }
 
@@ -94,16 +118,49 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     loading.value = true
     error.value = null
     try {
-      await Promise.all([
+      // Use allSettled so a single failed endpoint does not cancel the others.
+      // Log each rejection individually so nothing is silently swallowed.
+      const results = await Promise.allSettled([
         fetchPhaseVelocity(),
         fetchBottleneck(),
         fetchDeadlineRisk(),
         fetchTeamWorkload(),
       ])
+      const names = ['phaseVelocity', 'bottleneck', 'deadlineRisk', 'teamWorkload'] as const
+      const firstError = results.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          // eslint-disable-next-line no-console
+          console.error(`[analyticsStore] ${names[i]} failed:`, r.reason)
+        }
+      })
+      if (firstError) {
+        error.value = _msg(firstError.reason, 'Erreur lors du chargement des analyses.')
+      }
     } finally {
       loading.value = false
     }
   }
+
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Wipe per-user state on logout. */
+  const reset = (): void => {
+    phaseVelocity.value = []
+    bottleneck.value = []
+    deadlineRisk.value = []
+    teamWorkload.value = []
+    loading.value = false
+    error.value = null
+    phaseVelocityError.value = null
+    bottleneckError.value = null
+    deadlineRiskError.value = null
+    teamWorkloadError.value = null
+  }
+
+  onLogout(reset)
 
   return {
     phaseVelocity,
@@ -112,10 +169,15 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     teamWorkload,
     loading,
     error,
+    phaseVelocityError,
+    bottleneckError,
+    deadlineRiskError,
+    teamWorkloadError,
     fetchPhaseVelocity,
     fetchBottleneck,
     fetchDeadlineRisk,
     fetchTeamWorkload,
     fetchAll,
+    reset,
   }
 })

@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Patch, Delete, Put, Param, Body, Query, UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException } from '@nestjs/common';
 import { WorkPackagesService } from './work-packages.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto } from './dto/work-package.dto.js';
 
 interface AuthUser { userId: string; role: string }
@@ -30,7 +32,8 @@ export class MyTasksController {
 }
 
 @Controller('pm/projects/:projectId/work-packages')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class WorkPackagesController {
   constructor(private readonly service: WorkPackagesService) {}
 
@@ -107,15 +110,36 @@ export class WorkPackagesController {
 
   @Post(':id/watchers')
   @HttpCode(HttpStatus.CREATED)
-  async addWatcher(@Param('id') id: string, @Body() body: { userId: string }) {
-    const r = await this.service.addWatcher(id, body.userId);
+  async addWatcher(
+    @Param('id') id: string,
+    @Body() body: { userId: string },
+    @CurrentUser() currentUser: AuthUser,
+  ) {
+    // Only allow self-subscription or Admin/PM roles.
+    const targetUserId = body.userId;
+    const isSelf = targetUserId === currentUser.userId;
+    const isPrivileged = currentUser.role === 'Admin' || currentUser.role === 'ProjectManager';
+    if (!isSelf && !isPrivileged) {
+      throw new BadRequestException('Vous ne pouvez abonner que vous-même.');
+    }
+    const r = await this.service.addWatcher(id, targetUserId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Delete(':id/watchers/:userId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeWatcher(@Param('id') id: string, @Param('userId') userId: string) {
+  async removeWatcher(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() currentUser: AuthUser,
+  ) {
+    // Only allow self-removal or Admin/PM roles.
+    const isSelf = userId === currentUser.userId;
+    const isPrivileged = currentUser.role === 'Admin' || currentUser.role === 'ProjectManager';
+    if (!isSelf && !isPrivileged) {
+      throw new BadRequestException('Vous ne pouvez désabonner que vous-même.');
+    }
     const r = await this.service.removeWatcher(id, userId);
     if (r.isFailure) throw new BadRequestException(r.error);
   }
@@ -144,7 +168,8 @@ export class WorkPackagesController {
 }
 
 @Controller('pm/projects/:projectId/wp-custom-fields')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class WorkPackageCustomFieldsController {
   constructor(private readonly service: WorkPackagesService) {}
 

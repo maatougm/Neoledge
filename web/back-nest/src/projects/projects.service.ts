@@ -1,19 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PhaseGateService } from './phase-gate.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AutomationService } from '../automation/automation.service.js';
+import { BULK_MAX } from './dto/bulk.dto.js';
+import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
+
+/** Per-field optimistic lock token coming from the client. */
+export interface FieldValueWrite {
+  projectFieldId: string;
+  value: string | null;
+  /** ISO-8601 string the client last observed for this field's `updatedAt`. */
+  expectedUpdatedAt?: string;
+}
 
 @Injectable()
 export class ProjectsService {
+  private readonly logger = new Logger(ProjectsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly phaseGate: PhaseGateService,
     private readonly audit: AuditService,
     private readonly automation: AutomationService,
+    private readonly analyticsCache: AnalyticsCacheService,
   ) {}
 
   async findWithFilters(
@@ -106,7 +119,7 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({
       where: { id, isDeleted: false },
       include: {
-        projectManager: { select: { id: true, firstName: true, lastName: true, email: true, role: true, isActive: true, mustChangePassword: true, createdAt: true, lastLoginAt: true } },
+        projectManager: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
         fields: { orderBy: { orderIndex: 'asc' } },
         fieldValues: { include: { field: true } },
       },
@@ -124,29 +137,34 @@ export class ProjectsService {
     return Result.ok(projects.map((p) => this.toSummary(p)));
   }
 
-  async getByStatus(status: string) {
-    const projects = await this.prisma.project.findMany({
-      where: { status, isDeleted: false },
-      include: { projectManager: { select: { id: true, firstName: true, lastName: true, email: true } } },
+  async getByStatus(status: string, skip = 0, take = 100) {
+    const clampedTake = Math.min(Math.max(take, 1), 200);
+    const clampedSkip = Math.max(skip, 0);
+    const where = { status, isDeleted: false };
+
+    const [items, total] = await Promise.all([
+      this.prisma.project.findMany({
+        where,
+        skip: clampedSkip,
+        take: clampedTake,
+        include: { projectManager: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.project.count({ where }),
+    ]);
+
+    return Result.ok({
+      items: items.map((p) => this.toSummary(p)),
+      total,
+      skip: clampedSkip,
+      take: clampedTake,
     });
-    return Result.ok(projects.map((p) => this.toSummary(p)));
   }
 
   async create(adminId: string, dto: any) {
     if (new Date(dto.endDate) <= new Date(dto.startDate)) {
       return Result.fail('La date de fin doit être postérieure à la date de début.');
     }
-
-    const project = await this.prisma.project.create({
-      data: {
-        name: dto.name,
-        clientName: dto.clientName,
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
-        projectManagerId: dto.projectManagerId ?? null,
-        createdByAdminId: adminId,
-      },
-    });
 
     // Seed static fields
     const staticFields = [
@@ -158,23 +176,55 @@ export class ProjectsService {
       { label: 'Validation client requise', fieldType: 'Checkbox', fieldCategory: 'Static', isRequired: false, orderIndex: 5 },
     ];
 
-    for (const sf of staticFields) {
-      const field = await this.prisma.projectField.create({
-        data: { projectId: project.id, ...sf },
+    // Atomic multi-step create: project + fields + field-values all succeed or
+    // all roll back. Without this a crash between the calls would leave the
+    // questionnaire blank and the PM unable to fill it in.
+    const createdId = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          name: dto.name,
+          clientName: dto.clientName,
+          startDate: new Date(dto.startDate),
+          endDate: new Date(dto.endDate),
+          projectManagerId: dto.projectManagerId ?? null,
+          createdByAdminId: adminId,
+          currentPhaseEnteredAt: new Date(),
+        },
       });
-      await this.prisma.projectFieldValue.create({
-        data: { projectId: project.id, projectFieldId: field.id, value: null },
-      });
-    }
 
-    await this.logActivity(project.id, adminId, 'create', `Projet "${project.name}" créé`);
-    void this.audit.log('Project', project.id, 'CREATE', adminId, undefined, { name: project.name });
-    return this.getById(project.id);
+      // Create fields sequentially to capture each generated id, but inside a
+      // single transaction so the round-trips are still ACID-atomic.
+      for (const sf of staticFields) {
+        const field = await tx.projectField.create({
+          data: { projectId: project.id, ...sf },
+        });
+        await tx.projectFieldValue.create({
+          data: { projectId: project.id, projectFieldId: field.id, value: null },
+        });
+      }
+
+      await tx.projectActivity.create({
+        data: { projectId: project.id, userId: adminId, action: 'create', detail: `Projet "${project.name}" créé` },
+      });
+
+      return project.id;
+    });
+
+    void this.audit.log('Project', createdId, 'CREATE', adminId, undefined, { name: dto.name }).catch((e) => this.logger.error('audit create failed', e));
+    return this.getById(createdId);
   }
 
   async update(id: string, dto: any) {
     const existing = await this.prisma.project.findFirst({ where: { id, isDeleted: false } });
     if (!existing) return Result.fail('Projet non trouvé.');
+
+    // Re-validate the date invariant after applying the patch so admins cannot
+    // PATCH a `startDate` past the existing `endDate` (and vice-versa).
+    const nextStart = dto.startDate !== undefined ? new Date(dto.startDate) : existing.startDate;
+    const nextEnd = dto.endDate !== undefined ? new Date(dto.endDate) : existing.endDate;
+    if (nextEnd <= nextStart) {
+      return Result.fail('La date de fin doit être postérieure à la date de début.');
+    }
 
     await this.prisma.project.update({
       where: { id },
@@ -189,13 +239,6 @@ export class ProjectsService {
     return this.getById(id);
   }
 
-  async deleteProject(id: string) {
-    const existing = await this.prisma.project.findUnique({ where: { id } });
-    if (!existing) return Result.fail('Projet non trouvé.');
-    await this.prisma.project.delete({ where: { id } });
-    return Result.ok();
-  }
-
   async softDelete(id: string, userId: string) {
     const existing = await this.prisma.project.findFirst({ where: { id, isDeleted: false } });
     if (!existing) return Result.fail('Projet non trouvé.');
@@ -203,20 +246,38 @@ export class ProjectsService {
       where: { id },
       data: { isDeleted: true, deletedAt: new Date(), deletedByUserId: userId },
     });
+    void this.audit.log('Project', id, 'DELETE', userId, undefined, { soft: true })
+      .catch((e) => this.logger.error('audit softDelete failed', e));
     return Result.ok();
   }
 
-  async getDeletedProjectsAsync() {
-    const deleted = await this.prisma.project.findMany({
-      where: { isDeleted: true },
-      include: {
-        projectManager: { select: { id: true, firstName: true, lastName: true, email: true } },
-        deletedByUser: { select: { id: true, firstName: true, lastName: true } },
-      },
-      orderBy: { deletedAt: 'desc' },
-    });
-    return Result.ok(
-      deleted.map((p) => ({
+  async getDeletedProjectsAsync(skip = 0, take = 100, search?: string) {
+    const clampedTake = Math.min(Math.max(take, 1), 200);
+    const clampedSkip = Math.max(skip, 0);
+    const where: any = { isDeleted: true };
+    if (search && search.trim()) {
+      where.OR = [
+        { name: { contains: search } },
+        { clientName: { contains: search } },
+      ];
+    }
+
+    const [deleted, total] = await Promise.all([
+      this.prisma.project.findMany({
+        where,
+        include: {
+          projectManager: { select: { id: true, firstName: true, lastName: true, email: true } },
+          deletedByUser: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: { deletedAt: 'desc' },
+        skip: clampedSkip,
+        take: clampedTake,
+      }),
+      this.prisma.project.count({ where }),
+    ]);
+
+    return Result.ok({
+      items: deleted.map((p) => ({
         id: p.id,
         name: p.name,
         clientName: p.clientName,
@@ -229,7 +290,10 @@ export class ProjectsService {
           ? `${p.deletedByUser.firstName} ${p.deletedByUser.lastName}`
           : null,
       })),
-    );
+      total,
+      skip: clampedSkip,
+      take: clampedTake,
+    });
   }
 
   async restoreProjectAsync(id: string) {
@@ -242,14 +306,41 @@ export class ProjectsService {
     return Result.ok();
   }
 
-  async hardDeleteProjectAsync(id: string) {
+  /**
+   * Hard delete — permanently removes the project row AND a best-effort cascade
+   * of rows whose FK constraints would otherwise block the delete. Only allowed
+   * on rows that are already soft-deleted, must go through the
+   * `project.delete_permanent` permission at the controller level, and emits
+   * an audit entry.
+   */
+  async hardDeleteProjectAsync(id: string, actorId?: string) {
     const existing = await this.prisma.project.findUnique({ where: { id } });
     if (!existing) return Result.fail('Projet non trouvé.');
-    await this.prisma.project.delete({ where: { id } });
+    if (!existing.isDeleted) {
+      return Result.fail('Le projet doit d\'abord être supprimé (soft delete) avant une suppression permanente.');
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Clean up children that do not already CASCADE at the DB level or
+        // whose existence would confuse downstream modules after deletion.
+        await tx.projectFieldValue.deleteMany({ where: { projectId: id } });
+        await tx.projectField.deleteMany({ where: { projectId: id } });
+        await tx.projectValidation.deleteMany({ where: { projectId: id } });
+        await tx.projectActivity.deleteMany({ where: { projectId: id } });
+        await tx.project.delete({ where: { id } });
+      });
+    } catch (e) {
+      this.logger.error(`hardDelete failed for project ${id}`, e as Error);
+      return Result.fail('Impossible de supprimer définitivement le projet (dépendances).');
+    }
+
+    void this.audit.log('Project', id, 'DELETE', actorId, undefined, { hard: true, name: existing.name })
+      .catch((e) => this.logger.error('audit hardDelete failed', e));
     return Result.ok();
   }
 
-  async assignManager(projectId: string, managerId: string) {
+  async assignManager(projectId: string, managerId: string, actorId?: string) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
@@ -257,10 +348,14 @@ export class ProjectsService {
     if (!manager || manager.role !== 'ProjectManager') {
       return Result.fail('L\'utilisateur sélectionné n\'est pas un chef de projet.');
     }
+    if (!manager.isActive) {
+      return Result.fail('Le chef de projet sélectionné est désactivé.');
+    }
 
     await this.prisma.project.update({ where: { id: projectId }, data: { projectManagerId: managerId } });
-    await this.logActivity(projectId, null, 'assign_manager', `Chef de projet assigné: ${manager.firstName} ${manager.lastName}`);
-    void this.audit.log('Project', projectId, 'ASSIGN', managerId, undefined, { manager: `${manager.firstName} ${manager.lastName}` });
+    await this.logActivity(projectId, actorId ?? null, 'assign_manager', `Chef de projet assigné: ${manager.firstName} ${manager.lastName}`);
+    void this.audit.log('Project', projectId, 'ASSIGN', actorId ?? managerId, undefined, { manager: `${manager.firstName} ${manager.lastName}` })
+      .catch((e) => this.logger.error('audit assignManager failed', e));
 
     await this.notifications.notify(
       managerId,
@@ -273,47 +368,63 @@ export class ProjectsService {
     return Result.ok();
   }
 
-  async updateStatus(projectId: string, status: string) {
+  async updateStatus(projectId: string, status: string, actorId?: string) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
     const gate = await this.phaseGate.canTransition(projectId, project.status, status);
     if (gate.isFailure) return Result.fail(gate.error ?? 'Transition refusée.');
 
-    await this.prisma.project.update({ where: { id: projectId }, data: { status } });
-    await this.logActivity(projectId, null, 'status_change', `Statut changé: ${project.status} → ${status}`);
-    void this.audit.log('Project', projectId, 'STATUS_CHANGE', undefined, { status: { before: project.status, after: status } });
-    void this.automation.executeRulesForEvent(projectId, 'status_changed', { newStatus: status, oldStatus: project.status });
+    // Stamp `currentPhaseEnteredAt` on every status change so the replay guard
+    // in `PhaseGateService.hasRequiredApprovals` can ignore approvals captured
+    // during earlier traversals of the same phase.
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { status, currentPhaseEnteredAt: new Date() },
+    });
+    await this.logActivity(projectId, actorId ?? null, 'status_change', `Statut changé: ${project.status} → ${status}`);
+    void this.audit.log('Project', projectId, 'STATUS_CHANGE', actorId, { status: { before: project.status, after: status } })
+      .catch((e) => this.logger.error('audit updateStatus failed', e));
+    void this.automation.executeRulesForEvent(projectId, 'status_changed', { newStatus: status, oldStatus: project.status })
+      .catch((e) => this.logger.error('automation updateStatus failed', e));
+    // Bust analytics cache — phase velocity, deadline risk, team workload all depend on project status.
+    void this.analyticsCache.invalidate();
     return Result.ok();
   }
 
-  async archive(projectId: string) {
-    return this.updateStatus(projectId, 'Archived');
+  async archive(projectId: string, actorId?: string) {
+    return this.updateStatus(projectId, 'Archived', actorId);
   }
 
   async addField(projectId: string, dto: any) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
-    const maxOrder = await this.prisma.projectField.aggregate({
-      where: { projectId },
-      _max: { orderIndex: true },
-    });
+    // Compute the next orderIndex INSIDE the transaction so two concurrent
+    // callers cannot both read the same max and emit duplicate positions.
+    const field = await this.prisma.$transaction(async (tx) => {
+      const maxOrder = await tx.projectField.aggregate({
+        where: { projectId },
+        _max: { orderIndex: true },
+      });
 
-    const field = await this.prisma.projectField.create({
-      data: {
-        projectId,
-        label: dto.label,
-        fieldType: dto.fieldType ?? 'Text',
-        isRequired: dto.isRequired ?? false,
-        options: dto.options ?? null,
-        fieldCategory: 'Custom',
-        orderIndex: (maxOrder._max.orderIndex ?? 0) + 1,
-      },
-    });
+      const created = await tx.projectField.create({
+        data: {
+          projectId,
+          label: dto.label,
+          fieldType: dto.fieldType ?? 'Text',
+          isRequired: dto.isRequired ?? false,
+          options: dto.options ?? null,
+          fieldCategory: 'Custom',
+          orderIndex: (maxOrder._max.orderIndex ?? 0) + 1,
+        },
+      });
 
-    await this.prisma.projectFieldValue.create({
-      data: { projectId, projectFieldId: field.id, value: null },
+      await tx.projectFieldValue.create({
+        data: { projectId, projectFieldId: created.id, value: null },
+      });
+
+      return created;
     });
 
     return Result.ok(field);
@@ -324,8 +435,16 @@ export class ProjectsService {
     if (!field) return Result.fail('Champ non trouvé.');
     if (field.fieldCategory === 'Static') return Result.fail('Les champs statiques ne peuvent pas être supprimés.');
 
-    await this.prisma.projectFieldValue.deleteMany({ where: { projectFieldId: fieldId } });
-    await this.prisma.projectField.delete({ where: { id: fieldId } });
+    await this.prisma.$transaction(async (tx) => {
+      // Values must go before the field (FK to ProjectField is NoAction).
+      await tx.projectFieldValue.deleteMany({ where: { projectFieldId: fieldId } });
+      // Best-effort cascade of any WorkPackageCustomValue rows that reference
+      // this field id. In practice `WorkPackageCustomValue.customFieldId`
+      // points at `WorkPackageCustomField`, not `ProjectField`; the
+      // deleteMany is a safety net and a no-op when ids do not collide.
+      await tx.workPackageCustomValue.deleteMany({ where: { customFieldId: fieldId } });
+      await tx.projectField.delete({ where: { id: fieldId } });
+    });
     return Result.ok();
   }
 
@@ -336,100 +455,252 @@ export class ProjectsService {
     return Result.ok();
   }
 
-  async duplicate(projectId: string, newName: string) {
+  async duplicate(projectId: string, newName: string, adminId?: string) {
     const source = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
       include: { fields: true, fieldValues: { include: { field: true } } },
     });
     if (!source) return Result.fail('Projet non trouvé.');
 
-    const dup = await this.prisma.project.create({
-      data: {
-        name: newName,
-        clientName: source.clientName,
-        startDate: source.startDate,
-        endDate: source.endDate,
-        createdByAdminId: source.createdByAdminId,
-        status: 'Draft',
-      },
+    const dupId = await this.prisma.$transaction(async (tx) => {
+      const dup = await tx.project.create({
+        data: {
+          name: newName,
+          clientName: source.clientName,
+          startDate: source.startDate,
+          endDate: source.endDate,
+          createdByAdminId: adminId ?? source.createdByAdminId,
+          status: 'Draft',
+          currentPhaseEnteredAt: new Date(),
+        },
+      });
+
+      for (const f of source.fields) {
+        const newField = await tx.projectField.create({
+          data: {
+            projectId: dup.id,
+            label: f.label,
+            fieldType: f.fieldType,
+            isRequired: f.isRequired,
+            defaultValue: f.defaultValue,
+            orderIndex: f.orderIndex,
+            fieldCategory: f.fieldCategory,
+            options: f.options,
+          },
+        });
+        const existingValue = source.fieldValues.find((v) => v.projectFieldId === f.id);
+        await tx.projectFieldValue.create({
+          data: {
+            projectId: dup.id,
+            projectFieldId: newField.id,
+            value: f.fieldCategory === 'Static' ? existingValue?.value ?? null : null,
+          },
+        });
+      }
+
+      return dup.id;
     });
 
-    for (const f of source.fields) {
-      const newField = await this.prisma.projectField.create({
-        data: {
-          projectId: dup.id,
-          label: f.label,
-          fieldType: f.fieldType,
-          isRequired: f.isRequired,
-          defaultValue: f.defaultValue,
-          orderIndex: f.orderIndex,
-          fieldCategory: f.fieldCategory,
-          options: f.options,
-        },
-      });
-      const existingValue = source.fieldValues.find((v) => v.projectFieldId === f.id);
-      await this.prisma.projectFieldValue.create({
-        data: {
-          projectId: dup.id,
-          projectFieldId: newField.id,
-          value: f.fieldCategory === 'Static' ? existingValue?.value ?? null : null,
-        },
-      });
+    return this.getById(dupId);
+  }
+
+  // ── Bulk operations ───────────────────────────────────────────────────────
+  //
+  // All three bulk endpoints:
+  //   • hard-cap the batch at BULK_MAX (500) items;
+  //   • filter out already soft-deleted projects;
+  //   • route through the per-row method that enforces the phase gate /
+  //     manager-role check and writes audit + activity entries per project.
+  //
+  // Returns per-row outcomes so the caller can surface partial failures.
+
+  private assertWithinBulkCap(ids: string[]): Result<void> {
+    if (!ids || ids.length === 0) return Result.fail('Aucun projet sélectionné.');
+    if (ids.length > BULK_MAX) {
+      return Result.fail(`Trop de projets (max ${BULK_MAX}).`);
+    }
+    return Result.ok();
+  }
+
+  private async filterBulkCandidates(ids: string[]): Promise<string[]> {
+    const alive = await this.prisma.project.findMany({
+      where: { id: { in: ids }, isDeleted: false },
+      select: { id: true },
+    });
+    return alive.map((p) => p.id);
+  }
+
+  async bulkArchive(ids: string[], actorId?: string) {
+    const guard = this.assertWithinBulkCap(ids);
+    if (guard.isFailure) return guard;
+
+    const candidates = await this.filterBulkCandidates(ids);
+    const results: { id: string; ok: boolean; error?: string }[] = [];
+
+    for (const id of candidates) {
+      const r = await this.archive(id, actorId);
+      results.push({ id, ok: r.isSuccess, error: r.error });
     }
 
-    return this.getById(dup.id);
+    return Result.ok({ attempted: candidates.length, results });
   }
 
-  async bulkArchive(ids: string[]) {
-    await this.prisma.project.updateMany({ where: { id: { in: ids } }, data: { status: 'Archived' } });
-    return Result.ok();
+  async bulkUpdateStatus(ids: string[], status: string, actorId?: string) {
+    const guard = this.assertWithinBulkCap(ids);
+    if (guard.isFailure) return guard;
+
+    const candidates = await this.filterBulkCandidates(ids);
+    const results: { id: string; ok: boolean; error?: string }[] = [];
+
+    for (const id of candidates) {
+      const r = await this.updateStatus(id, status, actorId);
+      results.push({ id, ok: r.isSuccess, error: r.error });
+    }
+
+    return Result.ok({ attempted: candidates.length, results });
   }
 
-  async bulkUpdateStatus(ids: string[], status: string) {
-    await this.prisma.project.updateMany({ where: { id: { in: ids } }, data: { status } });
-    return Result.ok();
+  async bulkAssignManager(ids: string[], managerId: string, actorId?: string) {
+    const guard = this.assertWithinBulkCap(ids);
+    if (guard.isFailure) return guard;
+
+    // Validate manager once for the whole batch to avoid N redundant lookups.
+    const manager = await this.prisma.appUser.findUnique({ where: { id: managerId } });
+    if (!manager || manager.role !== 'ProjectManager' || !manager.isActive) {
+      return Result.fail('Le chef de projet sélectionné est invalide ou désactivé.');
+    }
+
+    const candidates = await this.filterBulkCandidates(ids);
+    const results: { id: string; ok: boolean; error?: string }[] = [];
+
+    for (const id of candidates) {
+      const r = await this.assignManager(id, managerId, actorId);
+      results.push({ id, ok: r.isSuccess, error: r.error });
+    }
+
+    return Result.ok({ attempted: candidates.length, results });
   }
 
-  async bulkAssignManager(ids: string[], managerId: string) {
-    await this.prisma.project.updateMany({ where: { id: { in: ids } }, data: { projectManagerId: managerId } });
-    return Result.ok();
-  }
+  async getActivity(projectId: string, skip = 0, take = 50) {
+    const clampedTake = Math.min(Math.max(take, 1), 200);
+    const clampedSkip = Math.max(skip, 0);
 
-  async getActivity(projectId: string) {
-    const activities = await this.prisma.projectActivity.findMany({
-      where: { projectId },
-      include: { user: { select: { firstName: true, lastName: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return Result.ok(
-      activities.map((a) => ({
+    const [activities, total] = await Promise.all([
+      this.prisma.projectActivity.findMany({
+        where: { projectId },
+        include: { user: { select: { firstName: true, lastName: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: clampedSkip,
+        take: clampedTake,
+      }),
+      this.prisma.projectActivity.count({ where: { projectId } }),
+    ]);
+
+    return Result.ok({
+      items: activities.map((a) => ({
         id: a.id,
         userName: a.user ? `${a.user.firstName} ${a.user.lastName}` : null,
         action: a.action,
         detail: a.detail,
         createdAt: a.createdAt,
       })),
-    );
+      total,
+      skip: clampedSkip,
+      take: clampedTake,
+    });
   }
 
-  async saveFieldValues(projectId: string, fieldValues: { projectFieldId: string; value: string | null }[]) {
+  /**
+   * Save multiple field values atomically with per-field optimistic locking.
+   *
+   * Contract:
+   *   • Every row is written inside one `$transaction` — all writes land or
+   *     none do.
+   *   • If the caller passes `expectedUpdatedAt` for a field and the stored
+   *     row's `updatedAt` is strictly greater, the whole transaction is
+   *     aborted with a 409 conflict (`ConflictException` thrown from the
+   *     controller) so the client can refetch and merge.
+   *   • Every write sets `updatedBy = userId` and the DB auto-stamps
+   *     `updatedAt`, giving the collaboration module a real audit trail.
+   */
+  async saveFieldValues(
+    projectId: string,
+    userId: string,
+    fieldValues: FieldValueWrite[],
+  ) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
-    for (const fv of fieldValues) {
-      await this.prisma.projectFieldValue.upsert({
-        where: { projectId_projectFieldId: { projectId, projectFieldId: fv.projectFieldId } },
-        update: { value: fv.value },
-        create: { projectId, projectFieldId: fv.projectFieldId, value: fv.value },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const fv of fieldValues) {
+          if (fv.expectedUpdatedAt) {
+            const existing = await tx.projectFieldValue.findUnique({
+              where: { projectId_projectFieldId: { projectId, projectFieldId: fv.projectFieldId } },
+              select: { updatedAt: true },
+            });
+            if (existing?.updatedAt && new Date(fv.expectedUpdatedAt).getTime() < existing.updatedAt.getTime()) {
+              throw new ConflictException(
+                `Le champ ${fv.projectFieldId} a été modifié par un autre utilisateur. Veuillez rafraîchir.`,
+              );
+            }
+          }
+
+          await tx.projectFieldValue.upsert({
+            where: { projectId_projectFieldId: { projectId, projectFieldId: fv.projectFieldId } },
+            update: { value: fv.value, updatedBy: userId },
+            create: { projectId, projectFieldId: fv.projectFieldId, value: fv.value, updatedBy: userId },
+          });
+        }
       });
+    } catch (e) {
+      if (e instanceof ConflictException) throw e;
+      this.logger.error('saveFieldValues transaction failed', e as Error);
+      return Result.fail('Erreur lors de la sauvegarde des champs.');
     }
+
     return Result.ok();
   }
 
-  async submitValidation(projectId: string, userId: string, userRole: string, dto: any) {
+  /**
+   * Resolve the validating user's effective role for a given project.
+   *
+   * Precedence:
+   *   1. A `UserRoleAssignment` scoped to THIS project (most specific)
+   *   2. A global `UserRoleAssignment` (projectId = NULL)
+   *   3. The legacy `AppUser.role` column, re-read from the DB (NEVER trust
+   *      the JWT claim — a compromised / stale token must not let a caller
+   *      pick their own `validatedByRole`)
+   */
+  private async resolveValidatorRole(userId: string, projectId: string): Promise<string | null> {
+    const scoped = await this.prisma.userRoleAssignment.findFirst({
+      where: { userId, projectId },
+      include: { role: { select: { name: true } } },
+    });
+    if (scoped?.role?.name) return scoped.role.name;
+
+    const global = await this.prisma.userRoleAssignment.findFirst({
+      where: { userId, projectId: null },
+      include: { role: { select: { name: true } } },
+    });
+    if (global?.role?.name) return global.role.name;
+
+    const user = await this.prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role ?? null;
+  }
+
+  async submitValidation(projectId: string, userId: string, _ignoredJwtRole: string, dto: any) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
+
+    // Derive the validating role from the user's role assignment for THIS
+    // project (falling back to global / AppUser.role) — NEVER from the JWT,
+    // which the client controls.
+    const resolvedRole = await this.resolveValidatorRole(userId, projectId);
+    if (!resolvedRole) return Result.fail('Impossible de déterminer votre rôle pour ce projet.');
 
     const duplicate = await this.prisma.projectValidation.findFirst({
       where: { projectId, validatedByUserId: userId, phase: project.status },
@@ -440,7 +711,7 @@ export class ProjectsService {
       data: {
         projectId,
         validatedByUserId: userId,
-        validatedByRole: userRole,
+        validatedByRole: resolvedRole,
         phase: project.status,
         isApproved: dto.isApproved,
         comment: dto.comment ?? null,
@@ -452,7 +723,7 @@ export class ProjectsService {
     void this.automation.executeRulesForEvent(projectId, 'validation_submitted', {
       phase: validation.phase,
       isApproved: validation.isApproved,
-    });
+    }).catch((e) => this.logger.error('automation validation_submitted failed', e));
 
     return Result.ok({
       id: validation.id,
@@ -525,6 +796,7 @@ export class ProjectsService {
       })) ?? [],
       fieldValues: p.fieldValues?.map((v: any) => ({
         projectFieldId: v.projectFieldId, label: v.field?.label ?? '', value: v.value,
+        updatedAt: v.updatedAt, updatedBy: v.updatedBy,
       })) ?? [],
     };
   }

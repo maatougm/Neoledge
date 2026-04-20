@@ -3,6 +3,19 @@
 // Brand color: #0d9488 (NeoLeadge teal)
 
 const BRAND_COLOR = '#0d9488';
+
+/**
+ * Escape user-supplied strings before embedding in HTML email templates.
+ * Prevents XSS via crafted project names, user names, or comment previews.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 const BORDER_RADIUS = '6px';
 
 function baseLayout(title: string, bodyContent: string): string {
@@ -65,18 +78,20 @@ function divider(): string {
 // ─── Template functions ───────────────────────────────────────────────────────
 
 export function projectAssignedEmail(projectName: string, managerName: string): string {
+  const safeProjectName = escapeHtml(projectName);
+  const safeManagerName = escapeHtml(managerName);
   const body = `
     ${heading('Vous avez été assigné(e) à un projet')}
-    ${paragraph(`Bonjour <strong>${managerName}</strong>,`)}
+    ${paragraph(`Bonjour <strong>${safeManagerName}</strong>,`)}
     ${paragraph(`Vous avez été désigné(e) comme chef de projet pour :`)}
     <div style="background-color:#f0fdfa;border-left:4px solid ${BRAND_COLOR};padding:16px;margin:16px 0;border-radius:0 ${BORDER_RADIUS} ${BORDER_RADIUS} 0;">
-      <p style="margin:0;font-size:16px;font-weight:600;color:#0f766e;">${projectName}</p>
+      <p style="margin:0;font-size:16px;font-weight:600;color:#0f766e;">${safeProjectName}</p>
     </div>
     ${paragraph('Connectez-vous à NeoLeadge pour consulter les détails du projet et commencer la gestion.')}
     ${divider()}
     ${paragraph('<span style="font-size:13px;color:#6b7280;">Si vous pensez avoir reçu cet email par erreur, contactez votre administrateur.</span>')}
   `;
-  return baseLayout(`Assignation au projet — ${projectName}`, body);
+  return baseLayout(`Assignation au projet — ${safeProjectName}`, body);
 }
 
 export function statusChangedEmail(
@@ -84,21 +99,24 @@ export function statusChangedEmail(
   oldStatus: string,
   newStatus: string,
 ): string {
+  const safeProjectName = escapeHtml(projectName);
+  const safeOldStatus = escapeHtml(oldStatus);
+  const safeNewStatus = escapeHtml(newStatus);
   const body = `
     ${heading('Statut de projet mis à jour')}
-    ${paragraph(`Le statut du projet <strong>${projectName}</strong> vient d'être modifié.`)}
+    ${paragraph(`Le statut du projet <strong>${safeProjectName}</strong> vient d'être modifié.`)}
     <table cellpadding="0" cellspacing="0" style="margin:16px 0;">
       <tr>
-        <td style="padding-right:12px;">${badge(oldStatus, '#6b7280')}</td>
+        <td style="padding-right:12px;">${badge(safeOldStatus, '#6b7280')}</td>
         <td style="padding-right:12px;font-size:18px;color:#9ca3af;">→</td>
-        <td>${badge(newStatus)}</td>
+        <td>${badge(safeNewStatus)}</td>
       </tr>
     </table>
     ${paragraph('Connectez-vous à NeoLeadge pour consulter l\'avancement du projet.')}
     ${divider()}
     ${paragraph('<span style="font-size:13px;color:#6b7280;">Vous recevez cet email car vous êtes impliqué(e) dans ce projet.</span>')}
   `;
-  return baseLayout(`Mise à jour du projet — ${projectName}`, body);
+  return baseLayout(`Mise à jour du projet — ${safeProjectName}`, body);
 }
 
 export function deadlineWarningEmail(
@@ -106,6 +124,8 @@ export function deadlineWarningEmail(
   daysLeft: number,
   endDate: string,
 ): string {
+  const safeProjectName = escapeHtml(projectName);
+  const safeEndDate = escapeHtml(endDate);
   const isCritical = daysLeft < 2;
   const alertColor = isCritical ? '#dc2626' : '#d97706';
   const alertLabel = isCritical ? 'ÉCHÉANCE CRITIQUE' : 'RAPPEL D\'ÉCHÉANCE';
@@ -114,14 +134,14 @@ export function deadlineWarningEmail(
     ${heading('Rappel d\'échéance de projet')}
     <div style="background-color:${isCritical ? '#fef2f2' : '#fffbeb'};border:1px solid ${alertColor};border-radius:${BORDER_RADIUS};padding:16px;margin-bottom:16px;">
       <p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:${alertColor};text-transform:uppercase;letter-spacing:0.5px;">${alertLabel}</p>
-      <p style="margin:0;font-size:15px;color:#111827;">Le projet <strong>${projectName}</strong> expire ${isCritical ? 'dans moins de 2 jours' : `dans <strong>${daysLeft} jours</strong>`}.</p>
+      <p style="margin:0;font-size:15px;color:#111827;">Le projet <strong>${safeProjectName}</strong> expire ${isCritical ? 'dans moins de 2 jours' : `dans <strong>${daysLeft} jours</strong>`}.</p>
     </div>
-    ${paragraph(`<strong>Date d'échéance :</strong> ${endDate}`)}
+    ${paragraph(`<strong>Date d'échéance :</strong> ${safeEndDate}`)}
     ${paragraph('Connectez-vous à NeoLeadge pour vérifier l\'état du projet et prendre les mesures nécessaires.')}
     ${divider()}
     ${paragraph('<span style="font-size:13px;color:#6b7280;">Vous recevez ce rappel automatique en tant que chef de projet ou administrateur.</span>')}
   `;
-  return baseLayout(`Échéance — ${projectName}`, body);
+  return baseLayout(`Échéance — ${safeProjectName}`, body);
 }
 
 export function phaseValidationEmail(
@@ -129,19 +149,22 @@ export function phaseValidationEmail(
   phase: string,
   approvedBy: string,
 ): string {
+  const safeProjectName = escapeHtml(projectName);
+  const safePhase = escapeHtml(phase);
+  const safeApprovedBy = escapeHtml(approvedBy);
   const body = `
     ${heading('Phase de projet validée')}
-    ${paragraph(`Une phase du projet <strong>${projectName}</strong> a été validée.`)}
+    ${paragraph(`Une phase du projet <strong>${safeProjectName}</strong> a été validée.`)}
     <div style="background-color:#f0fdfa;border-left:4px solid ${BRAND_COLOR};padding:16px;margin:16px 0;border-radius:0 ${BORDER_RADIUS} ${BORDER_RADIUS} 0;">
       <p style="margin:0 0 4px 0;font-size:13px;color:#6b7280;font-weight:600;text-transform:uppercase;">Phase validée</p>
-      <p style="margin:0;font-size:16px;font-weight:600;color:#0f766e;">${phase}</p>
+      <p style="margin:0;font-size:16px;font-weight:600;color:#0f766e;">${safePhase}</p>
     </div>
-    ${paragraph(`Validé par : <strong>${approvedBy}</strong>`)}
+    ${paragraph(`Validé par : <strong>${safeApprovedBy}</strong>`)}
     ${paragraph('Consultez NeoLeadge pour voir les prochaines étapes du projet.')}
     ${divider()}
     ${paragraph('<span style="font-size:13px;color:#6b7280;">Vous recevez cet email car vous êtes impliqué(e) dans ce projet.</span>')}
   `;
-  return baseLayout(`Phase validée — ${projectName}`, body);
+  return baseLayout(`Phase validée — ${safeProjectName}`, body);
 }
 
 export function commentMentionEmail(
@@ -149,29 +172,32 @@ export function commentMentionEmail(
   commenterName: string,
   commentPreview: string,
 ): string {
-  const preview =
-    commentPreview.length > 200 ? `${commentPreview.slice(0, 200)}…` : commentPreview;
+  const safeProjectName = escapeHtml(projectName);
+  const safeCommenterName = escapeHtml(commenterName);
+  const rawPreview = commentPreview.length > 200 ? `${commentPreview.slice(0, 200)}…` : commentPreview;
+  const safePreview = escapeHtml(rawPreview);
 
   const body = `
     ${heading('Vous avez été mentionné(e) dans un commentaire')}
-    ${paragraph(`<strong>${commenterName}</strong> vous a mentionné(e) dans un commentaire sur le projet <strong>${projectName}</strong> :`)}
+    ${paragraph(`<strong>${safeCommenterName}</strong> vous a mentionné(e) dans un commentaire sur le projet <strong>${safeProjectName}</strong> :`)}
     <blockquote style="margin:16px 0;padding:16px;background-color:#f9fafb;border-left:4px solid #d1d5db;border-radius:0 ${BORDER_RADIUS} ${BORDER_RADIUS} 0;font-size:14px;color:#374151;font-style:italic;">
-      "${preview}"
+      "${safePreview}"
     </blockquote>
     ${paragraph('Connectez-vous à NeoLeadge pour répondre au commentaire.')}
     ${divider()}
     ${paragraph('<span style="font-size:13px;color:#6b7280;">Si vous pensez avoir reçu cet email par erreur, contactez votre administrateur.</span>')}
   `;
-  return baseLayout(`Mention dans ${projectName}`, body);
+  return baseLayout(`Mention dans ${safeProjectName}`, body);
 }
 
 export function passwordResetEmail(tempPassword: string): string {
+  const safeTempPassword = escapeHtml(tempPassword);
   const body = `
     ${heading('Réinitialisation de votre mot de passe')}
     ${paragraph('Votre mot de passe NeoLeadge a été réinitialisé par un administrateur.')}
     ${paragraph('Voici votre mot de passe temporaire :')}
     <div style="background-color:#f3f4f6;border:1px solid #e5e7eb;border-radius:${BORDER_RADIUS};padding:16px;margin:16px 0;text-align:center;">
-      <code style="font-size:22px;font-weight:700;color:#111827;letter-spacing:2px;font-family:monospace;">${tempPassword}</code>
+      <code style="font-size:22px;font-weight:700;color:#111827;letter-spacing:2px;font-family:monospace;">${safeTempPassword}</code>
     </div>
     ${paragraph('Utilisez ce mot de passe temporaire pour vous connecter, puis <strong>changez-le immédiatement</strong> dans les paramètres de votre compte.')}
     ${divider()}

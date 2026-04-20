@@ -37,6 +37,15 @@ import { PrismaService } from './prisma.service.js';
         }
 
         await client.$connect();
+
+        // TODO(soft-delete-middleware): Prisma 7 with driver adapters uses $extends for
+        // query interception instead of the removed $use API. However, $extends returns a
+        // new extended type that is incompatible with `PrismaService extends PrismaClient`,
+        // requiring a full type-cast refactor across all services.  Deferred to a dedicated
+        // refactor ticket.  In the meantime, every service/controller that performs reads on
+        // soft-deletable models (WorkPackage, Project, ProjectComment, WikiPage, etc.) adds
+        // `isDeleted: false` to its `where` clause explicitly — see audit in docs/qa/.
+
         return client as PrismaService;
       },
     },

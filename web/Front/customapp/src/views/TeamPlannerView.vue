@@ -88,12 +88,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NeoButton, NeoDatePicker, NeoTag } from '@neolibrary/components'
+import { NeoButton, NeoDatePicker, NeoTag, useNeoToast } from '@neolibrary/components'
 import ModulePageHeader from '@/components/common/ModulePageHeader.vue'
 import { useTeamPlannerStore } from '@/stores/teamPlannerStore'
 import { formatDateShort } from '@/lib/formatDate'
 
 const store = useTeamPlannerStore()
+const toast = useNeoToast()
 
 const tabs = ['Capacité', 'Assignations', 'Conflits'] as const
 const activeTab = ref<(typeof tabs)[number]>('Capacité')
@@ -117,6 +118,10 @@ function fillClass(pct: number): string {
 
 async function load() {
   if (!fromDate.value || !toDate.value) return
+  if (fromDate.value > toDate.value) {
+    toast.add({ severity: 'warn', detail: 'La date de début doit être antérieure à la date de fin.', life: 3000 })
+    return
+  }
   await Promise.all([
     store.fetchCapacity(fromDate.value, toDate.value),
     store.fetchAssignments(fromDate.value, toDate.value),

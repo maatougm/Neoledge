@@ -26,9 +26,10 @@ export class SystemStatusService {
       await Promise.all([
         this.prisma.appUser.count(),
         this.prisma.appUser.count({ where: { isActive: true } }),
-        this.prisma.project.count(),
+        this.prisma.project.count({ where: { isDeleted: false } }),
         this.prisma.project.groupBy({
           by: ['status'],
+          where: { isDeleted: false },
           _count: { _all: true },
         }),
       ]);

@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { NeoButton, NeoSelect, NeoTag, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import { formatDateShort as formatDate } from '@/lib/formatDate'
@@ -154,6 +154,7 @@ onMounted(async () => {
   await load()
   await loadBurndown()
 })
+onUnmounted(() => { chartInstance?.destroy(); chartInstance = null })
 </script>
 
 <style scoped>

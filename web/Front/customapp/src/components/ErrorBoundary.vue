@@ -16,8 +16,9 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
 
-const error = ref<Error | null>(null)
+const emit = defineEmits<{ retry: [] }>()
 
+const error = ref<Error | null>(null)
 const errorMessage = ref('')
 
 onErrorCaptured((err: Error) => {
@@ -26,8 +27,14 @@ onErrorCaptured((err: Error) => {
   return false
 })
 
+/**
+ * Clear the error to re-render the slot, then notify the parent so it can
+ * refresh its store / data if needed. No full page reload (#26).
+ */
 const handleRetry = () => {
-  window.location.reload()
+  error.value = null
+  errorMessage.value = ''
+  emit('retry')
 }
 </script>
 

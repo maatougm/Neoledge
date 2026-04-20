@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import { useConfigStore } from './configStore'
+import { fireLogout } from './logoutBus'
 import { getUserRole, getUserFullName, getUserInitials, getUserId, isTokenExpired } from '@/lib/jwt'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -12,10 +13,19 @@ const STORAGE_KEY = 'nl_jwt'
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+interface MeResponse {
+  user: { id: string; email: string; firstName: string; lastName: string; role: string }
+  permissions: { global: string[]; perProject: Record<string, string[]> }
+  roles: { id: string; name: string; projectId: string | null }[]
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const jwt = ref<string>('')
   const mustChangePassword = ref<boolean>(false)
+  const globalPermissions = ref<Set<string>>(new Set())
+  const projectPermissions = ref<Map<string, Set<string>>>(new Map())
+  const assignedRoles = ref<MeResponse['roles']>([])
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -36,6 +46,19 @@ export const useAuthStore = defineStore('auth', () => {
   const userId = computed<string | null>(() =>
     jwt.value ? getUserId(jwt.value) : null,
   )
+
+  /**
+   * Check whether the current user holds a permission. If `projectId` is
+   * provided, per-project permissions also count; otherwise only global ones.
+   */
+  const can = (permissionKey: string, projectId?: string | null): boolean => {
+    if (globalPermissions.value.has(permissionKey)) return true
+    if (projectId) {
+      const bucket = projectPermissions.value.get(projectId)
+      if (bucket?.has(permissionKey)) return true
+    }
+    return false
+  }
 
   // ── Internal helpers ───────────────────────────────────────────────────────
 
@@ -139,7 +162,50 @@ export const useAuthStore = defineStore('auth', () => {
   const clear = (): void => {
     jwt.value = ''
     mustChangePassword.value = false
+    globalPermissions.value = new Set()
+    projectPermissions.value = new Map()
+    assignedRoles.value = []
     _clearStorage()
+    // Notify every store that registered on the logout bus so they can reset
+    // their per-user state and tear down any polling timers.
+    fireLogout()
+    // Also emit a CustomEvent so any non-store listener (composables, tests,
+    // or ad-hoc subscribers) can react to logout without importing logoutBus.
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('auth:logout'))
+      } catch {
+        // Swallow — older browsers / JSDOM edge cases should not block logout.
+      }
+    }
+  }
+
+  /**
+   * Fetch the live permission set for the current JWT. Call after login and
+   * on app bootstrap. 401 means the token was invalidated (e.g. role change)
+   * and the user should be redirected to /login.
+   */
+  const fetchMe = async (): Promise<MeResponse | null> => {
+    if (!jwt.value) return null
+    const config = useConfigStore()
+    try {
+      const response = await axios.get<MeResponse>(config.apiUrl + '/auth/me', {
+        headers: { Authorization: `Bearer ${jwt.value}` },
+      })
+      globalPermissions.value = new Set(response.data.permissions.global)
+      const perProject = new Map<string, Set<string>>()
+      for (const [pid, keys] of Object.entries(response.data.permissions.perProject)) {
+        perProject.set(pid, new Set(keys))
+      }
+      projectPermissions.value = perProject
+      assignedRoles.value = response.data.roles
+      return response.data
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        clear()
+      }
+      return null
+    }
   }
 
   return {
@@ -152,6 +218,10 @@ export const useAuthStore = defineStore('auth', () => {
     userFullName,
     userInitials,
     userId,
+    globalPermissions,
+    projectPermissions,
+    assignedRoles,
+    can,
     // Actions
     init,
     login,
@@ -159,5 +229,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     setJwt,
     clear,
+    fetchMe,
   }
 })

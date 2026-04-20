@@ -4,6 +4,7 @@ import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { AutomationService } from '../automation/automation.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
+import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 
 export interface WorkPackageFilters {
   status?: string;
@@ -28,6 +29,7 @@ export class WorkPackagesService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly automation: AutomationService,
+    private readonly analyticsCache: AnalyticsCacheService,
   ) {}
 
   /** Log an entry to ProjectActivity. Fire-and-forget. */
@@ -49,6 +51,8 @@ export class WorkPackagesService {
     title: string,
     message: string,
     projectId: string,
+    /** Optional userId to exclude — used to avoid double-notifying when assignee & status both changed. */
+    excludeUserId?: string,
   ): Promise<void> {
     try {
       const watchers = await this.prisma.workPackageWatcher.findMany({
@@ -62,6 +66,8 @@ export class WorkPackagesService {
       const userIds = new Set<string>();
       if (wp?.assigneeId && wp.assigneeId !== actorId) userIds.add(wp.assigneeId);
       for (const w of watchers) userIds.add(w.userId);
+      // Remove the explicitly excluded user (already notified via assignee path).
+      if (excludeUserId) userIds.delete(excludeUserId);
 
       for (const userId of userIds) {
         void this.notifications.notifyEnhanced({
@@ -75,7 +81,7 @@ export class WorkPackagesService {
           entityId: wpId,
           actorId,
           link: `/app/pm/projects/${projectId}/workpackages`,
-        });
+        }).catch((e) => this.logger.error('notifyEnhanced (wp watchers) failed', e));
       }
     } catch {
       // Never break the caller.
@@ -149,32 +155,29 @@ export class WorkPackagesService {
   }
 
   async findOne(id: string, projectId: string) {
-    try {
-      const wp = await this.prisma.workPackage.findFirst({
-        where: { id, projectId, isDeleted: false },
-        include: {
-          assignee: { select: USER_SELECT },
-          author: { select: USER_SELECT },
-          parent: { select: { id: true, title: true } },
-          children: {
-            where: { isDeleted: false },
-            select: { id: true, title: true, status: true, type: true, assigneeId: true, percentDone: true },
-            orderBy: { position: 'asc' },
-          },
-          watchers: { include: { user: { select: USER_SELECT } } },
-          dependenciesOut: { include: { toWp: { select: { id: true, title: true, status: true } } } },
-          dependenciesIn: { include: { fromWp: { select: { id: true, title: true, status: true } } } },
-          customValues: { include: { customField: true } },
-          sprint: { select: { id: true, name: true, status: true } },
-          version: { select: { id: true, name: true, status: true } },
+    // Let DB errors propagate to the global exception filter — only handle the
+    // explicit not-found case here so callers get a clean 404.
+    const wp = await this.prisma.workPackage.findFirst({
+      where: { id, projectId, isDeleted: false },
+      include: {
+        assignee: { select: USER_SELECT },
+        author: { select: USER_SELECT },
+        parent: { select: { id: true, title: true } },
+        children: {
+          where: { isDeleted: false },
+          select: { id: true, title: true, status: true, type: true, assigneeId: true, percentDone: true },
+          orderBy: { position: 'asc' },
         },
-      });
-      if (!wp) return Result.fail('Work package introuvable.');
-      return Result.ok(wp);
-    } catch (e) {
-      this.logger.error('findOne failed', e);
-      return Result.fail('Échec du chargement du work package.');
-    }
+        watchers: { include: { user: { select: USER_SELECT } } },
+        dependenciesOut: { include: { toWp: { select: { id: true, title: true, status: true } } } },
+        dependenciesIn: { include: { fromWp: { select: { id: true, title: true, status: true } } } },
+        customValues: { include: { customField: true } },
+        sprint: { select: { id: true, name: true, status: true } },
+        version: { select: { id: true, name: true, status: true } },
+      },
+    });
+    if (!wp) return Result.fail('Work package introuvable.');
+    return Result.ok(wp);
   }
 
   async create(projectId: string, dto: CreateWorkPackageDto, authorId: string) {
@@ -221,12 +224,13 @@ export class WorkPackagesService {
           entityId: wp.id,
           actorId: authorId,
           link: `/app/pm/projects/${projectId}/workpackages`,
-        });
+        }).catch((e) => this.logger.error('notifyEnhanced (wp assignee create) failed', e));
       }
       void this.logActivity(projectId, authorId, 'work_package_created', `WP "${wp.title}" créé`);
       void this.automation.executeRulesForEvent(projectId, 'work_package_created', {
         workPackageId: wp.id, title: wp.title, type: wp.type, status: wp.status, assigneeId: wp.assigneeId,
-      });
+      }).catch((e) => this.logger.error('automation work_package_created failed', e));
+      void this.analyticsCache.invalidate('team_workload');
       return Result.ok(wp);
     } catch (e) {
       this.logger.error('create failed', e);
@@ -256,14 +260,23 @@ export class WorkPackagesService {
         },
       });
 
-      // Notification hooks (fire-and-forget, never throws)
+      // Notification hooks (fire-and-forget, never throws).
+      // De-dup rule: when both assignee and status change in the same PATCH, the
+      // new assignee receives a single "Assignee" notification; the status-change
+      // watcher blast explicitly skips that user to avoid double-notifying.
       if (actorId) {
         const newAssignee = dto.assigneeId;
-        if (newAssignee !== undefined && newAssignee !== existing.assigneeId && newAssignee) {
+        const assigneeChanged =
+          newAssignee !== undefined && newAssignee !== existing.assigneeId && !!newAssignee;
+        const statusChanged = dto.status !== undefined && dto.status !== existing.status;
+
+        if (assigneeChanged) {
           void this.notifications.notifyEnhanced({
-            userId: newAssignee,
+            userId: newAssignee as string,
             type: 'work_package_assigned',
-            title: 'Tâche réassignée',
+            title: statusChanged
+              ? `Tâche réassignée — statut : ${dto.status}`
+              : 'Tâche réassignée',
             message: `"${wp.title}" vous a été assigné`,
             projectId,
             reason: 'Assignee',
@@ -271,9 +284,12 @@ export class WorkPackagesService {
             entityId: id,
             actorId,
             link: `/app/pm/projects/${projectId}/workpackages`,
-          });
+          }).catch((e) => this.logger.error('notifyEnhanced (wp reassign) failed', e));
         }
-        if (dto.status !== undefined && dto.status !== existing.status) {
+
+        if (statusChanged) {
+          // Pass the newly-assigned user as an exclusion so they don't receive a
+          // second notification from the watcher blast.
           void this.notifyWatchersAndAssignee(
             id,
             actorId,
@@ -281,11 +297,13 @@ export class WorkPackagesService {
             'Statut mis à jour',
             `"${wp.title}" → ${dto.status}`,
             projectId,
+            assigneeChanged ? (newAssignee as string) : undefined,
           );
           void this.logActivity(projectId, actorId, 'work_package_status_changed', `"${wp.title}" : ${existing.status} → ${dto.status}`);
           void this.automation.executeRulesForEvent(projectId, 'work_package_status_changed', {
             workPackageId: id, title: wp.title, fromStatus: existing.status, toStatus: dto.status,
-          });
+          }).catch((e) => this.logger.error('automation work_package_status_changed failed', e));
+          void this.analyticsCache.invalidate('team_workload');
         }
       }
 
@@ -301,6 +319,7 @@ export class WorkPackagesService {
       const existing = await this.prisma.workPackage.findFirst({ where: { id, projectId, isDeleted: false } });
       if (!existing) return Result.fail<void>('Work package introuvable.');
       await this.prisma.workPackage.update({ where: { id }, data: { isDeleted: true } });
+      void this.analyticsCache.invalidate('team_workload');
       return Result.ok<void>();
     } catch (e) {
       this.logger.error('softDelete failed', e);

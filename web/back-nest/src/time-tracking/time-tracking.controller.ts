@@ -1,9 +1,11 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { TimeTrackingService } from './time-tracking.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -55,19 +57,26 @@ export class TimeEntriesController {
   }
 
   @Get('week')
-  async getWeek(@CurrentUser() user: AuthUser, @Query('weekStart') weekStart: string) {
+  async getWeek(
+    @CurrentUser() user: AuthUser,
+    @Query('weekStart') weekStart: string,
+    @Query('timezone') timezone?: string,
+  ) {
     if (!weekStart) throw new BadRequestException('weekStart requis.');
-    const r = await this.service.getWeeklyGrid(user.userId, weekStart);
+    // [Fix-3] Forward optional timezone (defaults to Europe/Paris in service).
+    const r = await this.service.getWeeklyGrid(user.userId, weekStart, timezone);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Post('lock')
+  @UseGuards(RolesGuard)
+  @Roles('Admin')
   async lock(
-    @CurrentUser() user: AuthUser,
     @Body() body: { from: string; to: string; userId?: string },
   ) {
-    if (user.role !== 'Admin') throw new BadRequestException('Admin requis.');
+    // [Fix-6] Role check moved to RolesGuard + @Roles decorator so the guard
+    // is honoured by internal callers too and returns 403 (not 400) for non-Admin.
     const r = await this.service.lockPeriod(body.from, body.to, body.userId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
@@ -75,7 +84,8 @@ export class TimeEntriesController {
 }
 
 @Controller('pm/projects/:projectId/time-entries')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class ProjectTimeEntriesController {
   constructor(private readonly service: TimeTrackingService) {}
 

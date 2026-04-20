@@ -6,7 +6,9 @@
  * @desc     TypeScript types mirroring the backend AppUser DTOs
  */
 
-export type UserRole =
+// Known built-in roles. The backend may also return custom role names —
+// always use `getUserRoleLabel()` for display instead of indexing directly.
+export type KnownUserRole =
   | 'Admin'
   | 'ProjectManager'
   | 'SpecificationTeam'
@@ -14,7 +16,10 @@ export type UserRole =
   | 'DeploymentTeam'
   | 'Viewer'
 
-export const USER_ROLE_LABELS: Record<UserRole, string> = {
+// Widened to accept custom roles returned by /auth/me without casting.
+export type UserRole = KnownUserRole | (string & {})
+
+const BUILT_IN_ROLE_LABELS: Record<KnownUserRole, string> = {
   Admin: 'Administrateur',
   ProjectManager: 'Chef de projet',
   SpecificationTeam: 'Équipe spécification',
@@ -23,7 +28,15 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   Viewer: 'Lecteur',
 }
 
-export const USER_ROLE_OPTIONS = (Object.entries(USER_ROLE_LABELS) as [UserRole, string][]).map(
+/** @deprecated Use `getUserRoleLabel(role)` instead of indexing `USER_ROLE_LABELS` directly — custom roles are not in this map. */
+export const USER_ROLE_LABELS: Record<string, string | undefined> = BUILT_IN_ROLE_LABELS
+
+/** Returns a human-readable label for a role, falling back to the raw value for custom roles. */
+export function getUserRoleLabel(role: string): string {
+  return BUILT_IN_ROLE_LABELS[role as KnownUserRole] ?? role
+}
+
+export const USER_ROLE_OPTIONS = (Object.entries(BUILT_IN_ROLE_LABELS) as [KnownUserRole, string][]).map(
   ([value, label]) => ({ value, label }),
 )
 

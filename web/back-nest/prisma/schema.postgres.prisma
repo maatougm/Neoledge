@@ -52,8 +52,6 @@ model AppUser {
   checkedItems     PhaseChecklist[]
 
   auditLogs    AuditLog[]
-  portalTokens PortalToken[]
-
   // Sprint 0+ back-relations (work packages, time, wiki, etc.)
   wpAssignments      WorkPackage[]        @relation("WpAssignee")
   wpAuthored         WorkPackage[]        @relation("WpAuthor")
@@ -107,7 +105,6 @@ model Project {
   transcripts    MeetingTranscript[]
   notifications  Notification[]
   checklists      PhaseChecklist[]
-  portalTokens    PortalToken[]
   automationRules AutomationRule[]
 
   // Sprint 0+ back-relations
@@ -397,43 +394,6 @@ model PhaseChecklist {
 
   @@index([projectId, phase])
   @@map("PhaseChecklists")
-}
-
-model PortalToken {
-  id             String    @id @default(uuid())
-  projectId      String
-  token          String    @unique @db.VarChar(64)
-  createdById    String
-  label          String?   @db.VarChar(200)
-  expiresAt      DateTime
-  isRevoked      Boolean   @default(false)
-  lastAccessedAt DateTime?
-  accessCount    Int       @default(0)
-  createdAt      DateTime  @default(now())
-
-  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy AppUser         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  signoffs  PortalSignoff[]
-
-  @@index([token])
-  @@index([projectId])
-  @@map("PortalTokens")
-}
-
-model PortalSignoff {
-  id            String   @id @default(uuid())
-  portalTokenId String
-  clientName    String   @db.VarChar(200)
-  clientEmail   String?  @db.VarChar(256)
-  comment       String?  @db.Text
-  isApproved    Boolean
-  signedAt      DateTime @default(now())
-  ipAddress     String?  @db.VarChar(45)
-
-  portalToken PortalToken @relation(fields: [portalTokenId], references: [id], onDelete: Cascade)
-
-  @@index([portalTokenId])
-  @@map("PortalSignoffs")
 }
 
 model AuditLog {

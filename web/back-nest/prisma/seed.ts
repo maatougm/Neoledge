@@ -286,18 +286,18 @@ async function main() {
 
   // ─── Activities ────────────────────────────────────────────────────────────
   const activities = [
-    { projectId: ID.p1, userId: R.admin,   action: 'CREATE',        detail: 'Projet créé' },
-    { projectId: ID.p1, userId: R.admin,   action: 'ASSIGN',        detail: 'Chef de projet assigné : Luca Martin' },
-    { projectId: ID.p1, userId: R.pm1,     action: 'STATUS_CHANGE', detail: 'Statut → InProgress' },
-    { projectId: ID.p2, userId: R.admin,   action: 'CREATE',        detail: 'Projet créé' },
-    { projectId: ID.p2, userId: R.pm1,     action: 'STATUS_CHANGE', detail: 'Statut → SpecificationValidation' },
-    { projectId: ID.p2, userId: R.spec1,   action: 'VALIDATE',      detail: 'Validation spécifications soumise' },
-    { projectId: ID.p3, userId: R.admin,   action: 'CREATE',        detail: 'Projet créé' },
-    { projectId: ID.p3, userId: R.pm2,     action: 'STATUS_CHANGE', detail: 'Statut → Realization' },
-    { projectId: ID.p4, userId: R.admin,   action: 'CREATE',        detail: 'Projet créé' },
-    { projectId: ID.p4, userId: R.pm2,     action: 'STATUS_CHANGE', detail: 'Statut → DeploymentValidation' },
-    { projectId: ID.p5, userId: R.pm1,     action: 'STATUS_CHANGE', detail: 'Statut → Completed' },
-    { projectId: ID.p6, userId: R.admin,   action: 'CREATE',        detail: 'Projet créé' },
+    { projectId: ID.p1, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
+    { projectId: ID.p1, userId: R.admin,   action: 'assign',        detail: 'Chef de projet assigné : Luca Martin' },
+    { projectId: ID.p1, userId: R.pm1,     action: 'status_change', detail: 'Statut → InProgress' },
+    { projectId: ID.p2, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
+    { projectId: ID.p2, userId: R.pm1,     action: 'status_change', detail: 'Statut → SpecificationValidation' },
+    { projectId: ID.p2, userId: R.spec1,   action: 'validate',      detail: 'Validation spécifications soumise' },
+    { projectId: ID.p3, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
+    { projectId: ID.p3, userId: R.pm2,     action: 'status_change', detail: 'Statut → Realization' },
+    { projectId: ID.p4, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
+    { projectId: ID.p4, userId: R.pm2,     action: 'status_change', detail: 'Statut → DeploymentValidation' },
+    { projectId: ID.p5, userId: R.pm1,     action: 'status_change', detail: 'Statut → Completed' },
+    { projectId: ID.p6, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
   ];
 
   for (const a of activities) {

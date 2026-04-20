@@ -313,7 +313,7 @@ async function loadPendingValidations(): Promise<void> {
   loadingValidations.value = true
   try {
     // Fetch projects visible to user, then check validations per phase.
-    const endpoint = authStore.userRole === 'Admin' ? '/admin/project' : '/pm/team-projects'
+    const endpoint = authStore.userRole === 'Admin' ? '/admin/projects' : '/pm/team-projects'
     const { data } = await api.get<{ items: ProjectLite[] } | ProjectLite[]>(endpoint)
     const projects = Array.isArray(data) ? data : data.items
     const pending: PendingValidation[] = []
@@ -335,7 +335,7 @@ async function loadMilestones(): Promise<void> {
   loadingMilestones.value = true
   try {
     // Use the portfolio roadmap if available — else skip.
-    const endpoint = authStore.userRole === 'Admin' ? '/admin/project' : '/pm/projects'
+    const endpoint = authStore.userRole === 'Admin' ? '/admin/projects' : '/pm/projects'
     const { data } = await api.get<{ items: ProjectLite[] } | ProjectLite[]>(endpoint)
     const projects = Array.isArray(data) ? data : data.items
     const results: Milestone[] = []

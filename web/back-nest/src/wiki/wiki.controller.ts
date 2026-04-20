@@ -1,12 +1,17 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { WikiService } from './wiki.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
+import { PermissionsGuard } from '../common/guards/permissions.guard.js';
+import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId/wiki')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@ProjectAccess('projectId')
 export class WikiController {
   constructor(private readonly service: WikiService) {}
 
@@ -92,6 +97,7 @@ export class WikiController {
   }
 
   @Post('pages/:slug/restore/:version')
+  @RequirePermission('wiki.edit', { projectParam: 'projectId' })
   async restore(
     @Param('projectId') projectId: string,
     @Param('slug') slug: string,

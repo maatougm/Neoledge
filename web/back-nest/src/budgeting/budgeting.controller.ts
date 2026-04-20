@@ -1,11 +1,14 @@
 import { Controller, Get, Post, Patch, Delete, Put, Param, Body, UseGuards, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { BudgetingService } from './budgeting.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('pm/projects/:projectId/budget')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class BudgetingController {
   constructor(private readonly service: BudgetingService) {}
 
@@ -40,18 +43,22 @@ export class BudgetingController {
 
   @Patch('line-items/:id')
   async updateLine(
+    @Param('projectId') projectId: string,
     @Param('id') id: string,
     @Body() dto: { description?: string; type?: string; unitCost?: number; units?: number; position?: number },
   ) {
-    const r = await this.service.updateLineItem(id, dto);
+    const r = await this.service.updateLineItem(projectId, id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Delete('line-items/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteLine(@Param('id') id: string) {
-    const r = await this.service.deleteLineItem(id);
+  async deleteLine(
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+  ) {
+    const r = await this.service.deleteLineItem(projectId, id);
     if (r.isFailure) throw new BadRequestException(r.error);
   }
 

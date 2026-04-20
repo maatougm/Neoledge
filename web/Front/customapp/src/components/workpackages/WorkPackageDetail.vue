@@ -206,7 +206,6 @@ function confirmDelete() {
   confirm.require({
     message: 'Supprimer ce work package ?',
     header: 'Confirmation',
-    acceptClass: 'p-button-danger',
     accept: async () => {
       const ok = await store.remove(props.projectId, props.workPackageId)
       if (ok) emit('deleted', props.workPackageId)

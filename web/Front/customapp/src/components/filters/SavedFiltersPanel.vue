@@ -93,11 +93,10 @@
     </ul>
 
     <!-- Save dialog -->
-    <Dialog
+    <AppModal
       v-model:visible="showSaveDialog"
       header="Sauvegarder le filtre"
-      modal
-      :style="{ width: '22rem' }"
+      width="22rem"
     >
       <div class="sfp__dialog-body">
         <NeoInputText
@@ -121,14 +120,13 @@
           @click="handleSave"
         />
       </template>
-    </Dialog>
+    </AppModal>
 
     <!-- Edit dialog -->
-    <Dialog
+    <AppModal
       v-model:visible="showEditDialog"
       header="Renommer le filtre"
-      modal
-      :style="{ width: '22rem' }"
+      width="22rem"
     >
       <div class="sfp__dialog-body">
         <NeoInputText
@@ -152,7 +150,7 @@
           @click="handleEdit"
         />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
@@ -166,8 +164,8 @@ function toTagSeverity(val: string | undefined): NeoTagSeverity {
 
 import { ref } from 'vue'
 import { NeoButton, NeoTag, NeoInputText } from '@neolibrary/components'
-import Dialog from 'primevue/dialog'
-import { useNeoToast } from '@neolibrary/components'
+import AppModal from '@/components/common/AppModal.vue'
+import { useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
 import { PROJECT_STATUS_LABELS } from '@/types/project.types'
 import type { ProjectStatus } from '@/types/project.types'
@@ -188,8 +186,9 @@ const emit = defineEmits<{
 }>()
 
 // ─── Store & Toast ────────────────────────────────────────────────────────────
-const store = useSavedFiltersStore()
-const toast = useNeoToast()
+const store   = useSavedFiltersStore()
+const toast   = useNeoToast()
+const confirm = useNeoConfirm()
 
 // ─── Dialog state ─────────────────────────────────────────────────────────────
 const showSaveDialog = ref(false)
@@ -268,13 +267,22 @@ const handleEdit = async (): Promise<void> => {
   }
 }
 
-const confirmDelete = async (filter: SavedFilter): Promise<void> => {
-  await store.remove(filter.id)
-  if (!store.error) {
-    toast.add({ severity: 'success', detail: `Filtre "${filter.name}" supprimé.`, life: 3000 })
-  } else {
-    toast.add({ severity: 'error', detail: store.error, life: 4000 })
-  }
+const confirmDelete = (filter: SavedFilter): void => {
+  confirm.require({
+    message: `Supprimer le filtre "${filter.name}" ?`,
+    header: 'Confirmer la suppression',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    accept: async () => {
+      await store.remove(filter.id)
+      if (!store.error) {
+        toast.add({ severity: 'success', detail: `Filtre "${filter.name}" supprimé.`, life: 3000 })
+      } else {
+        toast.add({ severity: 'error', detail: store.error, life: 4000 })
+      }
+    },
+  })
 }
 </script>
 

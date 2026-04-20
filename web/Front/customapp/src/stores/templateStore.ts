@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type {
   ProjectTemplateSummary,
   ProjectTemplate,
@@ -114,6 +115,18 @@ export const useTemplateStore = defineStore('templates', () => {
     }
   }
 
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  /** Wipe per-user state on logout. */
+  const reset = (): void => {
+    templates.value = []
+    currentTemplate.value = null
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
     templates,
     currentTemplate,
@@ -125,5 +138,6 @@ export const useTemplateStore = defineStore('templates', () => {
     deleteTemplate,
     applyToProject,
     createFromProject,
+    reset,
   }
 })

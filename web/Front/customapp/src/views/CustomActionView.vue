@@ -64,7 +64,13 @@ const onSubmit = async () => {
     submitting.value = true
     errorMessage.value = ''
     await app.updateSample({ subject: subject.value })
-    window.parent.postMessage('EliseCustomActionDone', '*')
+    // Use the configured API host as the expected parent origin so the message is
+    // not broadcast to all parents. Falls back to '*' only when unconfigured.
+    const targetOrigin: string = app.apiUrl ? new URL(app.apiUrl).origin : '*'
+    if (!app.apiUrl) {
+      console.warn('[CustomActionView] apiUrl not configured — postMessage sent to *, consider setting it in config.')
+    }
+    window.parent.postMessage('EliseCustomActionDone', targetOrigin)
   } catch {
     errorMessage.value = 'Une erreur est survenue lors de la mise à jour.'
   } finally {

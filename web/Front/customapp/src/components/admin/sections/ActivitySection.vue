@@ -143,18 +143,38 @@ const filterProject = ref<string | null>(null)
 
 let intervalId: ReturnType<typeof setInterval> | null = null
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────────
-
-onMounted(() => {
-  void fetchAll()
+function startInterval(): void {
+  if (intervalId !== null) return
   intervalId = setInterval(() => { void fetchAll() }, REFRESH_INTERVAL_MS)
-})
+}
 
-onUnmounted(() => {
+function stopInterval(): void {
   if (intervalId !== null) {
     clearInterval(intervalId)
     intervalId = null
   }
+}
+
+function onVisibilityChange(): void {
+  if (document.hidden) {
+    stopInterval()
+  } else {
+    void fetchAll()
+    startInterval()
+  }
+}
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────────
+
+onMounted(() => {
+  void fetchAll()
+  startInterval()
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+
+onUnmounted(() => {
+  stopInterval()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
 // ── Data fetching ──────────────────────────────────────────────────────────────

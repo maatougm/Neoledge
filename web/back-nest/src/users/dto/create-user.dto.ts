@@ -1,14 +1,16 @@
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { PRESET_ROLE_PERMISSIONS } from '../../permissions/permission-keys.js';
 
-const UserRoleValues = ['Admin', 'ProjectManager', 'SpecificationTeam', 'RealizationTeam', 'DeploymentTeam', 'Viewer'] as const;
+/** Valid role names derived from the single source of truth (PRESET_ROLE_PERMISSIONS). */
+const VALID_ROLES = Object.keys(PRESET_ROLE_PERMISSIONS);
 
 export class CreateUserDto {
   @IsNotEmpty({ message: 'Le prénom est requis.' })
@@ -41,6 +43,6 @@ export class CreateUserDto {
   })
   readonly password: string;
 
-  @IsEnum(UserRoleValues, { message: 'Le rôle sélectionné est invalide.' })
+  @IsIn(VALID_ROLES, { message: 'Le rôle sélectionné est invalide.' })
   readonly role: string;
 }

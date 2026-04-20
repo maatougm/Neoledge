@@ -31,7 +31,7 @@ const store  = usePmStore()
 const selectedProjectId = ref<string | null>(null)
 
 onMounted(async () => {
-  if (store.projects.length === 0) {
+  if (store.myProjects.length === 0) {
     await store.fetchMyProjects()
   }
 
@@ -48,7 +48,7 @@ async function openProject(id: string): Promise<void> {
 
 function closeDetail(): void {
   selectedProjectId.value = null
-  store.currentProject = null
+  store.clearCurrent()
   // Remove projectId query param when navigating back
   router.replace({ name: 'pm-projects' })
 }

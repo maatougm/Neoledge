@@ -6,7 +6,8 @@
  * @desc     Composable for project creation / update form state and validation
  */
 
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useProjectStore } from '@/stores/projectStore'
 import { useNeoToast } from '@neolibrary/components'
 import type { CreateProjectPayload, UpdateProjectPayload } from '@/types/project.types'
@@ -29,6 +30,7 @@ function toISODate(s: string): string {
 export function useProjectForm() {
   const store = useProjectStore()
   const toast = useNeoToast()
+  const route = useRoute()
 
   // ─── Form state ────────────────────────────────────────────────────────────
   const form = reactive<CreateProjectPayload>({
@@ -66,6 +68,9 @@ export function useProjectForm() {
     form.projectManagerId = undefined
     Object.keys(errors).forEach((k) => delete errors[k as keyof typeof errors])
   }
+
+  // Reset form when navigating to a different project (#31)
+  watch(() => route.params.id, () => { reset() })
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 

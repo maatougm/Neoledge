@@ -64,16 +64,26 @@ export class OutcomesService {
     }
   }
 
-  async convertToWorkPackage(outcomeId: string, projectId: string, authorId: string) {
+  async convertToWorkPackage(outcomeId: string, _urlProjectId: string, authorId: string) {
     try {
-      const outcome = await this.prisma.meetingOutcome.findUnique({ where: { id: outcomeId } });
+      // Load outcome with its parent meeting to get the authoritative projectId server-side.
+      const outcome = await this.prisma.meetingOutcome.findUnique({
+        where: { id: outcomeId },
+        include: { meeting: { select: { projectId: true } } },
+      });
       if (!outcome) return Result.fail('Issue introuvable.');
+
+      // Guard: reject if already converted.
+      if (outcome.workPackageId) return Result.fail('Outcome déjà converti en tâche.');
+
+      // Use the meeting's projectId — never trust the URL param.
+      const projectId = outcome.meeting.projectId;
 
       const wp = await this.prisma.workPackage.create({
         data: {
           projectId,
           title: outcome.description.slice(0, 255),
-          description: outcome.description,
+          description: outcome.description.slice(0, 10_000),
           type: outcome.type === 'Risk' ? 'Bug' : 'Task',
           status: 'New',
           priority: outcome.type === 'Risk' ? 'High' : 'Normal',
@@ -89,7 +99,7 @@ export class OutcomesService {
       });
 
       return Result.ok(wp);
-    } catch {
+    } catch (err: unknown) {
       return Result.fail('Échec de la conversion.');
     }
   }

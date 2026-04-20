@@ -3,6 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type { WorkPackage, CreateWpPayload, UpdateWpPayload, WorkPackageCustomField } from '@/types/work-package.types'
 
 export const useWorkPackageStore = defineStore('workPackages', () => {
@@ -32,12 +33,18 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     }
   }
 
+  function _errMsg(err: unknown): string {
+    return err instanceof Error ? err.message : String(err)
+  }
+
   async function fetchOne(projectId: string, id: string): Promise<WorkPackage | null> {
     try {
       const { data } = await api.get<WorkPackage>(`/pm/projects/${projectId}/work-packages/${id}`)
       currentWp.value = data
       return data
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] fetchOne', err)
       return null
     }
   }
@@ -47,7 +54,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       const { data } = await api.post<WorkPackage>(`/pm/projects/${projectId}/work-packages`, payload)
       items.value = [data, ...items.value]
       return data
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] create', err)
       return null
     }
   }
@@ -59,7 +68,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       if (idx >= 0) items.value = [...items.value.slice(0, idx), data, ...items.value.slice(idx + 1)]
       if (currentWp.value?.id === id) currentWp.value = { ...currentWp.value, ...data }
       return data
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] update', err)
       return null
     }
   }
@@ -70,7 +81,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       items.value = items.value.filter((w) => w.id !== id)
       if (currentWp.value?.id === id) currentWp.value = null
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] remove', err)
       return false
     }
   }
@@ -79,7 +92,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       await api.patch(`/pm/projects/${projectId}/work-packages/${id}/move`, payload)
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] moveCard', err)
       return false
     }
   }
@@ -88,7 +103,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       await api.post(`/pm/projects/${projectId}/work-packages/${wpId}/watchers`, { userId })
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] addWatcher', err)
       return false
     }
   }
@@ -97,7 +114,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       await api.delete(`/pm/projects/${projectId}/work-packages/${wpId}/watchers/${userId}`)
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] removeWatcher', err)
       return false
     }
   }
@@ -106,7 +125,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       await api.post(`/pm/projects/${projectId}/work-packages/${wpId}/dependencies`, { toWpId, type })
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] addDependency', err)
       return false
     }
   }
@@ -115,7 +136,9 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       await api.delete(`/pm/projects/${projectId}/work-packages/${wpId}/dependencies/${depId}`)
       return true
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] removeDependency', err)
       return false
     }
   }
@@ -124,29 +147,63 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
     try {
       const { data } = await api.get<WorkPackageCustomField[]>(`/pm/projects/${projectId}/wp-custom-fields`)
       customFields.value = data
-    } catch {
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] fetchCustomFields', err)
       customFields.value = []
     }
   }
 
   async function createCustomField(projectId: string, name: string, fieldType: string, options?: string): Promise<void> {
-    await api.post(`/pm/projects/${projectId}/wp-custom-fields`, { name, fieldType, options })
-    await fetchCustomFields(projectId)
+    try {
+      await api.post(`/pm/projects/${projectId}/wp-custom-fields`, { name, fieldType, options })
+      await fetchCustomFields(projectId)
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] createCustomField', err)
+      throw err
+    }
   }
 
   async function deleteCustomField(projectId: string, id: string): Promise<void> {
-    await api.delete(`/pm/projects/${projectId}/wp-custom-fields/${id}`)
-    await fetchCustomFields(projectId)
+    try {
+      await api.delete(`/pm/projects/${projectId}/wp-custom-fields/${id}`)
+      await fetchCustomFields(projectId)
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] deleteCustomField', err)
+      throw err
+    }
   }
 
   async function upsertCustomValues(projectId: string, wpId: string, values: { customFieldId: string; value?: string }[]): Promise<void> {
-    await api.put(`/pm/projects/${projectId}/work-packages/${wpId}/custom-values`, { values })
+    try {
+      await api.put(`/pm/projects/${projectId}/work-packages/${wpId}/custom-values`, { values })
+    } catch (err) {
+      error.value = _errMsg(err)
+      console.error('[workPackageStore] upsertCustomValues', err)
+      throw err
+    }
   }
+
+  // ─── Logout reset ────────────────────────────────────────────────────────────
+
+  function reset(): void {
+    items.value = []
+    total.value = 0
+    currentWp.value = null
+    customFields.value = []
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
 
   return {
     items, total, currentWp, customFields, loading, error,
     fetchAll, fetchOne, create, update, remove, moveCard,
     addWatcher, removeWatcher, addDependency, removeDependency,
     fetchCustomFields, createCustomField, deleteCustomField, upsertCustomValues,
+    reset,
   }
 })

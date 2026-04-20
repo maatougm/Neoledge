@@ -2,12 +2,15 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Res, UseGuards, Http
 import type { Response } from 'express';
 import { AttachmentsService } from './attachments.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('api/projects/:projectId/attachments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class AttachmentsController {
   constructor(private readonly service: AttachmentsService) {}
 

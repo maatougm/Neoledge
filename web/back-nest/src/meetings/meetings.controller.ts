@@ -17,22 +17,55 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express'
 import { MeetingsService } from './meetings.service.js'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
+import { PermissionsGuard } from '../common/guards/permissions.guard.js'
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
+import { RequirePermission } from '../common/decorators/require-permission.decorator.js'
+import { CurrentUser } from '../common/decorators/current-user.decorator.js'
+
+interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId/meetings')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@ProjectAccess('projectId')
 export class MeetingsController {
   constructor(private readonly service: MeetingsService) {}
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('audio', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('audio', {
+      limits: { fileSize: 100 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowed = new Set([
+          'audio/mpeg',
+          'audio/wav',
+          'audio/x-wav',
+          'audio/webm',
+          'audio/ogg',
+          'audio/mp4',
+          'audio/flac',
+          'audio/x-m4a',
+        ])
+        if (!allowed.has(file.mimetype)) {
+          return cb(new BadRequestException('Unsupported audio format'), false)
+        }
+        cb(null, true)
+      },
+    }),
+  )
   async upload(
     @Param('projectId') projectId: string,
     @UploadedFile() audio: Express.Multer.File,
     @Body('title') title: string,
-    @Body('speakerMap') speakerMap?: string,
   ) {
     if (!audio || !audio.buffer.length) throw new BadRequestException('Fichier audio requis.')
-    const result = await this.service.transcribe(projectId, audio.buffer, audio.originalname, title, speakerMap)
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      throw new BadRequestException('Le titre de la réunion est requis.')
+    }
+    if (title.length > 200) {
+      throw new BadRequestException('Le titre ne peut pas dépasser 200 caractères.')
+    }
+    const result = await this.service.transcribe(projectId, audio.buffer, audio.originalname, title.trim())
     if (result.isFailure) throw new BadRequestException(result.error)
     return result.value
   }
@@ -59,11 +92,19 @@ export class MeetingsController {
 
   @Patch(':id/rename-speaker')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async renameSpeaker(@Param('id') id: string, @Body() body: { oldName: string; newName: string }) {
+  @RequirePermission('meeting.manage', { projectParam: 'projectId' })
+  async renameSpeaker(
+    @Param('id') id: string,
+    @Body() body: { oldName: string; newName: string },
+    @CurrentUser() user: AuthUser,
+  ) {
     if (!body.oldName?.trim() || !body.newName?.trim()) {
       throw new BadRequestException("L'ancien et le nouveau nom du locuteur sont requis.")
     }
-    const result = await this.service.renameSpeaker(id, body.oldName, body.newName)
+    if (body.newName.length > 100) {
+      throw new BadRequestException('Le nouveau nom du locuteur ne peut pas dépasser 100 caractères.')
+    }
+    const result = await this.service.renameSpeaker(id, body.oldName, body.newName, user.userId)
     if (result.isFailure) throw new NotFoundException(result.error)
   }
 

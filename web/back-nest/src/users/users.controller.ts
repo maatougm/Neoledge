@@ -106,9 +106,9 @@ export class UsersController {
   @Post(':id/deactivate')
   async deactivate(
     @Param('id') id: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { userId: string },
   ) {
-    const result = await this.usersService.deactivate(id, user.id);
+    const result = await this.usersService.deactivate(id, user.userId);
 
     if (result.isFailure) {
       throw new BadRequestException(result.error);

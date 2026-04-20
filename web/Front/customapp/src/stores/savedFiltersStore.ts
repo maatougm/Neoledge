@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import { onLogout } from './logoutBus'
 import type { SavedFilter, FilterCriteria } from '@/types/filter.types'
 
 export const useSavedFiltersStore = defineStore('savedFilters', () => {
@@ -104,6 +105,15 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     activeFilter.value = null
   }
 
+  const reset = (): void => {
+    filters.value = []
+    activeFilter.value = null
+    loading.value = false
+    error.value = null
+  }
+
+  onLogout(reset)
+
   return {
     filters,
     activeFilter,
@@ -116,5 +126,6 @@ export const useSavedFiltersStore = defineStore('savedFilters', () => {
     setDefault,
     applyFilter,
     clearActiveFilter,
+    reset,
   }
 })

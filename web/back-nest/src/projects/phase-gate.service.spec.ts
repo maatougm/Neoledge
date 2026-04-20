@@ -10,6 +10,9 @@ const mockPrisma = {
   projectValidation: {
     count: jest.fn(),
   },
+  project: {
+    findUnique: jest.fn(),
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,8 @@ describe('PhaseGateService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: no phaseEnteredAt filter — preserves legacy semantics in tests.
+    mockPrisma.project.findUnique.mockResolvedValue({ currentPhaseEnteredAt: null });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -45,6 +45,7 @@
               icon="pi pi-times-circle"
               severity="danger"
               outlined
+              :disabled="loadingAction"
               @click="showDisableForm = true"
             />
           </div>

@@ -14,11 +14,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 import { AutomationService } from './automation.service.js';
 import { CreateRuleDto, UpdateRuleDto } from './dto/automation.dto.js';
 
 @Controller('pm/projects/:projectId/automation')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard)
+@ProjectAccess('projectId')
 export class AutomationController {
   constructor(private readonly automationService: AutomationService) {}
 
@@ -61,7 +64,7 @@ export class AutomationController {
     @Request() req: { user: { userId: string; role: string } },
   ) {
     await this.assertAccess(projectId, req);
-    const result = await this.automationService.updateRule(ruleId, dto);
+    const result = await this.automationService.updateRule(ruleId, projectId, dto);
     if (result.isFailure) return { success: false, error: result.error };
     return { success: true, data: result.value };
   }
@@ -73,7 +76,7 @@ export class AutomationController {
     @Request() req: { user: { userId: string; role: string } },
   ) {
     await this.assertAccess(projectId, req);
-    const result = await this.automationService.deleteRule(ruleId);
+    const result = await this.automationService.deleteRule(ruleId, projectId);
     if (result.isFailure) return { success: false, error: result.error };
     return { success: true };
   }
@@ -86,7 +89,7 @@ export class AutomationController {
     @Request() req: { user: { userId: string; role: string } },
   ) {
     await this.assertAccess(projectId, req);
-    const result = await this.automationService.toggleRule(ruleId, body.isActive);
+    const result = await this.automationService.toggleRule(ruleId, projectId, body.isActive);
     if (result.isFailure) return { success: false, error: result.error };
     return { success: true, data: result.value };
   }
