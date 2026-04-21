@@ -53,13 +53,33 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     }
     try {
       const secret = getJwtSecret(this.configService);
-      const payload = this.jwtService.verify<{ sub: string }>(token, { secret });
+      const payload = this.jwtService.verify<{
+        sub: string;
+        tokenVersion?: number;
+        aud?: string;
+        totpPending?: boolean;
+      }>(token, { secret });
+
+      // Parity with JwtStrategy: reject 2FA-pending / non-access tokens so a
+      // temp token cannot open a real-time channel.
+      if ((payload.aud && payload.aud !== 'access') || payload.totpPending) {
+        client.disconnect(true);
+        return;
+      }
 
       const user = await this.prisma.appUser.findUnique({
         where: { id: payload.sub, isActive: true },
         select: { id: true, tokenVersion: true },
       });
       if (!user) {
+        client.disconnect(true);
+        return;
+      }
+
+      // Reject tokens whose version is behind the DB (role change, password
+      // reset, forced logout) — same invariant JwtStrategy enforces on REST.
+      const claimed = payload.tokenVersion ?? 0;
+      if (claimed !== user.tokenVersion) {
         client.disconnect(true);
         return;
       }

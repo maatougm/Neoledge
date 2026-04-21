@@ -108,13 +108,32 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
         sub: string;
         firstName?: string;
         lastName?: string;
+        tokenVersion?: number;
+        aud?: string;
+        totpPending?: boolean;
       }>(token, { secret });
+
+      // Reject 2FA-pending / non-access tokens — parity with JwtStrategy.
+      if ((payload.aud && payload.aud !== 'access') || payload.totpPending) {
+        client.disconnect(true);
+        return;
+      }
 
       const user = await this.prisma.appUser.findUnique({
         where: { id: payload.sub, isActive: true },
         select: { id: true, tokenVersion: true },
       });
       if (!user) {
+        client.disconnect(true);
+        return;
+      }
+
+      // Reject stale sessions (token behind DB) at connection time. The
+      // per-event requireValidSession() below still revalidates, but that
+      // check relies on client.data['tokenVersion'] which we must seed
+      // correctly here.
+      const claimed = payload.tokenVersion ?? 0;
+      if (claimed !== user.tokenVersion) {
         client.disconnect(true);
         return;
       }

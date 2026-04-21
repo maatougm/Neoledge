@@ -475,14 +475,4 @@ export class AuthService {
     return isProduction ? 'Authentication failed' : verbose;
   }
 
-  private generateToken(payload: {
-    sub: string;
-    email: string;
-    role: string;
-    firstName: string;
-    lastName: string;
-    tokenVersion?: number;
-  }): string {
-    return this.jwtService.sign(payload);
-  }
 }
