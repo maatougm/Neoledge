@@ -4,7 +4,7 @@
   @desc     Self-contained bell icon with dropdown notification panel
 -->
 <template>
-  <div class="notif-wrap" ref="wrapRef">
+  <div ref="wrapRef" class="notif-wrap">
     <!-- Bell trigger -->
     <button
       class="bell-btn"

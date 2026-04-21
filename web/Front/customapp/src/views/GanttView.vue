@@ -13,7 +13,7 @@
       <NeoButton label="Baseline" icon="pi pi-camera" outlined @click="captureBaselineAction" />
     </template>
 
-    <div class="gantt" v-if="!ganttStore.loading">
+    <div v-if="!ganttStore.loading" class="gantt">
       <!-- Left tree panel -->
       <div class="gantt__tree">
         <div class="gantt__tree-header">Work Packages</div>
@@ -29,7 +29,7 @@
       </div>
 
       <!-- Timeline -->
-      <div class="gantt__timeline" ref="timelineRef">
+      <div ref="timelineRef" class="gantt__timeline">
         <!-- Header -->
         <div class="gantt__header">
           <div
@@ -100,7 +100,7 @@
         <NeoDatePicker v-model="msForm.date" placeholder="Date" />
         <NeoInputText v-model="msForm.description" label="Description" />
         <label class="gantt__checkbox">
-          <input type="checkbox" v-model="msForm.isReached" />
+          <input v-model="msForm.isReached" type="checkbox" />
           Jalon atteint
         </label>
       </div>

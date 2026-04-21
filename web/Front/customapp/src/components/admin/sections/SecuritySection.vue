@@ -55,7 +55,7 @@
           <p class="disable-prompt">
             Saisissez votre code actuel pour confirmer la désactivation.
           </p>
-          <form @submit.prevent="handleDisable" novalidate>
+          <form novalidate @submit.prevent="handleDisable">
             <div class="field-group">
               <label for="totp-disable-code" class="field-label">Code d'authentification</label>
               <NeoInputText
@@ -73,8 +73,8 @@
               severity="error"
               :text="actionError"
               :closable="true"
-              @close="actionError = null"
               class="panel-msg"
+              @close="actionError = null"
             />
             <div class="panel-actions">
               <NeoButton

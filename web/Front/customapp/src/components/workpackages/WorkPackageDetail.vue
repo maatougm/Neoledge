@@ -1,6 +1,6 @@
 <!-- @file WorkPackageDetail.vue — Right-panel detail for a work package -->
 <template>
-  <div class="wp-detail" v-if="wp">
+  <div v-if="wp" class="wp-detail">
     <div class="wp-detail__header">
       <div class="wp-detail__meta">
         <NeoTag :value="wp.type" severity="secondary" />

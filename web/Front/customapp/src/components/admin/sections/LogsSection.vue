@@ -26,7 +26,7 @@
       <p>{{ error }}</p>
     </div>
 
-    <div v-else class="log-box" ref="logBox">
+    <div v-else ref="logBox" class="log-box">
       <p v-if="lines.length === 0" class="log-empty">Aucune entrée de log.</p>
       <div v-for="(line, i) in lines" :key="i" :class="['log-line', levelClass(line)]">
         {{ line }}

@@ -79,7 +79,13 @@ export class MeetingsService {
       const formData = new FormData()
       formData.append('audio', new Blob([audioBuffer as unknown as BlobPart]), fileName)
 
-      const response = await fetch(`${serviceUrl}/transcribe`, { method: 'POST', body: formData })
+      const transcriptionSecret = this.config.get<string>('TRANSCRIPTION_SECRET', '')
+      const headers: Record<string, string> = {}
+      if (transcriptionSecret) {
+        headers['x-transcription-secret'] = transcriptionSecret
+      }
+
+      const response = await fetch(`${serviceUrl}/transcribe`, { method: 'POST', body: formData, headers })
 
       if (!response.ok) {
         const text = await response.text()

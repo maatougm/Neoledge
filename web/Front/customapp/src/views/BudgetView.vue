@@ -6,7 +6,7 @@
       <NeoButton label="Ajouter ligne" icon="pi pi-plus" @click="showAddLine = true" />
     </template>
 
-    <div class="bg" v-if="budgetStore.budget">
+    <div v-if="budgetStore.budget" class="bg">
       <!-- Summary cards + burn donut -->
       <div class="bg__overview">
         <div class="bg__summary">

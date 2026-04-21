@@ -74,7 +74,7 @@
         </p>
       </div>
 
-      <form @submit.prevent="handleEnable" novalidate>
+      <form novalidate @submit.prevent="handleEnable">
         <div class="field-group">
           <label for="totp-confirm-code" class="field-label">Code d'authentification</label>
           <NeoInputText
@@ -94,8 +94,8 @@
           severity="error"
           :text="confirmError"
           :closable="true"
-          @close="confirmError = null"
           class="info-msg"
+          @close="confirmError = null"
         />
 
         <div class="setup-actions">

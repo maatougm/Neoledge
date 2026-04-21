@@ -328,11 +328,6 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
   const auth = useAuthStore()
   const config = useConfigStore()
 
-  // CRITICAL: restore persisted JWT from localStorage BEFORE any auth checks.
-  // Without this, a page refresh sees `auth.isAuthenticated === false` and
-  // would incorrectly fall into the dev auto-login-as-admin branch below.
-  auth.init()
-
   const isPublic = PUBLIC_ROUTE_NAMES.has(to.name as string)
 
   // Ensure config is loaded before any auth work
@@ -361,7 +356,6 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
       const responseUrl = (response.config?.url) ?? ''
       const isFromExpectedHost = responseUrl.startsWith(responseOrigin) || responseUrl.startsWith('/')
       if (!isFromExpectedHost) {
-        console.warn('[router] Elise JWT response from unexpected origin, ignoring.')
         return { name: 'unauthorized' }
       }
       auth.setJwt(response.data.jwt)

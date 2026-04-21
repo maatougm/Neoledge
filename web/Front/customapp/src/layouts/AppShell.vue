@@ -8,7 +8,7 @@
     <div class="shell__main">
       <AppTopbar />
 
-      <main class="shell__content" id="main-content">
+      <main id="main-content" class="shell__content">
         <router-view />
       </main>
     </div>

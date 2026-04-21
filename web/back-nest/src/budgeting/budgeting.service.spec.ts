@@ -3,8 +3,9 @@ import { BudgetingService } from './budgeting.service.js';
 describe('BudgetingService', () => {
   let prisma: {
     projectBudget: { findUnique: jest.Mock; upsert: jest.Mock; create: jest.Mock };
-    budgetLineItem: { aggregate: jest.Mock; create: jest.Mock; findUnique: jest.Mock; update: jest.Mock; delete: jest.Mock };
+    budgetLineItem: { aggregate: jest.Mock; create: jest.Mock; findUnique: jest.Mock; findFirst: jest.Mock; update: jest.Mock; delete: jest.Mock };
     timeEntry: { findMany: jest.Mock };
+    $transaction: jest.Mock;
   };
   let tt: { getEffectiveRate: jest.Mock };
   let svc: BudgetingService;
@@ -20,12 +21,15 @@ describe('BudgetingService', () => {
         aggregate: jest.fn(async () => ({ _max: { position: 0 } })),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'li1', ...data })),
         findUnique: jest.fn(async () => ({ id: 'li1', unitCost: 100, units: 3 })),
+        findFirst: jest.fn(async () => ({ id: 'li1', unitCost: 100, units: 3 })),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'li1', ...data })),
         delete: jest.fn(async () => undefined),
       },
       timeEntry: {
         findMany: jest.fn(async () => []),
       },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      $transaction: jest.fn().mockImplementation((cb: (tx: any) => any) => cb(prisma)),
     };
     tt = { getEffectiveRate: jest.fn(async () => ({ rate: 80 })) };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,24 +39,25 @@ describe('BudgetingService', () => {
   it('upsertBudget creates with defaults', async () => {
     const r = await svc.upsertBudget('p1', {});
     expect(r.isSuccess).toBe(true);
-    expect(prisma.projectBudget.upsert).toHaveBeenCalled();
+    // Service uses $transaction + create (not upsert) internally
+    expect(prisma.projectBudget.create).toHaveBeenCalled();
   });
 
   it('createLineItem computes total = unitCost * units', async () => {
     prisma.projectBudget.findUnique.mockResolvedValueOnce({ id: 'b1' });
     const r = await svc.createLineItem('p1', { description: 'Server', unitCost: 100, units: 12 });
     expect(r.isSuccess).toBe(true);
-    expect(prisma.budgetLineItem.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ total: 1200 }) }),
-    );
+    // Service passes Prisma.Decimal — verify numeric value via toNumber()
+    const callArg = prisma.budgetLineItem.create.mock.calls[0][0] as { data: { total: { toNumber(): number } } };
+    expect(callArg.data.total.toNumber()).toBe(1200);
   });
 
   it('updateLineItem recomputes total when unitCost changes', async () => {
     const r = await svc.updateLineItem('p1', 'li1', { unitCost: 200 });
     expect(r.isSuccess).toBe(true);
-    expect(prisma.budgetLineItem.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ total: 600 }) }),
-    );
+    // Service passes Prisma.Decimal — verify numeric value via toNumber()
+    const callArg = prisma.budgetLineItem.update.mock.calls[0][0] as { data: { total: { toNumber(): number } } };
+    expect(callArg.data.total.toNumber()).toBe(600);
   });
 
   it('getBurnReport computes spent from time entries at effective rate', async () => {
@@ -67,8 +72,8 @@ describe('BudgetingService', () => {
 
     const r = await svc.getBurnReport('p1');
     expect(r.isSuccess).toBe(true);
-    // 10h + 5h = 15h × 80/h = 1200
-    expect(r.value).toMatchObject({ spent: 1200, remaining: 8800, percentUsed: 12 });
+    // 10h + 5h = 15h × 80/h = 1200 — service serialises Decimals as fixed-precision strings
+    expect(r.value).toMatchObject({ spent: '1200.00', remaining: '8800.00', percentUsed: 12 });
   });
 
   it('returns 0% used when budget is 0', async () => {

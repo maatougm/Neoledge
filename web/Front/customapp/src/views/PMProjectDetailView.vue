@@ -14,7 +14,7 @@
       />
     </template>
 
-    <div class="po" v-if="!loading">
+    <div v-if="!loading" class="po">
       <!-- Progress banner -->
       <div class="po__progress">
         <div class="po__progress-head">
@@ -104,7 +104,7 @@
             </ul>
           </div>
 
-          <div class="nl-card" v-if="statusByCount.length > 0">
+          <div v-if="statusByCount.length > 0" class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-chart-pie" /> Répartition par statut</h2>
             </div>
@@ -169,7 +169,7 @@
             </ul>
           </div>
 
-          <div class="nl-card" v-if="presenceList.length > 0">
+          <div v-if="presenceList.length > 0" class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-users" /> En ligne maintenant</h2>
             </div>

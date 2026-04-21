@@ -162,6 +162,7 @@ export class AnalyticsService {
     const now = new Date();
 
     type ProjectRow = { id: string; name: string; status: string; endDate: Date; projectManager: { firstName: string; lastName: string } | null };
+    // take: 500 — safety ceiling; results are cached for CACHE_TTL (15 min) so volume is bounded.
     const projects = await this.prisma.project.findMany({
       where: {
         isDeleted: false,
@@ -170,6 +171,7 @@ export class AnalyticsService {
       include: {
         projectManager: { select: { firstName: true, lastName: true } },
       },
+      take: 500,
     }) as unknown as ProjectRow[];
 
     const result: DeadlineRiskRow[] = projects.map((p) => {
@@ -210,6 +212,7 @@ export class AnalyticsService {
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 86_400_000);
     const fourteenDaysFromNow = new Date(now.getTime() + 14 * 86_400_000);
 
+    // take: 500 — safety ceiling; results are cached for CACHE_TTL (15 min) so volume is bounded.
     const managers = await this.prisma.appUser.findMany({
       where: { role: 'ProjectManager', isActive: true },
       include: {
@@ -218,6 +221,7 @@ export class AnalyticsService {
           select: { status: true, endDate: true, updatedAt: true },
         },
       },
+      take: 500,
     });
 
     const result: TeamWorkloadRow[] = managers.map((m) => {

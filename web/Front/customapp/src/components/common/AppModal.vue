@@ -13,14 +13,14 @@
         >
           <div class="modal-header">
             <span class="modal-title">{{ header }}</span>
-            <button class="modal-close" @click="close" aria-label="Fermer">
+            <button class="modal-close" aria-label="Fermer" @click="close">
               <i class="pi pi-times" />
             </button>
           </div>
           <div class="modal-body">
             <slot />
           </div>
-          <div class="modal-footer" v-if="$slots.footer">
+          <div v-if="$slots.footer" class="modal-footer">
             <slot name="footer" />
           </div>
         </div>

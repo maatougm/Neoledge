@@ -87,8 +87,8 @@
             </span>
             <ToggleSwitch
               :modelValue="project.allowManagerCustomFields"
-              @update:modelValue="handleToggle"
               :title="project.allowManagerCustomFields ? 'Révoquer la permission' : 'Accorder la permission'"
+              @update:modelValue="handleToggle"
             />
           </div>
         </div>

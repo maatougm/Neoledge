@@ -12,7 +12,7 @@
           <!-- Header -->
           <div class="modal-header">
             <span class="modal-title">{{ isEdit ? "Modifier l'utilisateur" : 'Nouvel utilisateur' }}</span>
-            <button class="modal-close" @click="emit('close')" aria-label="Fermer">
+            <button class="modal-close" aria-label="Fermer" @click="emit('close')">
               <i class="pi pi-times" />
             </button>
           </div>

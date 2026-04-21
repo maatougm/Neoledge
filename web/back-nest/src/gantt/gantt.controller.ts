@@ -4,6 +4,9 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { CreateMilestoneDto } from './dto/create-milestone.dto.js';
+import { UpdateMilestoneDto } from './dto/update-milestone.dto.js';
+import { CaptureBaselineDto } from './dto/capture-baseline.dto.js';
 
 interface AuthUser { userId: string }
 
@@ -31,7 +34,7 @@ export class GanttController {
   @HttpCode(HttpStatus.CREATED)
   async createMs(
     @Param('projectId') projectId: string,
-    @Body() dto: { title: string; date: string; description?: string; color?: string; workPackageId?: string },
+    @Body() dto: CreateMilestoneDto,
   ) {
     if (!dto.title?.trim()) throw new BadRequestException('Titre requis.');
     if (!dto.date) throw new BadRequestException('Date requise.');
@@ -41,7 +44,7 @@ export class GanttController {
   }
 
   @Patch('milestones/:id')
-  async updateMs(@Param('id') id: string, @Body() dto: { title?: string; date?: string; description?: string; color?: string; isReached?: boolean }) {
+  async updateMs(@Param('id') id: string, @Body() dto: UpdateMilestoneDto) {
     const r = await this.service.updateMilestone(id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
@@ -72,7 +75,7 @@ export class GanttController {
   @HttpCode(HttpStatus.CREATED)
   async captureBaseline(
     @Param('projectId') projectId: string,
-    @Body() body: { snapshotName: string },
+    @Body() body: CaptureBaselineDto,
     @CurrentUser() user: AuthUser,
   ) {
     if (!body.snapshotName?.trim()) throw new BadRequestException('Nom de snapshot requis.');

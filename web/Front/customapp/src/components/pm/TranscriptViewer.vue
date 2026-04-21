@@ -43,9 +43,9 @@
           <i class="pi pi-arrow-right rename-arrow" />
           <NeoInputText
             :modelValue="speakerNames[speaker] ?? ''"
-            @update:modelValue="(v: string) => speakerNames[speaker] = v"
             :placeholder="speaker === 'Speaker 1' ? 'Chef de projet' : speaker === 'Speaker 2' ? 'Client' : speaker"
             class="rename-input"
+            @update:modelValue="(v: string) => speakerNames[speaker] = v"
           />
         </div>
       </div>

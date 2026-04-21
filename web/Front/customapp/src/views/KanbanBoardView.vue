@@ -6,7 +6,7 @@
     </template>
 
     <!-- Filter pills + swimlane + filter controls -->
-    <div class="kb-toolbar" v-if="currentBoard">
+    <div v-if="currentBoard" class="kb-toolbar">
       <div class="kb-toolbar__pills">
         <button
           v-for="p in pills" :key="p.key"
@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <div class="kb-scroll" v-if="currentBoard && currentBoard.columns">
+    <div v-if="currentBoard && currentBoard.columns" class="kb-scroll">
       <!-- For each swimlane (or single lane when none) -->
       <div v-for="lane in swimlanes" :key="lane.key" class="kb-lane">
         <div v-if="swimlane !== 'none'" class="kb-lane__header">

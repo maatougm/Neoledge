@@ -121,9 +121,9 @@
                   type="checkbox"
                   :checked="allSelected"
                   :indeterminate="someSelected"
-                  @change="toggleSelectAll"
                   class="row-checkbox"
                   aria-label="Tout sélectionner"
+                  @change="toggleSelectAll"
                 />
               </th>
               <th>Nom</th>
@@ -146,9 +146,9 @@
                   :name="`project-select-${p.id}`"
                   type="checkbox"
                   :checked="selectedIds.has(p.id)"
-                  @change="toggleRow(p.id)"
                   class="row-checkbox"
                   :aria-label="`Sélectionner ${p.name}`"
+                  @change="toggleRow(p.id)"
                 />
               </td>
               <td class="cell-name">

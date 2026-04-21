@@ -13,9 +13,9 @@
       <input
         type="checkbox"
         :checked="selected"
-        @change="emit('toggle-select')"
         class="ptr__checkbox"
         :aria-label="`Sélectionner ${project.name}`"
+        @change="emit('toggle-select')"
       />
     </td>
 

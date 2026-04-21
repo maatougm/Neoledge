@@ -8,6 +8,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
+import { useAuthStore } from '@/stores/authStore'
 
 // ── NeoLibrary design system ─────────────────────────────────────────────────
 import { NeoLibraryThemePlugin } from '@neolibrary/components'
@@ -25,8 +26,17 @@ if (localStorage.getItem('darkMode') === 'true') {
 
 const app = createApp(App)
 
-app.use(createPinia())
+// ── Global Vue error handler ──────────────────────────────────────────────────
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('[vue:error]', info, err)
+}
+
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
 app.use(NeoLibraryThemePlugin, { theme: 'neoledge' })
+
+// ── Restore persisted JWT once, before any navigation guard runs ──────────────
+useAuthStore().init()
 
 app.mount('#app')

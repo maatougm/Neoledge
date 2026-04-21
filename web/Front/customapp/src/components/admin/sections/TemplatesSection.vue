@@ -75,7 +75,7 @@
               optionValue="value"
               style="min-width:120px"
             />
-            <button class="remove-row-btn" @click="removeRow(idx)" title="Supprimer">
+            <button class="remove-row-btn" title="Supprimer" @click="removeRow(idx)">
               <i class="pi pi-times" />
             </button>
           </div>

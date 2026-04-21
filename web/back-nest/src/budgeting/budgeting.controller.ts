@@ -5,6 +5,9 @@ import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { UpsertBudgetDto } from './dto/upsert-budget.dto.js';
+import { CreateLineItemDto } from './dto/create-line-item.dto.js';
+import { UpdateLineItemDto } from './dto/update-line-item.dto.js';
 
 @Controller('pm/projects/:projectId/budget')
 @UseGuards(JwtAuthGuard, ProjectAccessGuard)
@@ -22,7 +25,7 @@ export class BudgetingController {
   @Put()
   async upsert(
     @Param('projectId') projectId: string,
-    @Body() dto: { laborBudget?: number; materialBudget?: number; currency?: string; notes?: string },
+    @Body() dto: UpsertBudgetDto,
   ) {
     const r = await this.service.upsertBudget(projectId, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -33,7 +36,7 @@ export class BudgetingController {
   @HttpCode(HttpStatus.CREATED)
   async createLine(
     @Param('projectId') projectId: string,
-    @Body() dto: { description: string; type?: string; unitCost: number; units: number; position?: number },
+    @Body() dto: CreateLineItemDto,
   ) {
     if (!dto.description?.trim()) throw new BadRequestException('Description requise.');
     const r = await this.service.createLineItem(projectId, dto);
@@ -45,7 +48,7 @@ export class BudgetingController {
   async updateLine(
     @Param('projectId') projectId: string,
     @Param('id') id: string,
-    @Body() dto: { description?: string; type?: string; unitCost?: number; units?: number; position?: number },
+    @Body() dto: UpdateLineItemDto,
   ) {
     const r = await this.service.updateLineItem(projectId, id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);

@@ -7,6 +7,8 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { UploadAttachmentDto } from './dto/upload-attachment.dto.js';
+import { UpdateAttachmentDto } from './dto/update-attachment.dto.js';
 
 @Controller('api/projects/:projectId/attachments')
 @UseGuards(JwtAuthGuard, ProjectAccessGuard)
@@ -29,14 +31,14 @@ export class AttachmentsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async upload(@Param('projectId') projectId: string, @CurrentUser() user: any, @Body() dto: any) {
+  async upload(@Param('projectId') projectId: string, @CurrentUser() user: { userId: string }, @Body() dto: UploadAttachmentDto) {
     const result = await this.service.upload(projectId, user.userId, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
   }
 
   @Patch(':attachmentId')
-  async update(@Param('attachmentId') attachmentId: string, @Body() dto: any) {
+  async update(@Param('attachmentId') attachmentId: string, @Body() dto: UpdateAttachmentDto) {
     const result = await this.service.updateMetadata(attachmentId, dto);
     if (result.isFailure) throw new NotFoundException(result.error);
     return result.value;
@@ -54,7 +56,14 @@ export class AttachmentsController {
     const result = await this.service.download(attachmentId);
     if (result.isFailure) throw new NotFoundException(result.error);
     const { content, fileName, contentType } = result.value!;
-    res.set({ 'Content-Type': contentType, 'Content-Disposition': `attachment; filename="${fileName}"` });
+    // RFC 6266: provide an ASCII fallback (strip control chars and quotes) plus
+    // a UTF-8 encoded filename* parameter so non-ASCII names are preserved.
+    const asciiFallback = fileName.replace(/[\x00-\x1f\x7f"]/g, '_');
+    const encoded = encodeURIComponent(fileName);
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
+    });
     res.send(content);
   }
 }

@@ -7,7 +7,7 @@
       :title="phase.label"
       @click="handleClick(phase.key)"
     >
-      <div class="step-connector" v-if="i > 0" />
+      <div v-if="i > 0" class="step-connector" />
       <div class="step-circle">
         <i v-if="stepState(phase.key) === 'done'" class="pi pi-check" />
         <span v-else>{{ i + 1 }}</span>

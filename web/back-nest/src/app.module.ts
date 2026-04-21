@@ -38,6 +38,7 @@ import { PortfolioModule } from './portfolio/portfolio.module.js';
 import { TeamPlannerModule } from './team-planner/team-planner.module.js';
 import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
+import { TeamsModule } from './teams/teams.module.js';
 
 @Module({
   providers: [
@@ -165,6 +166,7 @@ import { HealthModule } from './health/health.module.js';
     TeamPlannerModule,
     SearchModule,
     HealthModule,
+    TeamsModule,
   ],
 })
 export class AppModule {}

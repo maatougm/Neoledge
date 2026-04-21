@@ -46,7 +46,7 @@
       @dragleave.prevent="isDragOver = false"
       @drop.prevent="onDrop"
     >
-      <div class="upload-drop-hint" v-if="!uploadFile">
+      <div v-if="!uploadFile" class="upload-drop-hint">
         <i class="pi pi-cloud-upload upload-drop-icon" />
         <span>Glissez un fichier audio ici ou cliquez pour choisir</span>
       </div>

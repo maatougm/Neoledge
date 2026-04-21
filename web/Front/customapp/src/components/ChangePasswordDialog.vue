@@ -1,9 +1,9 @@
 <template>
   <AppModal
     :visible="visible"
-    @update:visible="emit('update:visible', $event)"
     header="Changer mon mot de passe"
     width="420px"
+    @update:visible="emit('update:visible', $event)"
   >
     <div class="form-body">
       <div class="field-wrap">

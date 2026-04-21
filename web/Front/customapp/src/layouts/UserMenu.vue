@@ -1,6 +1,6 @@
 <!-- @file src/layouts/UserMenu.vue — Topbar user menu dropdown with profile, dark mode, logout -->
 <template>
-  <div class="user-menu" ref="rootRef">
+  <div ref="rootRef" class="user-menu">
     <!-- Trigger button -->
     <button
       class="user-menu__trigger"

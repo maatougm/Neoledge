@@ -28,7 +28,7 @@
           </div>
 
           <!-- Results -->
-          <div class="cmdk-results" id="cmdk-listbox" role="listbox" aria-label="Résultats de recherche">
+          <div id="cmdk-listbox" class="cmdk-results" role="listbox" aria-label="Résultats de recherche">
             <div v-if="loading" class="cmdk-state" aria-live="polite">Recherche…</div>
             <div v-else-if="flatItems.length === 0" class="cmdk-state" aria-live="polite">Aucun résultat.</div>
             <template v-else>
@@ -37,8 +37,8 @@
                 <ul class="cmdk-list" role="presentation">
                   <li
                     v-for="item in group.items"
-                    :key="item._idx"
                     :id="`cmdk-option-${item._idx}`"
+                    :key="item._idx"
                     role="option"
                     :aria-selected="item._idx === selIdx"
                     class="cmdk-item"

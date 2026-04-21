@@ -51,12 +51,12 @@
         <CommentItem
           :comment="comment"
           :current-user-id="store.currentUserId"
+          :editing="editingId === comment.id"
+          :edit-draft="editingId === comment.id ? editDraft : ''"
           @reply="openReply(comment.id)"
           @edit="startEdit(comment.id, comment.content)"
           @delete="handleDelete(comment.id)"
           @save-edit="(content) => handleEdit(comment.id, content)"
-          :editing="editingId === comment.id"
-          :edit-draft="editingId === comment.id ? editDraft : ''"
           @update:edit-draft="editDraft = $event"
           @cancel-edit="cancelEdit"
         />
@@ -69,11 +69,11 @@
             :comment="reply"
             :current-user-id="store.currentUserId"
             :is-reply="true"
+            :editing="editingId === reply.id"
+            :edit-draft="editingId === reply.id ? editDraft : ''"
             @edit="startEdit(reply.id, reply.content)"
             @delete="handleDelete(reply.id)"
             @save-edit="(content) => handleEdit(reply.id, content)"
-            :editing="editingId === reply.id"
-            :edit-draft="editingId === reply.id ? editDraft : ''"
             @update:edit-draft="editDraft = $event"
             @cancel-edit="cancelEdit"
           />

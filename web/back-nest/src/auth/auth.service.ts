@@ -7,118 +7,6 @@ import { TotpService } from './totp.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { getJwtSecret } from './jwt-secret.js';
 
-interface TestUser {
-  id: string;
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  mustChangePassword: boolean;
-}
-
-const TEST_USERS: readonly TestUser[] = [
-  {
-    id: 'test-admin-001',
-    email: 'admin@neoleadge.com',
-    password: 'Admin@123',
-    firstName: 'Admin',
-    lastName: 'User',
-    role: 'Admin',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-pm-001',
-    email: 'pm@neoleadge.com',
-    password: 'Pm@123',
-    firstName: 'Project',
-    lastName: 'Manager',
-    role: 'ProjectManager',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-pm-002',
-    email: 'pm2@neoleadge.com',
-    password: 'Pm2@123',
-    firstName: 'Project',
-    lastName: 'Manager2',
-    role: 'ProjectManager',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-pm-003',
-    email: 'testpm@neoleadge.test',
-    password: 'TestPm@123',
-    firstName: 'Test',
-    lastName: 'PM',
-    role: 'ProjectManager',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-deploy-001',
-    email: 'valid@neoleadge.com',
-    password: 'Valid@123',
-    firstName: 'Deploy',
-    lastName: 'Team',
-    role: 'DeploymentTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-deploy-002',
-    email: 'testdeploy@neoleadge.test',
-    password: 'TestDeploy@123',
-    firstName: 'Test',
-    lastName: 'Deploy',
-    role: 'DeploymentTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-spec-001',
-    email: 'spec@neoleadge.com',
-    password: 'Spec@123',
-    firstName: 'Specification',
-    lastName: 'Team',
-    role: 'SpecificationTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-spec-002',
-    email: 'testspec@neoleadge.test',
-    password: 'TestSpec@123',
-    firstName: 'Test',
-    lastName: 'Spec',
-    role: 'SpecificationTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-realiz-001',
-    email: 'realiz@neoleadge.com',
-    password: 'Realiz@123',
-    firstName: 'Realization',
-    lastName: 'Team',
-    role: 'RealizationTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-realiz-002',
-    email: 'testrealiz@neoleadge.test',
-    password: 'TestRealiz@123',
-    firstName: 'Test',
-    lastName: 'Realiz',
-    role: 'RealizationTeam',
-    mustChangePassword: false,
-  },
-  {
-    id: 'test-viewer-001',
-    email: 'newuser@neoleadge.com',
-    password: 'Temp@123',
-    firstName: 'New',
-    lastName: 'User',
-    role: 'Viewer',
-    mustChangePassword: true,
-  },
-] as const;
-
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 15;
 const TEMP_TOKEN_EXPIRES_IN = '5m';
@@ -156,46 +44,7 @@ export class AuthService {
       return this.authenticateDbUser(dbUser, password);
     }
 
-    const isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
-
-    if (!isProduction) {
-      const testUser = TEST_USERS.find((u) => u.email === email);
-
-      if (testUser && testUser.password === password) {
-        this.logger.warn(`Dev login for test user: ${email}`);
-
-        // Lazily materialise an AppUser row so /api/userprofile, automation,
-        // notifications, and any other module that looks up users by id work
-        // for hardcoded dev accounts. Idempotent.
-        await this.prisma.appUser.upsert({
-          where: { id: testUser.id },
-          update: {},
-          create: {
-            id: testUser.id,
-            email: testUser.email,
-            firstName: testUser.firstName,
-            lastName: testUser.lastName,
-            role: testUser.role,
-            passwordHash: await bcrypt.hash(testUser.password, BCRYPT_ROUNDS),
-            isActive: true,
-            mustChangePassword: testUser.mustChangePassword,
-          },
-        });
-
-        const jwt = await this.generateTokenForUser({
-          id: testUser.id,
-          email: testUser.email,
-          role: testUser.role,
-          firstName: testUser.firstName,
-          lastName: testUser.lastName,
-        });
-
-        return { jwt, mustChangePassword: testUser.mustChangePassword };
-      }
-    }
-
-    // Equalise response time for unknown emails / wrong dev passwords with the
+    // Equalise response time for unknown emails with the
     // bcrypt.compare executed on the happy path. Without this, an attacker can
     // enumerate valid accounts by measuring the faster failure timing.
     await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
@@ -483,7 +332,7 @@ export class AuthService {
 
       void this.audit.log('AppUser', user.id, 'LOGIN', user.id, undefined, {
         stage: 'password-ok-totp-pending',
-      });
+      }).catch((e) => this.logger.error('audit login totp-pending failed', e));
 
       return { requiresTotp: true, tempToken };
     }
@@ -506,7 +355,8 @@ export class AuthService {
       lastName: user.lastName,
     });
 
-    void this.audit.log('AppUser', user.id, 'LOGIN', user.id);
+    void this.audit.log('AppUser', user.id, 'LOGIN', user.id)
+      .catch((e) => this.logger.error('audit login failed', e));
     return { jwt, mustChangePassword: user.mustChangePassword };
   }
 

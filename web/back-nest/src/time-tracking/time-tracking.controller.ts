@@ -6,6 +6,11 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { CreateTimeEntryDto } from './dto/create-time-entry.dto.js';
+import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
+import { LockPeriodDto } from './dto/lock-period.dto.js';
+import { CreateHourlyRateDto } from './dto/create-hourly-rate.dto.js';
+import { UpdateHourlyRateDto } from './dto/update-hourly-rate.dto.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -31,7 +36,7 @@ export class TimeEntriesController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @CurrentUser() user: AuthUser,
-    @Body() dto: { projectId: string; workPackageId?: string; hours: number; spentOn: string; activity?: string; comment?: string; isBillable?: boolean },
+    @Body() dto: CreateTimeEntryDto,
   ) {
     const r = await this.service.create(user.userId, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -42,7 +47,7 @@ export class TimeEntriesController {
   async update(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
-    @Body() dto: { hours?: number; spentOn?: string; activity?: string; comment?: string; isBillable?: boolean; workPackageId?: string | null },
+    @Body() dto: UpdateTimeEntryDto,
   ) {
     const r = await this.service.update(id, user.userId, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -73,7 +78,7 @@ export class TimeEntriesController {
   @UseGuards(RolesGuard)
   @Roles('Admin')
   async lock(
-    @Body() body: { from: string; to: string; userId?: string },
+    @Body() body: LockPeriodDto,
   ) {
     // [Fix-6] Role check moved to RolesGuard + @Roles decorator so the guard
     // is honoured by internal callers too and returns 403 (not 400) for non-Admin.
@@ -124,14 +129,14 @@ export class HourlyRatesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() dto: { userId: string; projectId?: string; rate: number; currency?: string; validFrom: string; validTo?: string }) {
+  async create(@Body() dto: CreateHourlyRateDto) {
     const r = await this.service.createRate(dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: { rate?: number; currency?: string; validTo?: string | null }) {
+  async update(@Param('id') id: string, @Body() dto: UpdateHourlyRateDto) {
     const r = await this.service.updateRate(id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;

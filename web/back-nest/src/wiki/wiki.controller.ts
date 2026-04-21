@@ -6,6 +6,9 @@ import { PermissionsGuard } from '../common/guards/permissions.guard.js';
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { CreateWikiPageDto } from './dto/create-wiki-page.dto.js';
+import { UpdateWikiPageDto } from './dto/update-wiki-page.dto.js';
+import { MoveWikiPageDto } from './dto/move-wiki-page.dto.js';
 
 interface AuthUser { userId: string }
 
@@ -40,7 +43,7 @@ export class WikiController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Param('projectId') projectId: string,
-    @Body() dto: { title: string; content: string; parentId?: string },
+    @Body() dto: CreateWikiPageDto,
     @CurrentUser() user: AuthUser,
   ) {
     const r = await this.service.create(projectId, dto, user.userId);
@@ -52,7 +55,7 @@ export class WikiController {
   async update(
     @Param('projectId') projectId: string,
     @Param('slug') slug: string,
-    @Body() dto: { title?: string; content?: string; comment?: string },
+    @Body() dto: UpdateWikiPageDto,
     @CurrentUser() user: AuthUser,
   ) {
     const r = await this.service.update(projectId, slug, dto, user.userId);
@@ -71,7 +74,7 @@ export class WikiController {
   async move(
     @Param('projectId') projectId: string,
     @Param('slug') slug: string,
-    @Body() body: { parentId: string | null },
+    @Body() body: MoveWikiPageDto,
   ) {
     const r = await this.service.movePage(projectId, slug, body.parentId ?? null);
     if (r.isFailure) throw new BadRequestException(r.error);

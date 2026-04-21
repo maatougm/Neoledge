@@ -88,16 +88,16 @@
                   severity="secondary"
                   text
                   size="small"
-                  @click="emit('edit', user)"
                   title="Modifier"
+                  @click="emit('edit', user)"
                 />
                 <NeoButton
                   icon="pi pi-key"
                   severity="warn"
                   text
                   size="small"
-                  @click="emit('reset-password', user.id)"
                   title="Réinitialiser le mot de passe"
+                  @click="emit('reset-password', user.id)"
                 />
                 <NeoButton
                   v-if="user.isActive"
@@ -105,8 +105,8 @@
                   severity="danger"
                   text
                   size="small"
-                  @click="emit('deactivate', user.id)"
                   title="Désactiver"
+                  @click="emit('deactivate', user.id)"
                 />
                 <NeoButton
                   v-else
@@ -114,8 +114,8 @@
                   severity="secondary"
                   text
                   size="small"
-                  @click="emit('reactivate', user.id)"
                   title="Réactiver"
+                  @click="emit('reactivate', user.id)"
                 />
               </div>
             </td>

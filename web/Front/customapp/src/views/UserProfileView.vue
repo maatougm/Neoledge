@@ -39,8 +39,8 @@
           </button>
           <input
             id="avatar-file-input"
-            name="avatar-file-input"
             ref="fileInputRef"
+            name="avatar-file-input"
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
             class="avatar-file-input"

@@ -69,19 +69,28 @@ export class WorkPackagesService {
       // Remove the explicitly excluded user (already notified via assignee path).
       if (excludeUserId) userIds.delete(excludeUserId);
 
-      for (const userId of userIds) {
-        void this.notifications.notifyEnhanced({
-          userId,
-          type: 'work_package',
-          title,
-          message,
-          projectId,
-          reason,
-          entityType: 'work_package',
-          entityId: wpId,
-          actorId,
-          link: `/app/pm/projects/${projectId}/workpackages`,
-        }).catch((e) => this.logger.error('notifyEnhanced (wp watchers) failed', e));
+      // Batch DB inserts in a single createMany to avoid N+1 writes.
+      // Side effects that are per-user (socket emit) still run individually below.
+      if (userIds.size > 0) {
+        try {
+          await this.prisma.notification.createMany({
+            data: Array.from(userIds).map((userId) => ({
+              userId,
+              type: 'work_package',
+              title,
+              message,
+              projectId,
+              reason,
+              entityType: 'work_package' as const,
+              entityId: wpId,
+              actorId,
+              link: `/app/pm/projects/${projectId}/workpackages`,
+            })),
+            skipDuplicates: true,
+          });
+        } catch (e) {
+          this.logger.error('notifyWatchersAndAssignee: createMany failed', e);
+        }
       }
     } catch {
       // Never break the caller.

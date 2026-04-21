@@ -6,16 +6,40 @@ datasource db {
   provider = "mysql"
 }
 
-// ─── Enums (stored as VARCHAR) ────────────────────────────────────────────────
+// ─── Enums (stored as VARCHAR — enum-as-string pattern) ──────────────────────
+//
+// All enum-like columns use @db.VarChar and String type in Prisma. This avoids
+// MySQL enum-column ALTER TABLE rewrites on every value addition. Application
+// code validates values at the DTO / service layer.
 //
 // UserRole:           Admin | ProjectManager | SpecificationTeam | RealizationTeam | DeploymentTeam | Viewer
-// ProjectStatus:      Draft | InProgress | SpecificationValidation | Realization | DeploymentValidation | Completed | Archived
+//
+// ProjectStatus — 8 canonical RACI phases + 2 technical states:
+//   Technical:  Draft | Archived
+//   Phases:     Kickoff | CadrageTechnique | Environnement | Parametrage |
+//               Integration | Recette | MEP | Cloture
+//
+// TeamCode:           Cloud | PS | Integration | Delivery
 // ProjectPriority:    Low | Medium | High | Critical
 // FieldType:          Text | Number | Date | Select | Checkbox
 // FieldCategory:      Static | Dynamic | Custom
 // AttachmentCategory: Document | Specification | Contract | Screenshot | Image | Report | Other
 
 // ─── Models ──────────────────────────────────────────────────────────────────
+
+// ─── Sprint 1: RACI Teams ─────────────────────────────────────────────────────
+
+model Team {
+  id            String    @id @default(uuid())
+  code          String    @unique @db.VarChar(50)
+  name          String    @db.VarChar(200)
+  managerUserId String?   @db.VarChar(36)
+  createdAt     DateTime  @default(now())
+
+  members AppUser[] @relation("TeamMembers")
+
+  @@map("Teams")
+}
 
 model AppUser {
   id                  String    @id @default(uuid())
@@ -39,8 +63,10 @@ model AppUser {
   totpEnabled         Boolean   @default(false)
   totpVerifiedAt      DateTime?
   tokenVersion        Int       @default(0)
+  teamId              String?   @db.VarChar(36)
 
   // Relations
+  team             Team?              @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   managedProjects  Project[]          @relation("ProjectManager")
   createdProjects  Project[]          @relation("ProjectCreator")
   deletedProjects  Project[]          @relation("ProjectDeleter")
@@ -181,6 +207,7 @@ model Project {
   wikiPages       WikiPage[]
   portfolioLinks  PortfolioProject[]
   roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
+  handovers       Handover[]
 
   @@index([status])
   @@index([projectManagerId])
@@ -623,6 +650,15 @@ model WorkPackage {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  // ─── Sprint 4: SLA fields ────────────────────────────────────────────────────
+  ackedAt           DateTime?
+  ackedByUserId     String?
+  escalatedAt       DateTime?
+  escalatedToUserId String?
+  slaDeadline       DateTime?
+  slaKind           String?   @db.VarChar(20)   // ack|blocker|post_recette|post_prod
+  slaBreached       Boolean   @default(false)
+
   project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   author          AppUser                  @relation("WpAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -650,6 +686,7 @@ model WorkPackage {
   @@index([sprintId])
   @@index([versionId])
   @@index([boardColumnId])
+  @@index([slaDeadline, slaBreached])
   @@map("WorkPackages")
 }
 
@@ -999,4 +1036,59 @@ model WorkPackageAttachment {
   @@index([workPackageId])
   @@index([uploadedByUserId])
   @@map("WorkPackageAttachments")
+}
+
+
+// ─── Sprint 2: RACI + Handover ────────────────────────────────────────────────
+
+model ActivityRaci {
+  id                  Int    @id @default(autoincrement())
+  phase               String @db.VarChar(100)
+  activityCode        String @unique @db.VarChar(100)
+  activityLabel       String @db.VarChar(500)
+  responsibleTeamCode String @db.VarChar(500)
+  approverTeamCode    String @db.VarChar(500)
+  consultedTeams      String @default("") @db.VarChar(500)
+  informedTeams       String @default("") @db.VarChar(500)
+  order               Int    @default(0)
+
+  @@index([phase])
+  @@map("ActivityRacis")
+}
+
+model Handover {
+  id               String    @id @default(uuid())
+  projectId        String
+  fromTeamCode     String    @db.VarChar(50)
+  toTeamCode       String    @db.VarChar(50)
+  phase            String    @db.VarChar(100)
+  status           String    @default("Draft") @db.VarChar(50)
+  acceptedAt       DateTime?
+  acceptedByUserId String?   @db.VarChar(36)
+  rejectionReason  String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  criteria HandoverCriterion[]
+
+  @@index([projectId])
+  @@index([status])
+  @@map("Handovers")
+}
+
+model HandoverCriterion {
+  id           String    @id @default(uuid())
+  handoverId   String
+  code         String    @db.VarChar(100)
+  label        String    @db.VarChar(500)
+  isDone       Boolean   @default(false)
+  doneAt       DateTime?
+  doneByUserId String?   @db.VarChar(36)
+  evidenceUrl  String?   @db.VarChar(1000)
+
+  handover Handover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+
+  @@index([handoverId])
+  @@map("HandoverCriteria")
 }

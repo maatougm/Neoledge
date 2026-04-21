@@ -70,7 +70,8 @@ describe('NotificationsService', () => {
       const result = await service.getForUser(userId);
 
       expect(result.isSuccess).toBe(true);
-      expect(result.value).toEqual(expected);
+      // getForUser returns { items, nextCursor } (cursor-pagination shape)
+      expect((result.value as { items: unknown[] } | undefined)?.items).toEqual(expected);
       expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { userId } }),
       );

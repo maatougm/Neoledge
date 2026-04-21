@@ -7,7 +7,7 @@
       </template>
     </ModulePageHeader>
 
-    <div class="pf-content" v-if="!portfolioStore.currentPortfolio">
+    <div v-if="!portfolioStore.currentPortfolio" class="pf-content">
       <div class="pf-cards">
         <div
           v-for="p in portfolioStore.portfolios"

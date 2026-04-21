@@ -68,7 +68,7 @@
 
       <!-- Conflicts -->
       <div v-if="activeTab === 'Conflits'">
-        <table class="tp-table" v-if="store.conflicts.length">
+        <table v-if="store.conflicts.length" class="tp-table">
           <thead>
             <tr><th>Utilisateur</th><th>WP A</th><th>WP B</th></tr>
           </thead>

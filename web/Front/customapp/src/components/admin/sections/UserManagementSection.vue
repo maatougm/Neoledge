@@ -40,9 +40,9 @@
       <button
         v-if="searchText || roleFilter"
         class="clear-btn"
-        @click="searchText = ''; roleFilter = ''"
         title="Effacer les filtres"
         aria-label="Effacer les filtres"
+        @click="searchText = ''; roleFilter = ''"
       >
         <i class="pi pi-times" />
         Effacer
@@ -97,10 +97,10 @@
     <!-- Temp password dialog -->
     <Dialog
       :visible="um.showTempPasswordDialog.value"
-      @update:visible="!$event && (um.showTempPasswordDialog.value = false)"
       header="Mot de passe temporaire"
       :modal="true"
       style="width: min(420px, 96vw)"
+      @update:visible="!$event && (um.showTempPasswordDialog.value = false)"
     >
       <div class="temp-body">
         <div class="temp-icon-wrap">

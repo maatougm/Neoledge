@@ -24,7 +24,7 @@
           <label>Dates</label>
           <span>{{ formatDate(activeSprint.startDate) }} → {{ formatDate(activeSprint.endDate) }}</span>
         </div>
-        <div class="sb__meta-item" v-if="activeSprint.goal">
+        <div v-if="activeSprint.goal" class="sb__meta-item">
           <label>Objectif</label>
           <span>{{ activeSprint.goal }}</span>
         </div>

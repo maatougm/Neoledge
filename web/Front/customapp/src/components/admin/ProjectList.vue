@@ -57,7 +57,7 @@
         <thead>
           <tr>
             <th class="project-list__th-check">
-              <input type="checkbox" :checked="allSelected" :indeterminate="someSelected" @change="toggleAll" class="project-list__checkbox" aria-label="Tout sélectionner" />
+              <input type="checkbox" :checked="allSelected" :indeterminate="someSelected" class="project-list__checkbox" aria-label="Tout sélectionner" @change="toggleAll" />
             </th>
             <th>Projet</th>
             <th>Client</th>

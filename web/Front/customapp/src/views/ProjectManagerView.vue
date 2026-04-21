@@ -27,7 +27,7 @@
       </nav>
 
       <div class="sidebar-footer">
-        <button class="user-identity-btn" @click="router.push({ name: 'profile' })" title="Mon profil">
+        <button class="user-identity-btn" title="Mon profil" @click="router.push({ name: 'profile' })">
           <img
             v-if="sidebarAvatarUrl"
             :src="sidebarAvatarUrl"

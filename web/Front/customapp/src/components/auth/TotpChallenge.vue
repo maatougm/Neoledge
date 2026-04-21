@@ -15,7 +15,7 @@
       </p>
     </div>
 
-    <form class="challenge-form" @submit.prevent="handleSubmit" novalidate>
+    <form class="challenge-form" novalidate @submit.prevent="handleSubmit">
       <div class="field-group">
         <label for="totp-challenge-code" class="field-label">Code d'authentification</label>
         <NeoInputText

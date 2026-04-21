@@ -3,6 +3,15 @@ import { AgileService } from './agile.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
+import { CreateBoardDto } from './dto/create-board.dto.js';
+import { UpdateBoardDto } from './dto/update-board.dto.js';
+import { CreateColumnDto } from './dto/create-column.dto.js';
+import { UpdateColumnDto } from './dto/update-column.dto.js';
+import { ReorderColumnsDto } from './dto/reorder-columns.dto.js';
+import { MoveCardDto } from './dto/move-card.dto.js';
+import { CreateSprintDto } from './dto/create-sprint.dto.js';
+import { UpdateSprintDto } from './dto/update-sprint.dto.js';
+import { AddWpsToSprintDto } from './dto/add-wps-to-sprint.dto.js';
 
 @Controller('pm/projects/:projectId')
 @UseGuards(JwtAuthGuard, ProjectAccessGuard)
@@ -28,7 +37,7 @@ export class AgileController {
   @HttpCode(HttpStatus.CREATED)
   async createBoard(
     @Param('projectId') projectId: string,
-    @Body() dto: { name: string; type?: string; isDefault?: boolean },
+    @Body() dto: CreateBoardDto,
   ) {
     if (!dto.name?.trim()) throw new BadRequestException('Nom requis.');
     const r = await this.service.createBoard(projectId, dto);
@@ -37,7 +46,7 @@ export class AgileController {
   }
 
   @Patch('boards/:id')
-  async updateBoard(@Param('id') id: string, @Body() dto: { name?: string; type?: string; isDefault?: boolean }) {
+  async updateBoard(@Param('id') id: string, @Body() dto: UpdateBoardDto) {
     const r = await this.service.updateBoard(id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
@@ -52,14 +61,14 @@ export class AgileController {
 
   @Post('boards/:id/columns')
   @HttpCode(HttpStatus.CREATED)
-  async createColumn(@Param('id') boardId: string, @Body() dto: { name: string; wipLimit?: number; mapStatus?: string }) {
+  async createColumn(@Param('id') boardId: string, @Body() dto: CreateColumnDto) {
     const r = await this.service.createColumn(boardId, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Patch('boards/:id/columns/:columnId')
-  async updateColumn(@Param('columnId') columnId: string, @Body() dto: { name?: string; wipLimit?: number | null; mapStatus?: string | null }) {
+  async updateColumn(@Param('columnId') columnId: string, @Body() dto: UpdateColumnDto) {
     const r = await this.service.updateColumn(columnId, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
@@ -73,7 +82,7 @@ export class AgileController {
   }
 
   @Patch('boards/:id/columns/reorder')
-  async reorderColumns(@Param('id') boardId: string, @Body() body: { order: string[] }) {
+  async reorderColumns(@Param('id') boardId: string, @Body() body: ReorderColumnsDto) {
     const r = await this.service.reorderColumns(boardId, body.order);
     if (r.isFailure) throw new BadRequestException(r.error);
     return { success: true };
@@ -82,9 +91,9 @@ export class AgileController {
   @Patch('boards/:id/cards/:wpId/move')
   async moveCard(
     @Param('wpId') wpId: string,
-    @Body() body: { columnId: string | null; position?: number },
+    @Body() body: MoveCardDto,
   ) {
-    const r = await this.service.moveCard(wpId, body.columnId, body.position ?? 0);
+    const r = await this.service.moveCard(wpId, body.columnId ?? null, body.position ?? 0);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
@@ -100,7 +109,7 @@ export class AgileController {
   @HttpCode(HttpStatus.CREATED)
   async createSprint(
     @Param('id') boardId: string,
-    @Body() dto: { name: string; startDate: string; endDate: string; goal?: string; capacity?: number },
+    @Body() dto: CreateSprintDto,
   ) {
     if (!dto.name?.trim()) throw new BadRequestException('Nom requis.');
     const r = await this.service.createSprint(boardId, dto);
@@ -111,7 +120,7 @@ export class AgileController {
   @Patch('sprints/:sprintId')
   async updateSprint(
     @Param('sprintId') id: string,
-    @Body() dto: { name?: string; startDate?: string; endDate?: string; goal?: string; capacity?: number; status?: string },
+    @Body() dto: UpdateSprintDto,
   ) {
     const r = await this.service.updateSprint(id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -140,7 +149,7 @@ export class AgileController {
   }
 
   @Post('sprints/:sprintId/work-packages')
-  async addWps(@Param('sprintId') id: string, @Body() body: { workPackageIds: string[] }) {
+  async addWps(@Param('sprintId') id: string, @Body() body: AddWpsToSprintDto) {
     const r = await this.service.addWpToSprint(id, body.workPackageIds);
     if (r.isFailure) throw new BadRequestException(r.error);
     return { success: true };

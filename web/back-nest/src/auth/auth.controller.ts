@@ -25,6 +25,7 @@ export class AuthController {
   // ── Standard Login ──────────────────────────────────────────────────────────
 
   @Post('auth/login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate user — returns JWT or TOTP challenge' })
   @ApiResponse({ status: 200, description: 'Login successful or TOTP required' })

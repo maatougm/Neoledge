@@ -1,6 +1,6 @@
 <!-- @file src/layouts/NotificationPanel.vue — Topbar notification bell with dropdown panel -->
 <template>
-  <div class="notif-panel" ref="rootRef">
+  <div ref="rootRef" class="notif-panel">
     <!-- Bell trigger -->
     <button
       class="topbar-icon-btn"
@@ -50,8 +50,8 @@
 
           <!-- Items -->
           <div
-            v-else
             v-for="notif in notifStore.notifications"
+            v-else
             :key="notif.id"
             class="notif-item"
             :class="{ 'notif-item--unread': !notif.isRead }"
