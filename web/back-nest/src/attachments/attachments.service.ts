@@ -7,6 +7,28 @@ import { randomUUID } from 'node:crypto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'attachments');
+
+// Re-validate content-type at download time — defence against a tampered DB
+// row or a future code path that bypasses the DTO allow-list at upload time.
+// Serving an attacker-controlled Content-Type of "text/html" on a download
+// endpoint would enable stored XSS in browsers that render inline responses.
+const ALLOWED_CONTENT_TYPES_SET = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+]);
 const ALLOWED_EXT = new Set([
   '.pdf',
   '.doc',
@@ -119,10 +141,17 @@ export class AttachmentsService {
     if (!a) return Result.fail<any>('Pièce jointe non trouvée.');
     if (!fs.existsSync(a.storagePath)) return Result.fail<any>('Fichier introuvable sur le disque.');
 
+    // Sanitise the stored content-type against the allow-list before setting it
+    // as a response header. A tampered DB value of "text/html" would allow stored
+    // XSS if the browser renders the response inline.
+    const safeContentType = ALLOWED_CONTENT_TYPES_SET.has(a.contentType)
+      ? a.contentType
+      : 'application/octet-stream';
+
     return Result.ok({
       content: fs.readFileSync(a.storagePath),
       fileName: a.fileName,
-      contentType: a.contentType,
+      contentType: safeContentType,
     });
   }
 

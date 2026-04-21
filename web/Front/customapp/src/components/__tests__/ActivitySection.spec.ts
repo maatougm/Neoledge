@@ -21,20 +21,19 @@ vi.mock('@neolibrary/components', () => ({
   },
 }))
 
-// ── Mock useApp ────────────────────────────────────────────────────────────────
+// ── Mock shared api wrapper ────────────────────────────────────────────────────
 
-vi.mock('@/stores/useApp', () => ({
-  useApp: () => ({
-    jwt: 'test.jwt.token',
-    apiUrl: 'http://test-api',
-  }),
+vi.mock('@/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
-
-// ── Mock axios ─────────────────────────────────────────────────────────────────
-
-vi.mock('axios')
-import axios from 'axios'
-const mockedAxios = vi.mocked(axios, true)
+import api from '@/lib/api'
+const mockedAxios = { get: vi.mocked(api.get) }
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 

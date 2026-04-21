@@ -2,7 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import axios from 'axios'
 
-vi.mock('axios')
+vi.mock('axios', () => {
+  const mock = {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+    interceptors: {
+      request: { use: vi.fn() },
+      response: { use: vi.fn() },
+    },
+  }
+  return { default: mock, ...mock }
+})
 vi.mock('@/router', () => ({
   default: { push: vi.fn() },
 }))

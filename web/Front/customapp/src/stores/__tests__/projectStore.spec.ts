@@ -1,21 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import axios from 'axios'
 import { computeProgress } from '../projectStore'
 import type {
   ProjectSummary,
   ProjectDetail,
   ProjectField,
-  ProjectStatus,
 } from '@/types/project.types'
 
-vi.mock('axios')
-vi.mock('../useApp', () => ({
-  useApp: () => ({
-    apiUrl: 'http://test-api',
-    jwt: 'fake-jwt-token',
-  }),
+vi.mock('@/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
+
+import api from '@/lib/api'
 
 const mockSummary: ProjectSummary = {
   id: 'p1',
@@ -69,16 +71,17 @@ const mockDetail: ProjectDetail = {
   fieldValues: [],
 }
 
-const headers = { headers: { Authorization: 'Bearer fake-jwt-token' } }
+// Helper to build the envelope shape the current store expects
+const envelope = (items: ProjectSummary[]) => ({ data: { items, total: items.length } })
 
 describe('useProjectStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.mocked(axios.get).mockReset()
-    vi.mocked(axios.post).mockReset()
-    vi.mocked(axios.put).mockReset()
-    vi.mocked(axios.delete).mockReset()
-    vi.mocked(axios.patch).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
+    vi.mocked(api.put).mockReset()
+    vi.mocked(api.delete).mockReset()
+    vi.mocked(api.patch).mockReset()
   })
 
   const getStore = async () => {
@@ -90,19 +93,28 @@ describe('useProjectStore', () => {
 
   describe('fetchAll', () => {
     it('calls correct URL and sets projects state', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary] })
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary]) as never)
 
       const store = await getStore()
       await store.fetchAll()
 
-      expect(axios.get).toHaveBeenCalledWith('http://test-api/admin/Project', headers)
+      expect(api.get).toHaveBeenCalledWith('/admin/project')
       expect(store.projects).toHaveLength(1)
       expect(store.projects[0]).toEqual(mockSummary)
       expect(store.loading).toBe(false)
     })
 
+    it('accepts a plain array response for backward compat', async () => {
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockSummary] } as never)
+
+      const store = await getStore()
+      await store.fetchAll()
+
+      expect(store.projects).toHaveLength(1)
+    })
+
     it('sets error on failure', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Server down'))
+      vi.mocked(api.get).mockRejectedValueOnce(new Error('Server down'))
 
       const store = await getStore()
       await store.fetchAll()
@@ -116,12 +128,12 @@ describe('useProjectStore', () => {
 
   describe('fetchById', () => {
     it('calls correct URL and sets currentProject', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: mockDetail })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: mockDetail } as never)
 
       const store = await getStore()
       const result = await store.fetchById('p1')
 
-      expect(axios.get).toHaveBeenCalledWith('http://test-api/admin/Project/p1', headers)
+      expect(api.get).toHaveBeenCalledWith('/admin/project/p1')
       expect(store.currentProject).toEqual(mockDetail)
       expect(result).toEqual(mockDetail)
     })
@@ -131,9 +143,8 @@ describe('useProjectStore', () => {
 
   describe('createProject', () => {
     it('posts payload and refreshes list', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({ data: mockDetail })
-      // fetchAll is called after create
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary] })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: mockDetail } as never)
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary]) as never)
 
       const store = await getStore()
       const payload = {
@@ -144,11 +155,10 @@ describe('useProjectStore', () => {
       }
       const result = await store.createProject(payload)
 
-      expect(axios.post).toHaveBeenCalledWith('http://test-api/admin/Project', payload, headers)
+      expect(api.post).toHaveBeenCalledWith('/admin/project', payload)
       expect(result).toEqual(mockDetail)
       expect(store.currentProject).toEqual(mockDetail)
-      // fetchAll was called
-      expect(axios.get).toHaveBeenCalled()
+      expect(api.get).toHaveBeenCalled()
     })
   })
 
@@ -156,18 +166,17 @@ describe('useProjectStore', () => {
 
   describe('deleteProject', () => {
     it('removes from state and clears currentProject if matching', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary, mockSummaryActive] })
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary, mockSummaryActive]) as never)
 
       const store = await getStore()
       await store.fetchAll()
 
-      // Set currentProject to the one we will delete
       store.currentProject = { ...mockDetail }
 
-      vi.mocked(axios.delete).mockResolvedValueOnce({})
+      vi.mocked(api.delete).mockResolvedValueOnce({ data: undefined } as never)
       await store.deleteProject('p1')
 
-      expect(axios.delete).toHaveBeenCalledWith('http://test-api/admin/Project/p1', headers)
+      expect(api.delete).toHaveBeenCalledWith('/admin/project/p1')
       expect(store.projects).toHaveLength(1)
       expect(store.projects[0].id).toBe('p2')
       expect(store.currentProject).toBeNull()
@@ -178,19 +187,16 @@ describe('useProjectStore', () => {
 
   describe('assignManager', () => {
     it('posts to correct URL and refreshes list', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({})
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary] })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary]) as never)
 
       const store = await getStore()
       await store.assignManager('p1', { projectManagerId: 'u2' })
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/Project/p1/assign-manager',
-        { projectManagerId: 'u2' },
-        headers,
-      )
-      // fetchAll was called to refresh
-      expect(axios.get).toHaveBeenCalledWith('http://test-api/admin/Project', headers)
+      expect(api.post).toHaveBeenCalledWith('/admin/project/p1/assign-manager', {
+        projectManagerId: 'u2',
+      })
+      expect(api.get).toHaveBeenCalledWith('/admin/project')
     })
   })
 
@@ -198,13 +204,13 @@ describe('useProjectStore', () => {
 
   describe('updateStatus', () => {
     it('updates project status in state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary] })
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary]) as never)
 
       const store = await getStore()
       await store.fetchAll()
       const originalRef = store.projects
 
-      vi.mocked(axios.post).mockResolvedValueOnce({})
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
       await store.updateStatus('p1', 'InProgress')
 
       expect(store.projects[0].status).toBe('InProgress')
@@ -215,7 +221,7 @@ describe('useProjectStore', () => {
       const store = await getStore()
       store.currentProject = { ...mockDetail }
 
-      vi.mocked(axios.post).mockResolvedValueOnce({})
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
       await store.updateStatus('p1', 'InProgress')
 
       expect(store.currentProject?.status).toBe('InProgress')
@@ -226,13 +232,13 @@ describe('useProjectStore', () => {
 
   describe('archiveProject', () => {
     it('patches status to Archived in state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockSummary] })
+      vi.mocked(api.get).mockResolvedValueOnce(envelope([mockSummary]) as never)
 
       const store = await getStore()
       await store.fetchAll()
       const originalRef = store.projects
 
-      vi.mocked(axios.patch).mockResolvedValueOnce({})
+      vi.mocked(api.patch).mockResolvedValueOnce({ data: undefined } as never)
       await store.archiveProject('p1')
 
       expect(store.projects[0].status).toBe('Archived')
@@ -258,7 +264,7 @@ describe('useProjectStore', () => {
         fieldCategory: 'Static',
         options: null,
       }
-      vi.mocked(axios.post).mockResolvedValueOnce({ data: newField })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: newField } as never)
 
       const result = await store.addField('p1', {
         label: 'Code client',
@@ -270,7 +276,6 @@ describe('useProjectStore', () => {
       expect(result).toEqual(newField)
       expect(store.currentProject?.fields).toHaveLength(2)
       expect(store.currentProject?.fields[1]).toEqual(newField)
-      // Immutability: new array reference
       expect(store.currentProject?.fields).not.toBe(originalFieldsRef)
     })
   })
@@ -283,7 +288,7 @@ describe('useProjectStore', () => {
       store.currentProject = { ...mockDetail, fields: [mockField] }
       const originalFieldsRef = store.currentProject.fields
 
-      vi.mocked(axios.delete).mockResolvedValueOnce({})
+      vi.mocked(api.delete).mockResolvedValueOnce({ data: undefined } as never)
       await store.removeField('p1', 'f1')
 
       expect(store.currentProject?.fields).toHaveLength(0)
@@ -295,9 +300,9 @@ describe('useProjectStore', () => {
 
   describe('draftProjects getter', () => {
     it('filters Draft status', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: [mockSummary, mockSummaryActive, mockSummaryCompleted],
-      })
+      vi.mocked(api.get).mockResolvedValueOnce(
+        envelope([mockSummary, mockSummaryActive, mockSummaryCompleted]) as never,
+      )
 
       const store = await getStore()
       await store.fetchAll()
@@ -309,9 +314,9 @@ describe('useProjectStore', () => {
 
   describe('activeProjects getter', () => {
     it('excludes Draft and Completed', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
-        data: [mockSummary, mockSummaryActive, mockSummaryCompleted],
-      })
+      vi.mocked(api.get).mockResolvedValueOnce(
+        envelope([mockSummary, mockSummaryActive, mockSummaryCompleted]) as never,
+      )
 
       const store = await getStore()
       await store.fetchAll()

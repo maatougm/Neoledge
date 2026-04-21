@@ -233,6 +233,7 @@ model ProjectField {
   project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   values  ProjectFieldValue[]
 
+  @@index([projectId])
   @@map("ProjectFields")
 }
 
@@ -249,6 +250,7 @@ model ProjectFieldValue {
   field   ProjectField @relation(fields: [projectFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([projectId, projectFieldId])
+  @@index([projectFieldId])
   @@map("ProjectFieldValues")
 }
 
@@ -299,6 +301,7 @@ model ProjectTemplate {
   createdByAdmin AppUser                @relation(fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fields         ProjectTemplateField[]
 
+  @@index([createdByAdminId])
   @@map("ProjectTemplates")
 }
 
@@ -315,6 +318,7 @@ model ProjectTemplateField {
   // Relations
   template ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
+  @@index([templateId])
   @@map("ProjectTemplateFields")
 }
 
@@ -393,6 +397,7 @@ model MeetingTranscript {
 
   @@index([projectId])
   @@index([createdAt])
+  @@index([aiStatus])
   @@map("MeetingTranscripts")
 }
 
@@ -548,6 +553,7 @@ model AutomationLog {
 
   @@index([ruleId])
   @@index([projectId])
+  @@index([executedAt])
   @@map("AutomationLog")
 }
 

@@ -73,7 +73,23 @@ export class MeetingsService {
   ) {}
 
   async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
-    const serviceUrl = this.config.get<string>('TRANSCRIPTION_URL', 'http://localhost:8000')
+    // No default fallback — TRANSCRIPTION_URL is validated as required at startup.
+    // Using a fallback here would silently shadow the env-validation failure.
+    const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+
+    // SSRF guard: only allow http(s) schemes pointing to the configured host.
+    // This prevents a compromised config value from routing audio buffers to
+    // arbitrary internal services.
+    try {
+      const parsed = new URL(serviceUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        this.logger.error(`TRANSCRIPTION_URL has forbidden protocol: ${parsed.protocol}`)
+        return Result.fail<any>('Configuration de transcription invalide.')
+      }
+    } catch {
+      this.logger.error(`TRANSCRIPTION_URL is not a valid URL: ${serviceUrl}`)
+      return Result.fail<any>('Configuration de transcription invalide.')
+    }
 
     try {
       const formData = new FormData()

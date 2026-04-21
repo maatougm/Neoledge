@@ -4,12 +4,25 @@ import { createPinia, setActivePinia } from 'pinia'
 import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'
 import type { ProjectValidation } from '@/types/pm.types'
 
-// Mock axios
-vi.mock('axios', () => ({
-  default: {
+// Mock axios (ValidationTimeline transitively imports @/lib/api which calls axios.create)
+vi.mock('axios', () => {
+  const instance = {
     get: vi.fn(),
-  },
-}))
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+    interceptors: {
+      request: { use: vi.fn() },
+      response: { use: vi.fn() },
+    },
+  }
+  const mock = {
+    ...instance,
+    create: vi.fn(() => instance),
+  }
+  return { default: mock, ...mock }
+})
 
 // Mock the useApp store so it doesn't need a real Pinia setup with real JWT
 vi.mock('@/stores/useApp', () => ({
@@ -165,7 +178,6 @@ describe('ValidationTimeline', () => {
 
     expect(getSpy).toHaveBeenCalledWith(
       expect.stringContaining('/pm/projects/project-abc/validations'),
-      expect.any(Object),
     )
   })
 })

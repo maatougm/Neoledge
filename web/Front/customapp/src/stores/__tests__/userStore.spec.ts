@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import axios from 'axios'
 import type { UserResponse } from '@/types/user.types'
 
-vi.mock('axios')
-vi.mock('../useApp', () => ({
-  useApp: () => ({
-    apiUrl: 'http://test-api',
-    jwt: 'fake-jwt-token',
-  }),
+vi.mock('@/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
+
+import api from '@/lib/api'
 
 const mockUser: UserResponse = {
   id: 'u1',
@@ -47,12 +50,11 @@ const mockInactive: UserResponse = {
 describe('useUserStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.mocked(axios.get).mockReset()
-    vi.mocked(axios.post).mockReset()
-    vi.mocked(axios.put).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
+    vi.mocked(api.put).mockReset()
   })
 
-  // Lazy import to ensure fresh store per test
   const getStore = async () => {
     const { useUserStore } = await import('../userStore')
     return useUserStore()
@@ -62,22 +64,28 @@ describe('useUserStore', () => {
 
   describe('fetchAll', () => {
     it('calls correct URL and sets users state', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockUser, mockPM] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockUser, mockPM] } as never)
 
       const store = await getStore()
       await store.fetchAll()
 
-      expect(axios.get).toHaveBeenCalledWith(
-        'http://test-api/admin/AppUser',
-        { headers: { Authorization: 'Bearer fake-jwt-token' } },
-      )
+      expect(api.get).toHaveBeenCalledWith('/admin/appuser')
       expect(store.users).toHaveLength(2)
       expect(store.users[0]).toEqual(mockUser)
       expect(store.loading).toBe(false)
     })
 
+    it('accepts wrapped { items } envelope response', async () => {
+      vi.mocked(api.get).mockResolvedValueOnce({ data: { items: [mockUser], total: 1 } } as never)
+
+      const store = await getStore()
+      await store.fetchAll()
+
+      expect(store.users).toHaveLength(1)
+    })
+
     it('sets error state on failure', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'))
 
       const store = await getStore()
       await store.fetchAll()
@@ -98,20 +106,15 @@ describe('useUserStore', () => {
         password: 'P@ss1234',
         role: 'Admin' as const,
       }
-      vi.mocked(axios.post).mockResolvedValueOnce({ data: mockUser })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: mockUser } as never)
 
       const store = await getStore()
       const originalRef = store.users
       const result = await store.createUser(payload)
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/AppUser',
-        payload,
-        { headers: { Authorization: 'Bearer fake-jwt-token' } },
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/appuser', payload)
       expect(result).toEqual(mockUser)
       expect(store.users).toHaveLength(1)
-      // Immutability: array reference should have changed
       expect(store.users).not.toBe(originalRef)
     })
   })
@@ -120,25 +123,20 @@ describe('useUserStore', () => {
 
   describe('updateUser', () => {
     it('puts to correct URL and updates user in state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockUser] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockUser] } as never)
 
       const store = await getStore()
       await store.fetchAll()
       const originalRef = store.users
 
       const updated = { ...mockUser, firstName: 'Updated' }
-      vi.mocked(axios.put).mockResolvedValueOnce({ data: updated })
+      vi.mocked(api.put).mockResolvedValueOnce({ data: updated } as never)
 
       const result = await store.updateUser('u1', { firstName: 'Updated' })
 
-      expect(axios.put).toHaveBeenCalledWith(
-        'http://test-api/admin/AppUser/u1',
-        { firstName: 'Updated' },
-        { headers: { Authorization: 'Bearer fake-jwt-token' } },
-      )
+      expect(api.put).toHaveBeenCalledWith('/admin/appuser/u1', { firstName: 'Updated' })
       expect(result).toEqual(updated)
       expect(store.users[0].firstName).toBe('Updated')
-      // Immutability: new array reference
       expect(store.users).not.toBe(originalRef)
     })
   })
@@ -147,13 +145,13 @@ describe('useUserStore', () => {
 
   describe('deactivateUser', () => {
     it('sets isActive to false in state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockUser] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockUser] } as never)
 
       const store = await getStore()
       await store.fetchAll()
       const originalRef = store.users
 
-      vi.mocked(axios.post).mockResolvedValueOnce({})
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
 
       await store.deactivateUser('u1')
 
@@ -166,13 +164,13 @@ describe('useUserStore', () => {
 
   describe('reactivateUser', () => {
     it('sets isActive to true in state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockInactive] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockInactive] } as never)
 
       const store = await getStore()
       await store.fetchAll()
       const originalRef = store.users
 
-      vi.mocked(axios.post).mockResolvedValueOnce({})
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
 
       await store.reactivateUser('u3')
 
@@ -185,18 +183,14 @@ describe('useUserStore', () => {
 
   describe('resetPassword', () => {
     it('returns temporary password string', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({
+      vi.mocked(api.post).mockResolvedValueOnce({
         data: { temporaryPassword: 'TempP@ss123' },
-      })
+      } as never)
 
       const store = await getStore()
       const result = await store.resetPassword('u1')
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/AppUser/u1/reset-password',
-        {},
-        { headers: { Authorization: 'Bearer fake-jwt-token' } },
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/appuser/u1/reset-password', {})
       expect(result).toBe('TempP@ss123')
     })
   })
@@ -205,9 +199,9 @@ describe('useUserStore', () => {
 
   describe('activeUsers getter', () => {
     it('filters only active users', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
+      vi.mocked(api.get).mockResolvedValueOnce({
         data: [mockUser, mockPM, mockInactive],
-      })
+      } as never)
 
       const store = await getStore()
       await store.fetchAll()
@@ -219,9 +213,9 @@ describe('useUserStore', () => {
 
   describe('projectManagers getter', () => {
     it('filters active ProjectManager role users', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({
+      vi.mocked(api.get).mockResolvedValueOnce({
         data: [mockUser, mockPM, mockInactive],
-      })
+      } as never)
 
       const store = await getStore()
       await store.fetchAll()

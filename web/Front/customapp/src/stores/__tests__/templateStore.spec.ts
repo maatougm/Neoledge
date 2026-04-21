@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import axios from 'axios'
 import type { ProjectTemplateSummary, CreateTemplatePayload } from '@/types/project.types'
 
-vi.mock('axios')
-vi.mock('../useApp', () => ({
-  useApp: () => ({
-    apiUrl: 'http://test-api',
-    jwt: 'fake-jwt-token',
-  }),
+vi.mock('@/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
 
-const headers = { headers: { Authorization: 'Bearer fake-jwt-token' } }
+import api from '@/lib/api'
 
 const mockTemplate: ProjectTemplateSummary = {
   id: 'tpl-1',
@@ -40,9 +41,9 @@ const createPayload: CreateTemplatePayload = {
 describe('useTemplateStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.mocked(axios.get).mockReset()
-    vi.mocked(axios.post).mockReset()
-    vi.mocked(axios.delete).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
+    vi.mocked(api.delete).mockReset()
   })
 
   const getStore = async () => {
@@ -54,12 +55,12 @@ describe('useTemplateStore', () => {
 
   describe('fetchTemplates', () => {
     it('calls correct URL and populates templates state', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] } as never)
 
       const store = await getStore()
       await store.fetchTemplates()
 
-      expect(axios.get).toHaveBeenCalledWith('http://test-api/admin/projecttemplate', headers)
+      expect(api.get).toHaveBeenCalledWith('/admin/projecttemplate')
       expect(store.templates).toHaveLength(2)
       expect(store.templates[0]).toEqual(mockTemplate)
       expect(store.loading).toBe(false)
@@ -67,7 +68,7 @@ describe('useTemplateStore', () => {
     })
 
     it('sets empty state and error on failure', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'))
 
       const store = await getStore()
       await store.fetchTemplates()
@@ -78,13 +79,13 @@ describe('useTemplateStore', () => {
     })
 
     it('populates state immutably (new array reference each call)', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate] } as never)
 
       const store = await getStore()
       await store.fetchTemplates()
       const firstRef = store.templates
 
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] } as never)
       await store.fetchTemplates()
 
       expect(store.templates).not.toBe(firstRef)
@@ -97,18 +98,18 @@ describe('useTemplateStore', () => {
   describe('fetchTemplate', () => {
     it('fetches a single template and sets currentTemplate', async () => {
       const detail = { ...mockTemplate, fields: [{ id: 'f1', label: 'Société', type: 'Text', category: 'Custom', isRequired: true, displayOrder: 0, options: null }] }
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: detail })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: detail } as never)
 
       const store = await getStore()
       const result = await store.fetchTemplate('tpl-1')
 
-      expect(axios.get).toHaveBeenCalledWith('http://test-api/admin/projecttemplate/tpl-1', headers)
+      expect(api.get).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1')
       expect(result).toEqual(detail)
       expect(store.currentTemplate).toEqual(detail)
     })
 
     it('returns null and sets error on failure', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce(new Error('Not found'))
+      vi.mocked(api.get).mockRejectedValueOnce(new Error('Not found'))
 
       const store = await getStore()
       const result = await store.fetchTemplate('unknown')
@@ -122,23 +123,19 @@ describe('useTemplateStore', () => {
 
   describe('createTemplate', () => {
     it('posts payload and refreshes templates list', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({ data: mockTemplate })
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate] })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: mockTemplate } as never)
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate] } as never)
 
       const store = await getStore()
       const result = await store.createTemplate(createPayload)
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/projecttemplate',
-        createPayload,
-        headers,
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate', createPayload)
       expect(result).toEqual(mockTemplate)
       expect(store.templates).toHaveLength(1)
     })
 
     it('returns null and sets error on failure', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Validation error'))
+      vi.mocked(api.post).mockRejectedValueOnce(new Error('Validation error'))
 
       const store = await getStore()
       const result = await store.createTemplate(createPayload)
@@ -152,31 +149,28 @@ describe('useTemplateStore', () => {
 
   describe('deleteTemplate', () => {
     it('removes template from state immutably', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate, mockTemplate2] } as never)
 
       const store = await getStore()
       await store.fetchTemplates()
       const originalRef = store.templates
 
-      vi.mocked(axios.delete).mockResolvedValueOnce({})
+      vi.mocked(api.delete).mockResolvedValueOnce({ data: undefined } as never)
       await store.deleteTemplate('tpl-1')
 
-      expect(axios.delete).toHaveBeenCalledWith(
-        'http://test-api/admin/projecttemplate/tpl-1',
-        headers,
-      )
+      expect(api.delete).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1')
       expect(store.templates).toHaveLength(1)
       expect(store.templates[0].id).toBe('tpl-2')
       expect(store.templates).not.toBe(originalRef)
     })
 
     it('sets error on failure and keeps existing state', async () => {
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate] })
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate] } as never)
 
       const store = await getStore()
       await store.fetchTemplates()
 
-      vi.mocked(axios.delete).mockRejectedValueOnce(new Error('Forbidden'))
+      vi.mocked(api.delete).mockRejectedValueOnce(new Error('Forbidden'))
       await store.deleteTemplate('tpl-1')
 
       expect(store.templates).toHaveLength(1)
@@ -188,21 +182,17 @@ describe('useTemplateStore', () => {
 
   describe('applyToProject', () => {
     it('calls the correct endpoint with template and project IDs', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({})
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
 
       const store = await getStore()
       await store.applyToProject('tpl-1', 'proj-42')
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/projecttemplate/tpl-1/apply/proj-42',
-        {},
-        headers,
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1/apply/proj-42', {})
       expect(store.error).toBeNull()
     })
 
     it('re-throws on failure and sets error', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Apply failed'))
+      vi.mocked(api.post).mockRejectedValueOnce(new Error('Apply failed'))
 
       const store = await getStore()
       await expect(store.applyToProject('tpl-1', 'proj-42')).rejects.toThrow('Apply failed')
@@ -214,23 +204,21 @@ describe('useTemplateStore', () => {
 
   describe('createFromProject', () => {
     it('posts to from-project endpoint and refreshes templates', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({ data: mockTemplate })
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [mockTemplate] })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: mockTemplate } as never)
+      vi.mocked(api.get).mockResolvedValueOnce({ data: [mockTemplate] } as never)
 
       const store = await getStore()
       const result = await store.createFromProject('proj-1', { name: 'Modèle Standard' })
 
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://test-api/admin/projecttemplate/from-project/proj-1',
-        { name: 'Modèle Standard' },
-        headers,
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate/from-project/proj-1', {
+        name: 'Modèle Standard',
+      })
       expect(result).toEqual(mockTemplate)
       expect(store.templates).toHaveLength(1)
     })
 
     it('returns null and sets error on failure', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Project not found'))
+      vi.mocked(api.post).mockRejectedValueOnce(new Error('Project not found'))
 
       const store = await getStore()
       const result = await store.createFromProject('proj-unknown', { name: 'X' })

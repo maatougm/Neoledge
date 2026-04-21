@@ -1,29 +1,32 @@
 /**
  * @file     bulkActions.spec.ts
- * @module   NeoLeadge — Deployment Manager
  * @desc     Unit tests for bulk action store methods (selection + HTTP actions)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import axios from 'axios'
 
-vi.mock('axios')
-vi.mock('../useApp', () => ({
-  useApp: () => ({
-    apiUrl: 'http://test-api',
-    jwt: 'fake-jwt-token',
-  }),
+// Mock the shared axios wrapper (projectStore uses `api` from @/lib/api)
+vi.mock('@/lib/api', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
 
-const headers = { headers: { Authorization: 'Bearer fake-jwt-token' } }
-const BASE = 'http://test-api/admin/Project'
+import api from '@/lib/api'
 
 describe('projectStore — bulk actions', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.mocked(axios.get).mockReset()
-    vi.mocked(axios.post).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
+    vi.mocked(api.put).mockReset()
+    vi.mocked(api.patch).mockReset()
+    vi.mocked(api.delete).mockReset()
   })
 
   const getStore = async () => {
@@ -90,23 +93,19 @@ describe('projectStore — bulk actions', () => {
   // ─── bulkArchive ───────────────────────────────────────────────────────────
 
   describe('bulkArchive', () => {
-    it('calls the correct endpoint with ids and refreshes the list', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({})
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [] })
+    it('calls the correct endpoint with projectIds and refreshes the list', async () => {
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
+      vi.mocked(api.get).mockResolvedValueOnce({ data: { items: [], total: 0 } } as never)
 
       const store = await getStore()
       await store.bulkArchive(['p1', 'p2'])
 
-      expect(axios.post).toHaveBeenCalledWith(
-        `${BASE}/bulk-archive`,
-        { ids: ['p1', 'p2'] },
-        headers,
-      )
-      expect(axios.get).toHaveBeenCalledWith(BASE, headers)
+      expect(api.post).toHaveBeenCalledWith('/admin/project/bulk-archive', { projectIds: ['p1', 'p2'] })
+      expect(api.get).toHaveBeenCalledWith('/admin/project')
     })
 
     it('sets error state on failure', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Network error'))
+      vi.mocked(api.post).mockRejectedValueOnce(new Error('Network error'))
 
       const store = await getStore()
       await store.bulkArchive(['p1'])
@@ -118,36 +117,34 @@ describe('projectStore — bulk actions', () => {
   // ─── bulkUpdateStatus ──────────────────────────────────────────────────────
 
   describe('bulkUpdateStatus', () => {
-    it('calls the correct endpoint with ids and status', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({})
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [] })
+    it('calls the correct endpoint with projectIds and status', async () => {
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
+      vi.mocked(api.get).mockResolvedValueOnce({ data: { items: [], total: 0 } } as never)
 
       const store = await getStore()
       await store.bulkUpdateStatus(['p1', 'p2'], 'InProgress')
 
-      expect(axios.post).toHaveBeenCalledWith(
-        `${BASE}/bulk-status`,
-        { ids: ['p1', 'p2'], status: 'InProgress' },
-        headers,
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/project/bulk-status', {
+        projectIds: ['p1', 'p2'],
+        status: 'InProgress',
+      })
     })
   })
 
   // ─── bulkAssignManager ────────────────────────────────────────────────────
 
   describe('bulkAssignManager', () => {
-    it('calls the correct endpoint with ids and managerId', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({})
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: [] })
+    it('calls the correct endpoint with projectIds and managerId', async () => {
+      vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
+      vi.mocked(api.get).mockResolvedValueOnce({ data: { items: [], total: 0 } } as never)
 
       const store = await getStore()
       await store.bulkAssignManager(['p1', 'p3'], 'mgr-42')
 
-      expect(axios.post).toHaveBeenCalledWith(
-        `${BASE}/bulk-assign-manager`,
-        { ids: ['p1', 'p3'], managerId: 'mgr-42' },
-        headers,
-      )
+      expect(api.post).toHaveBeenCalledWith('/admin/project/bulk-assign-manager', {
+        projectIds: ['p1', 'p3'],
+        managerId: 'mgr-42',
+      })
     })
   })
 })
