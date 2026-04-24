@@ -143,6 +143,7 @@ const localDescription = ref('')
 const statusOptions = [
   { label: 'Nouveau', value: 'New' },
   { label: 'En cours', value: 'InProgress' },
+  { label: 'En attente de validation', value: 'AwaitingReview' },
   { label: 'Résolu', value: 'Resolved' },
   { label: 'Fermé', value: 'Closed' },
   { label: 'En attente', value: 'OnHold' },

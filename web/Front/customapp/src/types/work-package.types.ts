@@ -1,7 +1,7 @@
 /** @file src/types/work-package.types.ts — Work package domain types */
 
-export type WpType = 'Task' | 'Bug' | 'Feature' | 'Milestone' | 'Epic'
-export type WpStatus = 'New' | 'InProgress' | 'Resolved' | 'Closed' | 'OnHold' | 'Rejected'
+export type WpType = 'Task' | 'Bug' | 'Feature' | 'Milestone' | 'Epic' | 'Incident'
+export type WpStatus = 'New' | 'InProgress' | 'AwaitingReview' | 'Resolved' | 'Closed' | 'OnHold' | 'Rejected'
 export type WpPriority = 'Low' | 'Normal' | 'High' | 'Urgent' | 'Immediate'
 
 export interface UserSummary {

@@ -296,6 +296,11 @@ const router = createRouter({
               component: () => import('@/views/TeamMemberView.vue'),
             },
             {
+              path: 'my-tasks',
+              name: 'team-my-tasks',
+              component: () => import('@/views/MyTasksView.vue'),
+            },
+            {
               path: 'pending-reviews',
               name: 'team-pending-reviews',
               component: () => import('@/views/SpecPendingReviewsView.vue'),

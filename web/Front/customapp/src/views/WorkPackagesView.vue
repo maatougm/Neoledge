@@ -286,6 +286,7 @@ const statusOptions: { label: string; value: WpStatus | '' }[] = [
   { label: 'Tous statuts', value: '' },
   { label: 'Nouveau', value: 'New' },
   { label: 'En cours', value: 'InProgress' },
+  { label: 'En attente de validation', value: 'AwaitingReview' },
   { label: 'Résolu', value: 'Resolved' },
   { label: 'Fermé', value: 'Closed' },
   { label: 'En attente', value: 'OnHold' },
@@ -297,6 +298,7 @@ const typeOptions: { label: string; value: WpType | '' }[] = [
   { label: 'Feature', value: 'Feature' },
   { label: 'Epic', value: 'Epic' },
   { label: 'Jalon', value: 'Milestone' },
+  { label: 'Incident', value: 'Incident' },
 ]
 const priorityOptions: { label: string; value: WpPriority }[] = [
   { label: 'Basse', value: 'Low' },

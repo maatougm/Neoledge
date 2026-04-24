@@ -79,6 +79,7 @@ const ROUTE_LABELS: Record<string, string> = {
   'pm-analytics':        'Analytiques',
   'pm-team-planner':     'Planification équipe',
   'pm-my-tasks':         'Mes tâches',
+  'team-my-tasks':       'Mes tâches',
   'team-projects':       'Projets',
   'team-project-detail': 'Détail du projet',
   'team-validations':    'Mes validations',

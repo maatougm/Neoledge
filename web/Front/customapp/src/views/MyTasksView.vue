@@ -63,6 +63,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoInputText, NeoSelect } from '@neolibrary/components'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
 import { formatDateShort as formatDate } from '@/lib/formatDate'
 import PriorityDot from '@/components/common/PriorityDot.vue'
 import WpStatusTag from '@/components/common/WpStatusTag.vue'
@@ -71,17 +72,20 @@ import type { WorkPackage } from '@/types/work-package.types'
 type MyTask = WorkPackage & { project?: { id: string; name: string } }
 
 const router = useRouter()
+const authStore = useAuthStore()
 const items = ref<MyTask[]>([])
 const loading = ref<boolean>(false)
 const q = ref<string>('')
 const status = ref<string | null>(null)
 
 const statusOptions = [
-  { label: 'Tous les statuts', value: null },
-  { label: 'Nouveau',          value: 'New' },
-  { label: 'En cours',         value: 'InProgress' },
-  { label: 'Résolu',           value: 'Resolved' },
-  { label: 'Clôturé',          value: 'Closed' },
+  { label: 'Tous les statuts',          value: null },
+  { label: 'Nouveau',                   value: 'New' },
+  { label: 'En cours',                  value: 'InProgress' },
+  { label: 'En attente de validation',  value: 'AwaitingReview' },
+  { label: 'En pause',                  value: 'OnHold' },
+  { label: 'Résolu',                    value: 'Resolved' },
+  { label: 'Clôturé',                   value: 'Closed' },
 ]
 
 async function load() {
@@ -101,7 +105,14 @@ async function load() {
 
 function openWp(wp: MyTask) {
   if (!wp.project?.id) return
-  void router.push(`/app/pm/projects/${wp.project.id}/workpackages?wpId=${wp.id}`)
+  const role = authStore.userRole
+  if (role === 'ProjectManager' || role === 'Admin') {
+    void router.push(`/app/pm/projects/${wp.project.id}/workpackages?wpId=${wp.id}`)
+  } else {
+    // Team layout has no WP-focused deep link yet; land on the project detail
+    // so the user can open the WP tab themselves. See Sprint 4.5 backlog.
+    void router.push(`/app/team/projects/${wp.project.id}`)
+  }
 }
 
 onMounted(load)

@@ -136,9 +136,10 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
 
 const teamNav: NavSection[] = [
   { items: [
-      { key: 'app-home',         label: 'Accueil',     icon: 'pi-inbox',        to: '/app' },
-      { key: 'team-projects',    label: 'Projets',     icon: 'pi-briefcase',    to: '/app/team/projects'    },
-      { key: 'team-validations',     label: 'Validations',     icon: 'pi-check-circle', to: '/app/team/validations'     },
+      { key: 'app-home',             label: 'Accueil',           icon: 'pi-inbox',        to: '/app' },
+      { key: 'team-my-tasks',        label: 'Mes tâches',        icon: 'pi-list',         to: '/app/team/my-tasks'        },
+      { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
+      { key: 'team-validations',     label: 'Validations',       icon: 'pi-check-circle', to: '/app/team/validations'     },
       { key: 'team-pending-reviews', label: 'Cahiers à valider', icon: 'pi-check-square', to: '/app/team/pending-reviews' },
   ]},
   { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },

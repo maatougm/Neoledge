@@ -1,11 +1,15 @@
-import { IsString, IsOptional, IsInt, IsDateString, IsBoolean, IsNumber, Min, Max, IsArray, ValidateNested, ArrayMaxSize, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsDateString, IsBoolean, IsNumber, Min, Max, IsArray, ValidateNested, ArrayMaxSize, MaxLength, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
+
+// Allowed enum values, derived from existing code (seed-openproject.ts, agile.service.ts).
+export const VALID_WP_STATUSES = ['New', 'InProgress', 'AwaitingReview', 'OnHold', 'Resolved', 'Closed'] as const;
+export const VALID_WP_TYPES = ['Task', 'Feature', 'Bug', 'Epic', 'Incident'] as const;
 
 export class CreateWorkPackageDto {
   @IsString() title!: string;
   @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsString() type?: string;
-  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() @IsIn(VALID_WP_TYPES as unknown as string[]) type?: string;
+  @IsOptional() @IsString() @IsIn(VALID_WP_STATUSES as unknown as string[]) status?: string;
   @IsOptional() @IsString() priority?: string;
   @IsOptional() @IsString() assigneeId?: string;
   @IsOptional() @IsString() parentId?: string;
@@ -14,14 +18,14 @@ export class CreateWorkPackageDto {
   @IsOptional() @IsString() boardColumnId?: string;
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsDateString() dueDate?: string;
-  @IsOptional() @IsNumber() estimatedHours?: number;
+  @IsOptional() @IsNumber() @Min(0) estimatedHours?: number;
 }
 
 export class UpdateWorkPackageDto {
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsString() type?: string;
-  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() @IsIn(VALID_WP_TYPES as unknown as string[]) type?: string;
+  @IsOptional() @IsString() @IsIn(VALID_WP_STATUSES as unknown as string[]) status?: string;
   @IsOptional() @IsString() priority?: string;
   @IsOptional() @IsString() assigneeId?: string | null;
   @IsOptional() @IsString() parentId?: string | null;
@@ -30,8 +34,8 @@ export class UpdateWorkPackageDto {
   @IsOptional() @IsString() boardColumnId?: string | null;
   @IsOptional() @IsDateString() startDate?: string | null;
   @IsOptional() @IsDateString() dueDate?: string | null;
-  @IsOptional() @IsNumber() estimatedHours?: number | null;
-  @IsOptional() @IsNumber() spentHours?: number;
+  @IsOptional() @IsNumber() @Min(0) estimatedHours?: number | null;
+  @IsOptional() @IsNumber() @Min(0) spentHours?: number;
   @IsOptional() @IsInt() @Min(0) @Max(100) percentDone?: number;
   @IsOptional() @IsInt() position?: number;
 }
