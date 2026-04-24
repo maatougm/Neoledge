@@ -12,7 +12,7 @@ datasource db {
 // MySQL enum-column ALTER TABLE rewrites on every value addition. Application
 // code validates values at the DTO / service layer.
 //
-// UserRole:           Admin | ProjectManager | SpecificationTeam | RealizationTeam | DeploymentTeam | Viewer
+// UserRole:           Admin | ProjectManager | SpecificationTeam | Member | DeploymentTeam
 //
 // ProjectStatus — 8 canonical RACI phases + 2 technical states:
 //   Technical:  Draft | Archived
@@ -47,7 +47,7 @@ model AppUser {
   lastName            String    @db.VarChar(100)
   email               String    @unique @db.VarChar(256)
   passwordHash        String
-  role                String    @default("Viewer") @db.VarChar(50)
+  role                String    @default("Member") @db.VarChar(50)
   isActive            Boolean   @default(true)
   createdAt           DateTime  @default(now())
   lastLoginAt         DateTime?
@@ -62,8 +62,10 @@ model AppUser {
   totpSecret          String?   @db.VarChar(100)
   totpEnabled         Boolean   @default(false)
   totpVerifiedAt      DateTime?
-  tokenVersion        Int       @default(0)
-  teamId              String?   @db.VarChar(36)
+  tokenVersion              Int       @default(0)
+  teamId                    String?   @db.VarChar(36)
+  passwordResetToken        String?   @db.VarChar(255)
+  passwordResetTokenExpiry  DateTime?
 
   // Relations
   team             Team?              @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -96,6 +98,7 @@ model AppUser {
   wpComments         WorkPackageComment[] @relation("WpCommentAuthor")
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
   roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
+  cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
 
   @@map("AppUsers")
 }
@@ -164,7 +167,7 @@ model Project {
   clientName               String   @db.VarChar(200)
   startDate                DateTime
   endDate                  DateTime
-  projectManagerId         String?
+  projectManagerId         String
   status                   String   @default("Draft") @db.VarChar(50)
   priority                 String   @default("Medium") @db.VarChar(50)
   allowManagerCustomFields Boolean  @default(false)
@@ -180,7 +183,7 @@ model Project {
   currentPhaseEnteredAt    DateTime?
 
   // Relations
-  projectManager AppUser?         @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  projectManager AppUser          @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdByAdmin AppUser          @relation("ProjectCreator", fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   deletedByUser  AppUser?         @relation("ProjectDeleter", fields: [deletedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fields         ProjectField[]
@@ -208,6 +211,7 @@ model Project {
   portfolioLinks  PortfolioProject[]
   roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   handovers       Handover[]
+  cahierFeedback  CahierFeedback[]
 
   @@index([status])
   @@index([projectManagerId])
@@ -1081,6 +1085,26 @@ model Handover {
   @@index([projectId])
   @@index([status])
   @@map("Handovers")
+}
+
+// ─── Cahier des Charges Feedback (AI learning from rejected documents) ───────
+
+model CahierFeedback {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String?
+  status    String   @default("rejected") @db.VarChar(20)  // 'approved' | 'rejected'
+  comment   String   @db.Text                                // User explanation
+  section   String?  @db.VarChar(100)                        // Which section was problematic
+  aiModel   String?  @db.VarChar(50)                         // Model that generated the doc
+  createdAt DateTime @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser? @relation("CahierFeedbackUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("CahierFeedback")
 }
 
 model HandoverCriterion {

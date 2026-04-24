@@ -165,9 +165,8 @@ function avatarColorClass(role: UserRole): string {
     Admin: 'user-list__avatar--admin',
     ProjectManager: 'user-list__avatar--pm',
     SpecificationTeam: 'user-list__avatar--team',
-    RealizationTeam: 'user-list__avatar--team',
+    Member: 'user-list__avatar--team',
     DeploymentTeam: 'user-list__avatar--team',
-    Viewer: 'user-list__avatar--viewer',
   }
   return map[role] ?? ''
 }
@@ -178,9 +177,8 @@ function roleBadgeClass(role: UserRole): string {
     Admin: 'user-list__role-badge--admin',
     ProjectManager: 'user-list__role-badge--pm',
     SpecificationTeam: 'user-list__role-badge--team',
-    RealizationTeam: 'user-list__role-badge--team',
+    Member: 'user-list__role-badge--team',
     DeploymentTeam: 'user-list__role-badge--team',
-    Viewer: 'user-list__role-badge--viewer',
   }
   return map[role] ?? ''
 }

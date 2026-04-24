@@ -57,7 +57,7 @@
     <!-- Inner tabs -->
     <div class="inner-tabs">
       <button
-        v-for="tab in tabs"
+        v-for="tab in visibleTabs"
         :key="tab.id"
         :class="['inner-tab', { 'inner-tab--active': activeTab === tab.id }]"
         @click="activeTab = tab.id"
@@ -69,7 +69,7 @@
 
     <div class="tab-body">
       <QuestionnaireForm v-if="activeTab === 'questionnaire'" :project="project" :readonly="readonly" />
-      <AIOutputSection   v-else-if="activeTab === 'ai'"      :ai-output="project.aiOutput" />
+      <AIOutputSection   v-else-if="activeTab === 'ai'"      :project-id="project.id" :ai-output="project.aiOutput" />
       <TeamValidationSection
         v-else-if="activeTab === 'validation'"
         :project-id="project.id"
@@ -95,13 +95,17 @@
         v-else-if="activeTab === 'automation'"
         :project-id="project.id"
       />
+      <CahierDesChargesSection
+        v-else-if="activeTab === 'cahier'"
+        :project-id="project.id"
+      />
     </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { watch } from 'vue'
 import PhasesStepper         from '@/components/pm/PhasesStepper.vue'
@@ -113,8 +117,10 @@ import MeetingSection        from '@/components/pm/MeetingSection.vue'
 import CommentsSection       from '@/components/pm/CommentsSection.vue'
 import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
 import AutomationSection     from '@/components/pm/AutomationSection.vue'
+import CahierDesChargesSection from '@/components/pm/CahierDesChargesSection.vue'
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
+import { useAuthStore }      from '@/stores/authStore'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
@@ -123,8 +129,9 @@ const props = defineProps<{ project: ProjectDetail; validations: ProjectValidati
 const emit = defineEmits<{ close: [] }>()
 const store = usePmStore()
 const commentStore = useCommentStore()
+const authStore = useAuthStore()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation'
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation' | 'cahier'
 const activeTab = ref<TabId>('questionnaire')
 
 const historyLoaded = ref(false)
@@ -135,16 +142,62 @@ watch(activeTab, (tab) => {
   if (tab === 'history') historyLoaded.value = true
 })
 
+// Ordre aligné sur le flux de travail réel du chef de projet :
+// 1. Remplir le questionnaire → 2. Faire les réunions → 3. Générer l'analyse IA
+// → 4. Finaliser le cahier des charges → 5. Validation par les équipes
+// → 6. Consulter l'historique → 7. Échanger en commentaires
+// → 8. Consulter l'activité → 9. Configurer les automatisations
 const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'questionnaire', label: 'Questionnaire',      icon: 'pi-list-check' },
-  { id: 'ai',            label: 'Résultat IA',        icon: 'pi-sparkles' },
+  { id: 'automation',    label: 'Automatisations',         icon: 'pi-bolt' },
+  { id: 'questionnaire', label: 'Questionnaire',           icon: 'pi-list-check' },
+  { id: 'meetings',      label: 'Réunions',                icon: 'pi-microphone' },
+  { id: 'ai',            label: 'Résultat IA',             icon: 'pi-sparkles' },
+  { id: 'cahier',        label: 'Cahier des charges',      icon: 'pi-file-word' },
   { id: 'validation',    label: 'Validation équipes',      icon: 'pi-shield' },
-  { id: 'history',       label: 'Historique validations', icon: 'pi-clock' },
-  { id: 'activity',      label: 'Activité',               icon: 'pi-history' },
-  { id: 'meetings',      label: 'Réunions',           icon: 'pi-microphone' },
-  { id: 'comments',      label: 'Commentaires',       icon: 'pi-comments' },
-  { id: 'automation',   label: 'Automatisations',    icon: 'pi-bolt' },
+  { id: 'history',       label: 'Historique validations',  icon: 'pi-clock' },
+  { id: 'comments',      label: 'Commentaires',            icon: 'pi-comments' },
+  { id: 'activity',      label: 'Activité',                icon: 'pi-history' },
 ]
+
+// Per-role tab visibility.
+// - SpecificationTeam: approves the cahier → focused on validation flow
+// - DeploymentTeam: receives the approved package → needs full context
+//   (questionnaire + meetings + cahier) to plan the deployment
+// - Member: not part of the approval flow — read-only observer
+const TABS_BY_ROLE: Record<string, TabId[]> = {
+  // Spec team: first sees the validation they own, then cahier context, then comms
+  SpecificationTeam: ['validation', 'cahier', 'history', 'comments', 'activity'],
+  // Deploy team: needs full context before taking ownership
+  DeploymentTeam:    ['validation', 'questionnaire', 'meetings', 'cahier', 'history', 'comments', 'activity'],
+  Member:            ['cahier', 'history', 'comments', 'activity'],
+}
+
+const visibleTabs = computed(() => {
+  const role = authStore.userRole ?? ''
+  const allowed = TABS_BY_ROLE[role]
+  if (!allowed) return tabs // Admin + ProjectManager see everything
+  return tabs.filter((t) => allowed.includes(t.id))
+})
+
+// Make sure the active tab is always one the user can actually see
+watch(visibleTabs, (list) => {
+  if (list.length > 0 && !list.some((t) => t.id === activeTab.value)) {
+    activeTab.value = list[0].id
+  }
+}, { immediate: true })
+
+// ── Live stepper polling — phase changes propagate even when another user
+// triggers a validation or an automation bumps the status.
+let _poll: number | null = null
+onMounted(() => {
+  _poll = window.setInterval(() => {
+    // Refetch the project detail so PhasesStepper's :current-status prop updates.
+    store.fetchProject(props.project.id)
+  }, 15_000)
+})
+onUnmounted(() => {
+  if (_poll !== null) clearInterval(_poll)
+})
 
 const statusSeverity = (s: ProjectStatus) =>
   PROJECT_STATUS_SEVERITY[s] as 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast'

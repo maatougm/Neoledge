@@ -152,6 +152,7 @@ describe('useProjectStore', () => {
         clientName: 'Client A',
         startDate: '2026-04-01',
         endDate: '2026-06-01',
+        projectManagerId: '11111111-1111-1111-1111-111111111111',
       }
       const result = await store.createProject(payload)
 

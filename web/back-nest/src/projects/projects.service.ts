@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -166,14 +166,18 @@ export class ProjectsService {
       return Result.fail('La date de fin doit être postérieure à la date de début.');
     }
 
-    // Seed static fields
+    // Seed static fields — minimum viable set to produce a coherent cahier des charges.
+    // Each field maps 1:1 to a section of the generated document so the AI has exactly
+    // what it needs without redundancy.
     const staticFields = [
-      { label: 'Description', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 0 },
-      { label: 'Budget', fieldType: 'Number', fieldCategory: 'Static', isRequired: false, orderIndex: 1 },
-      { label: 'Type de projet', fieldType: 'Select', fieldCategory: 'Static', isRequired: true, orderIndex: 2, options: '["NeoLeadge","Elise","Both"]' },
-      { label: 'Environnement', fieldType: 'Text', fieldCategory: 'Static', isRequired: false, orderIndex: 3 },
-      { label: 'Priorité', fieldType: 'Select', fieldCategory: 'Static', isRequired: false, orderIndex: 4, options: '["Low","Medium","High","Critical"]' },
-      { label: 'Validation client requise', fieldType: 'Checkbox', fieldCategory: 'Static', isRequired: false, orderIndex: 5 },
+      { label: 'Contexte et problématique', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 0 },
+      { label: 'Objectif du projet et résultats attendus', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 1 },
+      { label: 'Périmètre fonctionnel (modules à développer)', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 2 },
+      { label: 'Stack technique proposée', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 3 },
+      { label: 'Livrables attendus', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 4 },
+      { label: 'Périmètre exclus', fieldType: 'Text', fieldCategory: 'Static', isRequired: false, orderIndex: 5 },
+      { label: 'Budget prévisionnel (€)', fieldType: 'Number', fieldCategory: 'Static', isRequired: false, orderIndex: 6 },
+      { label: 'Priorité', fieldType: 'Select', fieldCategory: 'Static', isRequired: false, orderIndex: 7, options: '["Low","Medium","High","Critical"]' },
     ];
 
     // Atomic multi-step create: project + fields + field-values all succeed or
@@ -186,7 +190,7 @@ export class ProjectsService {
           clientName: dto.clientName,
           startDate: new Date(dto.startDate),
           endDate: new Date(dto.endDate),
-          projectManagerId: dto.projectManagerId ?? null,
+          projectManagerId: dto.projectManagerId,
           createdByAdminId: adminId,
           currentPhaseEnteredAt: new Date(),
         },
@@ -297,8 +301,13 @@ export class ProjectsService {
   }
 
   async restoreProjectAsync(id: string) {
-    const existing = await this.prisma.project.findFirst({ where: { id, isDeleted: true } });
-    if (!existing) return Result.fail('Projet supprimé non trouvé.');
+    const existing = await this.prisma.project.findUnique({ where: { id } });
+    // Distinguish "does not exist" (404) from "exists but not deleted" (400)
+    // so the caller gets an actionable error instead of a confusing 404.
+    if (!existing) return Result.fail('Projet non trouvé.');
+    if (!existing.isDeleted) {
+      throw new BadRequestException("Le projet n'est pas supprimé, impossible de le restaurer.");
+    }
     await this.prisma.project.update({
       where: { id },
       data: { isDeleted: false, deletedAt: null, deletedByUserId: null },
@@ -371,6 +380,13 @@ export class ProjectsService {
   async updateStatus(projectId: string, status: string, actorId?: string) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
+
+    // Idempotency: a no-op status change (e.g. repeated /archive on an
+    // already-archived project) must not re-stamp `currentPhaseEnteredAt`,
+    // write a duplicate audit row, or emit another activity entry.
+    if (project.status === status) {
+      return Result.ok();
+    }
 
     const gate = await this.phaseGate.canTransition(projectId, project.status, status);
     if (gate.isFailure) return Result.fail(gate.error ?? 'Transition refusée.');
@@ -469,6 +485,7 @@ export class ProjectsService {
           clientName: source.clientName,
           startDate: source.startDate,
           endDate: source.endDate,
+          projectManagerId: source.projectManagerId,
           createdByAdminId: adminId ?? source.createdByAdminId,
           status: 'Draft',
           currentPhaseEnteredAt: new Date(),
@@ -631,6 +648,28 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
+    // Required-field enforcement — only for the fields the caller is
+    // actually saving in this request. If a field is flagged `isRequired`
+    // and the incoming value is null OR an empty/whitespace-only string,
+    // reject before opening the write transaction. Fields NOT present in
+    // the payload are untouched (partial save is allowed).
+    const touchedIds = fieldValues.map((fv) => fv.projectFieldId);
+    if (touchedIds.length > 0) {
+      const definitions = await this.prisma.projectField.findMany({
+        where: { projectId, id: { in: touchedIds } },
+        select: { id: true, label: true, isRequired: true },
+      });
+      const defsById = new Map(definitions.map((d) => [d.id, d]));
+      for (const fv of fieldValues) {
+        const def = defsById.get(fv.projectFieldId);
+        if (!def?.isRequired) continue;
+        const isEmpty = fv.value === null || (typeof fv.value === 'string' && fv.value.trim() === '');
+        if (isEmpty) {
+          return Result.fail(`Le champ "${def.label}" est requis.`);
+        }
+      }
+    }
+
     try {
       await this.prisma.$transaction(async (tx) => {
         for (const fv of fieldValues) {
@@ -696,6 +735,22 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
+    // Authorisation: caller must either be the project's PM, or have a
+    // UserRoleAssignment that covers this project (scoped OR global). The
+    // global assignment is the single source of truth for Admin — no
+    // special-casing of the legacy AppUser.role column here.
+    const assignment = await this.prisma.userRoleAssignment.findFirst({
+      where: {
+        userId,
+        OR: [{ projectId }, { projectId: null }],
+      },
+      select: { id: true },
+    });
+    const isPm = project.projectManagerId === userId;
+    if (!assignment && !isPm) {
+      throw new ForbiddenException('Access denied');
+    }
+
     // Derive the validating role from the user's role assignment for THIS
     // project (falling back to global / AppUser.role) — NEVER from the JWT,
     // which the client controls.
@@ -725,6 +780,20 @@ export class ProjectsService {
       isApproved: validation.isApproved,
     }).catch((e) => this.logger.error('automation validation_submitted failed', e));
 
+    void this.logActivity(
+      projectId,
+      userId,
+      validation.isApproved ? 'validation_approved' : 'validation_rejected',
+      `${resolvedRole} — phase ${validation.phase}${validation.comment ? ` : ${validation.comment.slice(0, 120)}` : ''}`,
+    ).catch((e) => this.logger.warn(`activity log failed: ${e instanceof Error ? e.message : e}`));
+
+    // If the SpecificationTeam approves, hand the package over to DeploymentTeam.
+    if (resolvedRole === 'SpecificationTeam' && dto.isApproved === true) {
+      void this.notifyDeploymentOnApproval(projectId, project.name).catch((e) =>
+        this.logger.warn(`DeploymentTeam notification failed: ${e instanceof Error ? e.message : String(e)}`),
+      );
+    }
+
     return Result.ok({
       id: validation.id,
       projectId: validation.projectId,
@@ -735,6 +804,32 @@ export class ProjectsService {
       comment: validation.comment,
       validatedAt: validation.validatedAt,
     });
+  }
+
+  /** Notify all DeploymentTeam users that a cahier has been approved and is ready to deploy. */
+  private async notifyDeploymentOnApproval(projectId: string, projectName: string): Promise<void> {
+    const deployers = await this.prisma.appUser.findMany({
+      where: { role: 'DeploymentTeam', isActive: true },
+      select: { id: true },
+    });
+    if (deployers.length === 0) return;
+    const { randomUUID } = await import('crypto');
+    await this.prisma.notification.createMany({
+      data: deployers.map((u) => ({
+        id: randomUUID(),
+        userId: u.id,
+        type: 'cahier_approved',
+        reason: 'cahier_approved',
+        title: 'Cahier des charges approuvé — à déployer',
+        message: `Le cahier de « ${projectName} » a été approuvé par l'équipe de spécification. Questionnaire, transcriptions et cahier consultables.`,
+        projectId,
+        entityType: 'Project',
+        entityId: projectId,
+        link: `/app/pm/projects/${projectId}`,
+        isRead: false,
+      })),
+    });
+    this.logger.log(`Notified ${deployers.length} DeploymentTeam user(s) about approval for project ${projectId}`);
   }
 
   async getValidations(projectId: string) {
@@ -775,6 +870,37 @@ export class ProjectsService {
       endDate: p.endDate,
       createdAt: p.createdAt,
     };
+  }
+
+  async exportToCsv(): Promise<string> {
+    const projects = await this.prisma.project.findMany({
+      where: { isDeleted: false },
+      include: { projectManager: { select: { firstName: true, lastName: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const escape = (v: string | null | undefined) => {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s}"` : s;
+    };
+
+    const header = ['ID', 'Nom', 'Client', 'Statut', 'Priorité', 'Chef de projet', 'Date début', 'Date fin', 'Créé le'];
+    const rows = projects.map((p) => [
+      escape(p.id),
+      escape(p.name),
+      escape(p.clientName),
+      escape(p.status),
+      escape(p.priority),
+      p.projectManager
+        ? escape(`${p.projectManager.firstName} ${p.projectManager.lastName}`)
+        : '',
+      escape(p.startDate.toISOString().slice(0, 10)),
+      escape(p.endDate.toISOString().slice(0, 10)),
+      escape(p.createdAt.toISOString().slice(0, 10)),
+    ]);
+
+    return [header.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
   }
 
   private toDetail(p: any) {

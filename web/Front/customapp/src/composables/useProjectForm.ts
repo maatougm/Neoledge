@@ -38,7 +38,7 @@ export function useProjectForm() {
     clientName: '',
     startDate: '',
     endDate: '',
-    projectManagerId: undefined,
+    projectManagerId: '',
   })
 
   const errors = reactive<Partial<Record<keyof CreateProjectPayload, string>>>({})
@@ -56,6 +56,7 @@ export function useProjectForm() {
     if (form.startDate && form.endDate && form.endDate <= form.startDate) {
       errors.endDate = 'La date de fin doit être postérieure à la date de début.'
     }
+    if (!form.projectManagerId.trim()) errors.projectManagerId = 'Un chef de projet est obligatoire.'
 
     return Object.keys(errors).length === 0
   }
@@ -65,7 +66,7 @@ export function useProjectForm() {
     form.clientName = ''
     form.startDate = ''
     form.endDate = ''
-    form.projectManagerId = undefined
+    form.projectManagerId = ''
     Object.keys(errors).forEach((k) => delete errors[k as keyof typeof errors])
   }
 
@@ -83,7 +84,6 @@ export function useProjectForm() {
         ...form,
         startDate: toISODate(form.startDate),
         endDate: toISODate(form.endDate),
-        projectManagerId: form.projectManagerId || undefined,
       })
       if (result) {
         toast.add({ severity: 'success', detail: `Projet « ${result.name} » créé avec succès.`, life: 3000 })

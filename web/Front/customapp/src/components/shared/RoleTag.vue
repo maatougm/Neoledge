@@ -29,11 +29,10 @@ const colorClass = computed(() => {
     Admin:             'role-tag--admin',
     ProjectManager:    'role-tag--pm',
     SpecificationTeam: 'role-tag--team',
-    RealizationTeam:   'role-tag--team',
+    Member:            'role-tag--team',
     DeploymentTeam:    'role-tag--team',
-    Viewer:            'role-tag--viewer',
   }
-  return map[props.role] ?? 'role-tag--viewer'
+  return map[props.role] ?? 'role-tag--unknown'
 })
 </script>
 
@@ -67,7 +66,7 @@ const colorClass = computed(() => {
   color: #16A34A;
 }
 
-.role-tag--viewer {
+.role-tag--unknown {
   background: #F4F4F5;
   color: #71717A;
 }

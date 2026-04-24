@@ -20,7 +20,7 @@ declare module 'vue-router' {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password'])
+const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password', 'forgot-password', 'reset-password'])
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,16 @@ const router = createRouter({
       path: '/force-change-password',
       name: 'force-change-password',
       component: () => import('@/views/ForceChangePasswordView.vue'),
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('@/views/ForgotPasswordView.vue'),
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('@/views/ResetPasswordView.vue'),
     },
     {
       path: '/unauthorized',
@@ -121,12 +131,6 @@ const router = createRouter({
                 import('@/components/admin/sections/TemplatesSection.vue'),
             },
             {
-              path: 'logs',
-              name: 'admin-logs',
-              component: () =>
-                import('@/components/admin/sections/LogsSection.vue'),
-            },
-            {
               path: 'system',
               name: 'admin-system',
               component: () =>
@@ -136,11 +140,6 @@ const router = createRouter({
               path: 'trash',
               name: 'admin-trash',
               component: () => import('@/components/admin/TrashSection.vue'),
-            },
-            {
-              path: 'portfolio',
-              name: 'admin-portfolio',
-              component: () => import('@/views/PortfolioView.vue'),
             },
             {
               path: 'team-planner',
@@ -156,6 +155,11 @@ const router = createRouter({
               path: 'roles',
               name: 'admin-roles',
               component: () => import('@/views/admin/RolesView.vue'),
+            },
+            {
+              path: 'portfolio',
+              name: 'admin-portfolio',
+              component: () => import('@/views/PortfolioView.vue'),
             },
           ],
         },
@@ -270,9 +274,8 @@ const router = createRouter({
             requiresAuth: true,
             allowedRoles: [
               'SpecificationTeam',
-              'RealizationTeam',
+              'Member',
               'DeploymentTeam',
-              'Viewer',
             ] as UserRole[],
           },
           beforeEnter: roleGuard,

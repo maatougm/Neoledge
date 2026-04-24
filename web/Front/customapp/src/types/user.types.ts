@@ -12,9 +12,8 @@ export type KnownUserRole =
   | 'Admin'
   | 'ProjectManager'
   | 'SpecificationTeam'
-  | 'RealizationTeam'
+  | 'Member'
   | 'DeploymentTeam'
-  | 'Viewer'
 
 // Widened to accept custom roles returned by /auth/me without casting.
 export type UserRole = KnownUserRole | (string & {})
@@ -23,9 +22,8 @@ const BUILT_IN_ROLE_LABELS: Record<KnownUserRole, string> = {
   Admin: 'Administrateur',
   ProjectManager: 'Chef de projet',
   SpecificationTeam: 'Équipe spécification',
-  RealizationTeam: 'Équipe réalisation',
+  Member: 'Membre',
   DeploymentTeam: 'Équipe déploiement',
-  Viewer: 'Lecteur',
 }
 
 /** @deprecated Use `getUserRoleLabel(role)` instead of indexing `USER_ROLE_LABELS` directly — custom roles are not in this map. */

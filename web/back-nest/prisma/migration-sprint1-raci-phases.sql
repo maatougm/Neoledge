@@ -52,11 +52,11 @@ JOIN   `Teams`    t ON t.code = 'PS'
 SET    u.`teamId` = t.`id`
 WHERE  u.`role` = 'SpecificationTeam' AND u.`teamId` IS NULL;
 
--- RealizationTeam → Integration
+-- Member → Integration
 UPDATE `AppUsers` u
 JOIN   `Teams`    t ON t.code = 'Integration'
 SET    u.`teamId` = t.`id`
-WHERE  u.`role` = 'RealizationTeam' AND u.`teamId` IS NULL;
+WHERE  u.`role` = 'Member' AND u.`teamId` IS NULL;
 
 -- ProjectManager → Delivery
 UPDATE `AppUsers` u

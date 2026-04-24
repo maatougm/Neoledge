@@ -2,11 +2,10 @@ import {
   IsString,
   IsNotEmpty,
   IsDateString,
-  IsOptional,
-  IsUUID,
+  Matches,
   MaxLength,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateProjectDto {
   @ApiProperty({ maxLength: 200 })
@@ -29,8 +28,11 @@ export class CreateProjectDto {
   @IsDateString()
   endDate: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsUUID()
-  projectManagerId?: string;
+  @ApiProperty({ description: 'UUID of the assigned project manager (required)' })
+  @IsString()
+  @IsNotEmpty({ message: 'projectManagerId is required — a PM must be assigned on creation' })
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, {
+    message: 'projectManagerId must be a valid UUID',
+  })
+  projectManagerId: string;
 }

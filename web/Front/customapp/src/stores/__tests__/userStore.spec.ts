@@ -41,7 +41,7 @@ const mockInactive: UserResponse = {
   firstName: 'Paul',
   lastName: 'Durand',
   email: 'paul@test.com',
-  role: 'Viewer',
+  role: 'Member',
   isActive: false,
   createdAt: '2026-01-03T00:00:00Z',
   lastLoginAt: null,

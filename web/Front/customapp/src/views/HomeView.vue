@@ -229,7 +229,7 @@ const unreadCount = computed<number>(() => notifStore.notifications.filter((n: {
 
 const showValidations = computed<boolean>(() => {
   const r = authStore.userRole
-  return r === 'Admin' || r === 'SpecificationTeam' || r === 'RealizationTeam' || r === 'DeploymentTeam'
+  return r === 'Admin' || r === 'SpecificationTeam' || r === 'Member' || r === 'DeploymentTeam'
 })
 
 const stats = computed(() => {
@@ -313,7 +313,7 @@ async function loadPendingValidations(): Promise<void> {
   loadingValidations.value = true
   try {
     // Fetch projects visible to user, then check validations per phase.
-    const endpoint = authStore.userRole === 'Admin' ? '/admin/projects' : '/pm/team-projects'
+    const endpoint = authStore.userRole === 'Admin' ? '/admin/project' : '/pm/team-projects'
     const { data } = await api.get<{ items: ProjectLite[] } | ProjectLite[]>(endpoint)
     const projects = Array.isArray(data) ? data : data.items
     const pending: PendingValidation[] = []
@@ -335,7 +335,7 @@ async function loadMilestones(): Promise<void> {
   loadingMilestones.value = true
   try {
     // Use the portfolio roadmap if available — else skip.
-    const endpoint = authStore.userRole === 'Admin' ? '/admin/projects' : '/pm/projects'
+    const endpoint = authStore.userRole === 'Admin' ? '/admin/project' : '/pm/projects'
     const { data } = await api.get<{ items: ProjectLite[] } | ProjectLite[]>(endpoint)
     const projects = Array.isArray(data) ? data : data.items
     const results: Milestone[] = []
@@ -371,7 +371,7 @@ function projectStatusToPhase(status: string): string | null {
 function canValidatePhase(role: string, phase: string): boolean {
   if (role === 'Admin') return true
   if (phase === 'Specification') return role === 'SpecificationTeam'
-  if (phase === 'Realization')   return role === 'RealizationTeam'
+  if (phase === 'Realization')   return role === 'Member'
   if (phase === 'Deployment')    return role === 'DeploymentTeam'
   return false
 }

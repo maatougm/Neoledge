@@ -44,7 +44,7 @@ async function main() {
   const admin = users.find((u) => u.role === 'Admin');
   const pms = users.filter((u) => u.role === 'ProjectManager');
   const team = users.filter((u) =>
-    ['SpecificationTeam', 'RealizationTeam', 'DeploymentTeam'].includes(u.role),
+    ['SpecificationTeam', 'Member', 'DeploymentTeam'].includes(u.role),
   );
   if (!admin) throw new Error('No Admin user found.');
 
@@ -56,9 +56,8 @@ async function main() {
     Admin: 120,
     ProjectManager: 95,
     SpecificationTeam: 75,
-    RealizationTeam: 70,
+    Member: 70,
     DeploymentTeam: 65,
-    Viewer: 50,
   };
   for (const u of users) {
     const exists = await prisma.hourlyRate.findFirst({

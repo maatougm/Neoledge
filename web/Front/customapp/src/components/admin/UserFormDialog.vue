@@ -93,9 +93,8 @@ const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   Admin:              'Accès complet — gestion des utilisateurs et des projets.',
   ProjectManager:     'Gestion et suivi des projets assignés.',
   SpecificationTeam:  'Valide les spécifications des projets.',
-  RealizationTeam:    'Équipe en charge de la réalisation.',
+  Member:             'Membre de l\'équipe projet.',
   DeploymentTeam:     'Déploiement et livraison des projets.',
-  Viewer:             'Lecture seule — aucune action possible.',
 }
 
 const props = defineProps<{
@@ -134,7 +133,7 @@ const form = reactive({
   lastName:  '',
   email:     '',
   password:  '',
-  role:      'Viewer' as UserRole,
+  role:      'Member' as UserRole,
 })
 
 const errors = reactive<Partial<Record<keyof typeof form, string>>>({})
@@ -149,7 +148,7 @@ watch(
       form.role      = u.role
       form.password  = ''
     } else {
-      Object.assign(form, { firstName: '', lastName: '', email: '', password: '', role: 'Viewer' })
+      Object.assign(form, { firstName: '', lastName: '', email: '', password: '', role: 'Member' })
     }
     Object.keys(errors).forEach((k) => delete errors[k as keyof typeof errors])
   },

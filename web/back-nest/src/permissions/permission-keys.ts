@@ -171,7 +171,7 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'attachment.upload',
   ],
 
-  RealizationTeam: [
+  Member: [
     'project.view',
     'project.validate',
     'wp.view',
@@ -202,11 +202,4 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'attachment.upload',
   ],
 
-  Viewer: [
-    'project.view',
-    'wp.view',
-    'gantt.view',
-    'wiki.view',
-    'meeting.view',
-  ],
 };

@@ -71,11 +71,13 @@
 
       <NeoSelect
         v-model="form.projectManagerId"
-        label="Chef de projet (optionnel)"
+        label="Chef de projet"
         :options="pmOptions"
         optionLabel="label"
         optionValue="value"
         placeholder="Sélectionner un chef de projet"
+        :error="errors.projectManagerId"
+        required
         class="project-form__field--full"
       />
     </div>
@@ -86,7 +88,7 @@
         label="Créer le projet"
         icon="pi pi-check"
         :loading="submitting || applyingTemplate"
-        :disabled="submitting || applyingTemplate"
+        :disabled="submitting || applyingTemplate || !isFormValid"
         @click="handleSubmit"
       />
     </div>
@@ -120,6 +122,16 @@ const pmOptions = computed(() =>
     value: u.id,
     label: `${u.firstName} ${u.lastName}`,
   })),
+)
+
+/** Live gate: all required fields filled — prevents submitting before validation runs. */
+const isFormValid = computed(
+  () =>
+    form.name.trim() !== '' &&
+    form.clientName.trim() !== '' &&
+    form.startDate !== '' &&
+    form.endDate !== '' &&
+    form.projectManagerId !== '',
 )
 
 const templateOptions = computed(() =>

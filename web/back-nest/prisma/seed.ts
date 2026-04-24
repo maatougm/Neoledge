@@ -76,7 +76,7 @@ async function main() {
     {
       id: ID.real1, firstName: 'Antoine', lastName: 'Petit',
       email: 'realiz@neoleadge.com', passwordHash: HASH('Realiz@123'),
-      role: 'RealizationTeam', jobTitle: 'Développeur fullstack',
+      role: 'Member', jobTitle: 'Développeur fullstack',
       department: 'Réalisation',
     },
     {
@@ -88,7 +88,7 @@ async function main() {
     {
       id: ID.viewer1, firstName: 'Thomas', lastName: 'Dupont',
       email: 'viewer@neoleadge.com', passwordHash: HASH('Viewer@1'),
-      role: 'Viewer', jobTitle: 'Directeur commercial',
+      role: 'Member', jobTitle: 'Directeur commercial',
       department: 'Commerce',
     },
   ];
@@ -359,7 +359,7 @@ async function main() {
     },
     {
       projectId: ID.p4, validatedByUserId: ID.real1,
-      validatedByRole: 'RealizationTeam', phase: 'Realization',
+      validatedByRole: 'Member', phase: 'Realization',
       isApproved: false, comment: 'Tests de charge insuffisants. Nécessite un cycle supplémentaire.',
       validatedAt: new Date('2026-03-01'),
     },
@@ -484,9 +484,9 @@ async function main() {
   console.log('  ProjectManager pm@neoleadge.com        / Pm@12345');
   console.log('  ProjectManager pm2@neoleadge.com       / Pm@12345');
   console.log('  SpecTeam       spec@neoleadge.com      / Valid@123');
-  console.log('  RealizTeam     real@neoleadge.com      / Valid@123');
+  console.log('  Member         real@neoleadge.com      / Valid@123');
   console.log('  DeployTeam     deploy@neoleadge.com    / Valid@123');
-  console.log('  Viewer         viewer@neoleadge.com    / Viewer@1');
+  console.log('  Member (2)     viewer@neoleadge.com    / Viewer@1');
 }
 
 main()

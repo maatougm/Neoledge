@@ -73,9 +73,8 @@ const ROLE_LABELS: Record<string, string> = {
   Admin:             'Admin',
   ProjectManager:    'Chef de projet',
   SpecificationTeam: 'Équipe spéc.',
-  RealizationTeam:   'Équipe réal.',
+  Member:            'Membre',
   DeploymentTeam:    'Équipe déploiement',
-  Viewer:            'Observateur',
 }
 
 const validations = ref<ProjectValidation[]>([])

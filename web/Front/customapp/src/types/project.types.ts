@@ -101,7 +101,7 @@ export interface CreateProjectPayload {
   clientName: string
   startDate: string
   endDate: string
-  projectManagerId?: string
+  projectManagerId: string
 }
 
 export interface UpdateProjectPayload {
