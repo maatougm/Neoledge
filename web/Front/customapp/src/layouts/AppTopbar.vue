@@ -82,6 +82,7 @@ const ROUTE_LABELS: Record<string, string> = {
   'team-projects':       'Projets',
   'team-project-detail': 'Détail du projet',
   'team-validations':    'Mes validations',
+  'team-pending-reviews': 'Cahiers à valider',
   'profile':             'Profil',
 }
 

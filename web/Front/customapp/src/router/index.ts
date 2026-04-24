@@ -295,6 +295,11 @@ const router = createRouter({
               name: 'team-validations',
               component: () => import('@/views/TeamMemberView.vue'),
             },
+            {
+              path: 'pending-reviews',
+              name: 'team-pending-reviews',
+              component: () => import('@/views/SpecPendingReviewsView.vue'),
+            },
           ],
         },
 
