@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -97,6 +97,39 @@ export class WorkPackagesService {
     }
   }
 
+  /**
+   * Notify the project's PM when a WP transitions into AwaitingReview so they
+   * can approve (Resolved) or reject (back to InProgress) the completed work.
+   * Skipped silently if the PM is the same user who made the transition.
+   */
+  private async notifyPmOnAwaitingReview(
+    projectId: string,
+    wpId: string,
+    wpTitle: string,
+    actorId: string,
+  ): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true, projectManagerId: true },
+    });
+    if (!project || !project.projectManagerId) return;
+    if (project.projectManagerId === actorId) return;
+    await this.prisma.notification.create({
+      data: {
+        userId: project.projectManagerId,
+        type: 'work_package_awaiting_review',
+        reason: 'AwaitingReview',
+        title: 'Tâche à valider',
+        message: `"${wpTitle}" est en attente de votre validation (projet « ${project.name} »).`,
+        projectId,
+        entityType: 'work_package',
+        entityId: wpId,
+        actorId,
+        link: `/app/pm/projects/${projectId}/workpackages?wpId=${wpId}`,
+      },
+    });
+  }
+
   /** Cross-project work packages for a specific user (assignee). Used by "Mes tâches". */
   async findForAssignee(userId: string, filters: { status?: string; q?: string; page?: number; limit?: number } = {}) {
     try {
@@ -192,6 +225,16 @@ export class WorkPackagesService {
   async create(projectId: string, dto: CreateWorkPackageDto, authorId: string) {
     try {
       if (!dto.title?.trim()) return Result.fail('Le titre est requis.');
+      // C1: cross-project parent guard. Skip when parentId is null/undefined.
+      if (dto.parentId) {
+        const parent = await this.prisma.workPackage.findUnique({
+          where: { id: dto.parentId },
+          select: { id: true, projectId: true },
+        });
+        if (!parent || parent.projectId !== projectId) {
+          throw new BadRequestException('parentId must belong to same project');
+        }
+      }
       const maxPos = await this.prisma.workPackage.aggregate({
         where: { projectId, parentId: dto.parentId ?? null },
         _max: { position: true },
@@ -242,6 +285,7 @@ export class WorkPackagesService {
       void this.analyticsCache.invalidate('team_workload');
       return Result.ok(wp);
     } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       this.logger.error('create failed', e);
       return Result.fail('Échec de la création du work package.');
     }
@@ -251,6 +295,21 @@ export class WorkPackagesService {
     try {
       const existing = await this.prisma.workPackage.findFirst({ where: { id, projectId, isDeleted: false } });
       if (!existing) return Result.fail('Work package introuvable.');
+
+      // C2: reject self-parent cycles. null/undefined mean "no change" or "clear" — OK.
+      if (dto.parentId !== undefined && dto.parentId !== null) {
+        if (dto.parentId === id) {
+          throw new BadRequestException('A work package cannot be its own parent');
+        }
+        // C1: cross-project parent guard on update.
+        const parent = await this.prisma.workPackage.findUnique({
+          where: { id: dto.parentId },
+          select: { id: true, projectId: true },
+        });
+        if (!parent || parent.projectId !== projectId) {
+          throw new BadRequestException('parentId must belong to same project');
+        }
+      }
 
       const data: Record<string, unknown> = {};
       const keys: (keyof UpdateWorkPackageDto)[] = ['title', 'description', 'type', 'status', 'priority', 'assigneeId', 'parentId', 'sprintId', 'versionId', 'boardColumnId', 'spentHours', 'percentDone', 'position', 'estimatedHours'];
@@ -313,11 +372,21 @@ export class WorkPackagesService {
             workPackageId: id, title: wp.title, fromStatus: existing.status, toStatus: dto.status,
           }).catch((e) => this.logger.error('automation work_package_status_changed failed', e));
           void this.analyticsCache.invalidate('team_workload');
+
+          // When a Member pushes a WP into AwaitingReview, notify the project's PM
+          // so they can validate (or reject) the work. The PM is the sole
+          // approver of a completed task.
+          if (dto.status === 'AwaitingReview') {
+            void this.notifyPmOnAwaitingReview(projectId, id, wp.title, actorId).catch((e) =>
+              this.logger.error('notifyPmOnAwaitingReview failed', e),
+            );
+          }
         }
       }
 
       return Result.ok(wp);
     } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       this.logger.error('update failed', e);
       return Result.fail('Échec de la mise à jour du work package.');
     }
@@ -338,6 +407,36 @@ export class WorkPackagesService {
 
   async moveCard(id: string, dto: MoveWorkPackageDto) {
     try {
+      // H2: verify target column (if provided) belongs to a board in the same project as the WP.
+      // Also C1/C2 guard on parent moves.
+      const wpExisting = await this.prisma.workPackage.findUnique({
+        where: { id },
+        select: { id: true, projectId: true },
+      });
+      if (!wpExisting) throw new BadRequestException('Work package introuvable.');
+
+      if (dto.boardColumnId) {
+        const column = await this.prisma.boardColumn.findUnique({
+          where: { id: dto.boardColumnId },
+          select: { id: true, board: { select: { projectId: true } } },
+        });
+        if (!column || column.board.projectId !== wpExisting.projectId) {
+          throw new BadRequestException('boardColumnId must belong to a board in the same project');
+        }
+      }
+      if (dto.parentId !== undefined && dto.parentId !== null) {
+        if (dto.parentId === id) {
+          throw new BadRequestException('A work package cannot be its own parent');
+        }
+        const parent = await this.prisma.workPackage.findUnique({
+          where: { id: dto.parentId },
+          select: { id: true, projectId: true },
+        });
+        if (!parent || parent.projectId !== wpExisting.projectId) {
+          throw new BadRequestException('parentId must belong to same project');
+        }
+      }
+
       const data: Record<string, unknown> = {};
       if (dto.boardColumnId !== undefined) data.boardColumnId = dto.boardColumnId;
       if (dto.sprintId !== undefined) data.sprintId = dto.sprintId;
@@ -346,6 +445,7 @@ export class WorkPackagesService {
       const wp = await this.prisma.workPackage.update({ where: { id }, data });
       return Result.ok(wp);
     } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       this.logger.error('moveCard failed', e);
       return Result.fail('Échec du déplacement.');
     }
@@ -367,9 +467,17 @@ export class WorkPackagesService {
 
   async removeWatcher(workPackageId: string, userId: string) {
     try {
-      await this.prisma.workPackageWatcher.deleteMany({ where: { workPackageId, userId } });
+      // M5: precheck existence so a 404 is surfaced instead of a silent no-op.
+      const existing = await this.prisma.workPackageWatcher.findUnique({
+        where: { workPackageId_userId: { workPackageId, userId } },
+      });
+      if (!existing) throw new NotFoundException('Watcher not found');
+      await this.prisma.workPackageWatcher.delete({
+        where: { workPackageId_userId: { workPackageId, userId } },
+      });
       return Result.ok<void>();
     } catch (e) {
+      if (e instanceof NotFoundException) throw e;
       this.logger.error('removeWatcher failed', e);
       return Result.fail<void>('Échec de la suppression de l\'observateur.');
     }
@@ -378,9 +486,31 @@ export class WorkPackagesService {
   async addDependency(fromWpId: string, toWpId: string, type: string) {
     try {
       if (fromWpId === toWpId) return Result.fail('Impossible de créer une dépendance sur le même work package.');
+
+      // C3: detect circular dependencies via DFS from `toWpId` following existing deps.
+      // If we can reach `fromWpId`, adding fromWpId -> toWpId would close a cycle.
+      const visited = new Set<string>();
+      const stack: string[] = [toWpId];
+      while (stack.length > 0) {
+        const current = stack.pop() as string;
+        if (current === fromWpId) {
+          throw new BadRequestException('Circular dependency detected');
+        }
+        if (visited.has(current)) continue;
+        visited.add(current);
+        const outgoing = await this.prisma.workPackageDependency.findMany({
+          where: { fromWpId: current },
+          select: { toWpId: true },
+        });
+        for (const dep of outgoing) {
+          if (!visited.has(dep.toWpId)) stack.push(dep.toWpId);
+        }
+      }
+
       const d = await this.prisma.workPackageDependency.create({ data: { fromWpId, toWpId, type: type || 'relates' } });
       return Result.ok(d);
     } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       this.logger.error('addDependency failed', e);
       return Result.fail('Échec de l\'ajout de la dépendance.');
     }
