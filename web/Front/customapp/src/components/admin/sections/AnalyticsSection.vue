@@ -134,7 +134,7 @@ const router = useRouter()
 onMounted(() => store.fetchAll())
 
 function goToProject(id: string): void {
-  router.push({ name: 'admin-project-detail', params: { id } })
+  router.push({ name: 'pm-project-detail', params: { id } })
 }
 
 // ─── Velocity chart ───────────────────────────────────────────────────────────

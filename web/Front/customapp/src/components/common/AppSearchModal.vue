@@ -172,7 +172,7 @@ const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
     { kind: 'command', id: 'prof',   title: 'Mon profil',               icon: 'pi-user',      action: () => router.push('/app/profile') },
   ]
   if (authStore.can('team_planner.view')) {
-    cmds.push({ kind: 'command', id: 'planner', title: 'Planif. équipe', icon: 'pi-calendar', action: () => router.push(authStore.userRole === 'Admin' ? '/app/admin/team-planner' : '/app/pm/team-planner') })
+    cmds.push({ kind: 'command', id: 'planner', title: 'Planif. équipe', icon: 'pi-calendar', action: () => router.push('/app/pm/team-planner') })
   }
   if (isInProject && projectId) {
     const b = `/app/pm/projects/${projectId}`

@@ -123,10 +123,8 @@ import { useNotificationStore } from '@/stores/notificationStore'
 import DashboardSection         from '@/components/admin/sections/DashboardSection.vue'
 import ProjectManagementSection from '@/components/admin/sections/ProjectManagementSection.vue'
 import UserManagementSection    from '@/components/admin/sections/UserManagementSection.vue'
-import LogsSection              from '@/components/admin/sections/LogsSection.vue'
 import SystemStatusSection      from '@/components/admin/sections/SystemStatusSection.vue'
 import TemplatesSection         from '@/components/admin/sections/TemplatesSection.vue'
-import AnalyticsSection         from '@/components/admin/sections/AnalyticsSection.vue'
 import ActivitySection          from '@/components/admin/sections/ActivitySection.vue'
 import TrashSection             from '@/components/admin/TrashSection.vue'
 import PersonalDashboard        from '@/components/admin/PersonalDashboard.vue'
@@ -136,7 +134,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 
-type SectionId = 'dashboard' | 'projects' | 'users' | 'logs' | 'status' | 'templates' | 'analytics' | 'activity' | 'trash' | 'personal'
+type SectionId = 'dashboard' | 'projects' | 'users' | 'status' | 'templates' | 'activity' | 'trash' | 'personal'
 
 const router            = useRouter()
 const app               = useApp()
@@ -210,9 +208,7 @@ const primaryNav: { id: SectionId; label: string; icon: string }[] = [
 ]
 
 const toolsNav: { id: SectionId; label: string; icon: string }[] = [
-  { id: 'analytics', label: 'Analytiques', icon: 'pi-chart-bar' },
   { id: 'templates', label: 'Modèles',     icon: 'pi-copy' },
-  { id: 'logs',      label: 'Logs',        icon: 'pi-file-edit' },
   { id: 'status',    label: 'Système',     icon: 'pi-server' },
 ]
 
@@ -220,10 +216,8 @@ const sectionMap: Record<Exclude<SectionId, 'personal'>, object> = {
   dashboard: DashboardSection,
   projects:  ProjectManagementSection,
   users:     UserManagementSection,
-  analytics: AnalyticsSection,
   activity:  ActivitySection,
   templates: TemplatesSection,
-  logs:      LogsSection,
   status:    SystemStatusSection,
   trash:     TrashSection,
 }

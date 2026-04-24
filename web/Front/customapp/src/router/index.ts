@@ -119,12 +119,6 @@ const router = createRouter({
                 import('@/components/admin/sections/ActivitySection.vue'),
             },
             {
-              path: 'analytics',
-              name: 'admin-analytics',
-              component: () =>
-                import('@/components/admin/sections/AnalyticsSection.vue'),
-            },
-            {
               path: 'templates',
               name: 'admin-templates',
               component: () =>
@@ -140,11 +134,6 @@ const router = createRouter({
               path: 'trash',
               name: 'admin-trash',
               component: () => import('@/components/admin/TrashSection.vue'),
-            },
-            {
-              path: 'team-planner',
-              name: 'admin-team-planner',
-              component: () => import('@/views/TeamPlannerView.vue'),
             },
             {
               path: 'audit',
@@ -252,6 +241,11 @@ const router = createRouter({
               name: 'pm-project-activity',
               component: () => import('@/views/ProjectActivityView.vue'),
               props: true,
+            },
+            {
+              path: 'analytics',
+              name: 'pm-analytics',
+              component: () => import('@/components/admin/sections/AnalyticsSection.vue'),
             },
             {
               path: 'team-planner',

@@ -68,17 +68,14 @@ const adminNav: NavSection[] = [
       { key: 'admin-dashboard',   label: 'Tableau de bord', icon: 'pi-chart-line',   to: '/app/admin/dashboard' },
   ]},
   { heading: 'Gestion', items: [
-      { key: 'admin-projects',  label: 'Projets',       icon: 'pi-briefcase', to: '/app/admin/projects'  },
-      { key: 'admin-users',     label: 'Utilisateurs',  icon: 'pi-users',     to: '/app/admin/users'     },
-      { key: 'admin-roles',     label: 'Rôles',         icon: 'pi-key',       to: '/app/admin/roles'     },
-      { key: 'admin-templates', label: 'Modèles',       icon: 'pi-copy',      to: '/app/admin/templates' },
+      { key: 'admin-projects',   label: 'Projets',       icon: 'pi-briefcase',  to: '/app/admin/projects'   },
+      { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
+      { key: 'admin-roles',      label: 'Rôles',         icon: 'pi-key',        to: '/app/admin/roles'      },
+      { key: 'admin-templates',  label: 'Modèles',       icon: 'pi-copy',       to: '/app/admin/templates'  },
+      { key: 'admin-portfolio',  label: 'Portfolios',    icon: 'pi-th-large',   to: '/app/admin/portfolio'  },
   ]},
   { heading: 'Rapports', items: [
-      { key: 'admin-analytics',     label: 'Analytiques',  icon: 'pi-chart-bar',  to: '/app/admin/analytics' },
       { key: 'admin-activity',      label: 'Activité',     icon: 'pi-history',    to: '/app/admin/activity'  },
-      { key: 'admin-logs',          label: 'Journaux',     icon: 'pi-list',       to: '/app/admin/logs'      },
-      { key: 'admin-portfolio',     label: 'Portefeuille', icon: 'pi-chart-pie',  to: '/app/admin/portfolio' },
-      { key: 'admin-team-planner',  label: 'Planif. équipe', icon: 'pi-calendar', to: '/app/admin/team-planner' },
   ]},
   { heading: 'Système', items: [
       { key: 'admin-system',    label: 'Statut système', icon: 'pi-server',   to: '/app/admin/system'    },
@@ -96,21 +93,26 @@ const pmNav: NavSection[] = [
       { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
       { key: 'pm-team-planner', label: 'Planif. équipe', icon: 'pi-calendar', to: '/app/pm/team-planner' },
   ]},
+  { heading: 'Rapports', items: [
+      { key: 'pm-analytics', label: 'Analytiques', icon: 'pi-chart-bar', to: '/app/pm/analytics' },
+  ]},
   { heading: 'Mon espace', items: [
       { key: 'profile',         label: 'Mon profil',    icon: 'pi-user',     to: '/app/profile' },
   ]},
 ]
 
 // Project-module nav — OpenProject-style contextual menu when viewing a project.
-// Cache per projectId so the array reference stays stable across sub-route changes
-// (prevents sidebar re-render + RouterView reconciliation crash mid-navigation).
+// Cache per role+projectId so admins and PMs get the correct back-link.
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
-  const cached = projectNavCache.get(projectId)
+  const role = authStore.userRole ?? 'ProjectManager'
+  const cacheKey = `${role}:${projectId}`
+  const cached = projectNavCache.get(cacheKey)
   if (cached) return cached
   const base = `/app/pm/projects/${projectId}`
+  const isAdmin = role === 'Admin'
   const sections: NavSection[] = [
-    { items: [{ key: 'pm-projects', label: 'Mes projets', icon: 'pi-briefcase', to: '/app/pm/projects' }] },
+    { items: [{ key: isAdmin ? 'admin-projects' : 'pm-projects', label: isAdmin ? 'Projets' : 'Mes projets', icon: 'pi-briefcase', to: isAdmin ? '/app/admin/projects' : '/app/pm/projects' }] },
     { heading: 'Projet', items: [
         { key: 'proj-overview',     label: 'Aperçu',         icon: 'pi-home',        to: base },
         { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
@@ -128,7 +130,7 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
     ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
   ]
-  projectNavCache.set(projectId, sections)
+  projectNavCache.set(cacheKey, sections)
   return sections
 }
 
