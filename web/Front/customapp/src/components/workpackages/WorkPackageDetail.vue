@@ -104,6 +104,10 @@
           <li v-if="!wp.watchers?.length" class="wp-detail__muted">Aucun observateur.</li>
         </ul>
       </div>
+
+      <div v-if="activeTab === 'Pièces jointes'">
+        <WpAttachmentsPanel :work-package-id="props.workPackageId" />
+      </div>
     </div>
 
     <div class="wp-detail__footer">
@@ -123,6 +127,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { NeoButton, NeoSelect, NeoDatePicker, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import WpStatusTag from '@/components/common/WpStatusTag.vue'
+import WpAttachmentsPanel from './WpAttachmentsPanel.vue'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
 import type { UpdateWpPayload } from '@/types/work-package.types'
 
@@ -134,8 +139,8 @@ const toast = useNeoToast()
 const confirm = useNeoConfirm()
 
 const wp = computed(() => store.currentWp)
-const activeTab = ref<'Détails' | 'Relations' | 'Observateurs'>('Détails')
-const tabs: ('Détails' | 'Relations' | 'Observateurs')[] = ['Détails', 'Relations', 'Observateurs']
+const activeTab = ref<'Détails' | 'Relations' | 'Observateurs' | 'Pièces jointes'>('Détails')
+const tabs: ('Détails' | 'Relations' | 'Observateurs' | 'Pièces jointes')[] = ['Détails', 'Relations', 'Observateurs', 'Pièces jointes']
 
 const localTitle = ref('')
 const localDescription = ref('')

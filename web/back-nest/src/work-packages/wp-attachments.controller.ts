@@ -78,7 +78,10 @@ export class WpAttachmentsController {
   }
 
   @Delete(':attachmentId')
-  @RequirePermission('wp.edit')
+  // attachment.upload (not wp.edit) — Spec/Member/Deploy all have it.
+  // Ownership is enforced inside the service: only uploader or project PM
+  // may delete; otherwise a 403 ForbiddenException is thrown.
+  @RequirePermission('attachment.upload')
   async remove(
     @Param('attachmentId') attachmentId: string,
     @Req() req: Request,
