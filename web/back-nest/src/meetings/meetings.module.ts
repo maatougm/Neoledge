@@ -5,12 +5,14 @@ import { AgendaService } from './agenda.service.js'
 import { AttendeesService } from './attendees.service.js'
 import { OutcomesService } from './outcomes.service.js'
 import { MeetingExtrasController } from './meeting-extras.controller.js'
+import { LiveMeetingService } from './live-meeting.service.js'
+import { LiveMeetingController } from './live-meeting.controller.js'
 import { AiModule } from '../ai/ai.module.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
 
 @Module({
   imports: [AiModule],
-  controllers: [MeetingsController, MeetingExtrasController],
-  providers: [MeetingsService, AgendaService, AttendeesService, OutcomesService, ProjectAccessGuard],
+  controllers: [MeetingsController, MeetingExtrasController, LiveMeetingController],
+  providers: [MeetingsService, AgendaService, AttendeesService, OutcomesService, LiveMeetingService, ProjectAccessGuard],
 })
 export class MeetingsModule {}

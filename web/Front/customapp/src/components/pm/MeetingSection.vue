@@ -8,9 +8,16 @@
       <h3 v-if="view === 'list'" class="section-title">Reunions</h3>
       <div v-if="view === 'list'" class="header-actions">
         <NeoButton
-          label="Nouvelle reunion"
+          label="Réunion en direct"
+          icon="pi pi-bolt"
+          size="small"
+          @click="view = 'live'"
+        />
+        <NeoButton
+          label="Enregistrer (audio)"
           icon="pi pi-microphone"
           size="small"
+          outlined
           @click="view = 'record'"
         />
         <NeoButton
@@ -35,6 +42,13 @@
       v-if="view === 'record'"
       :project-id="projectId"
       @transcribed="onTranscribed"
+    />
+
+    <!-- Live meeting (AI checklist + tab capture or mic) -->
+    <LiveMeetingPanel
+      v-else-if="view === 'live'"
+      :project-id="projectId"
+      @saved="onLiveSaved"
     />
 
     <!-- File upload view -->
@@ -163,13 +177,14 @@ import { usePmStore } from '@/stores/pmStore'
 import MeetingRecorder from '@/components/pm/MeetingRecorder.vue'
 import TranscriptViewer from '@/components/pm/TranscriptViewer.vue'
 import MeetingExtrasTabs from '@/components/meetings/MeetingExtrasTabs.vue'
+import LiveMeetingPanel from '@/components/pm/LiveMeetingPanel.vue'
 
 const props = defineProps<{ projectId: string }>()
 
 const store = usePmStore()
 const toast = useNeoToast()
 
-type ViewState = 'list' | 'record' | 'detail' | 'upload'
+type ViewState = 'list' | 'record' | 'detail' | 'upload' | 'live'
 const view = ref<ViewState>('list')
 
 // File upload state
@@ -268,6 +283,11 @@ async function submitFileUpload() {
 }
 
 async function onTranscribed() {
+  await store.fetchMeetings(props.projectId)
+  view.value = 'list'
+}
+
+async function onLiveSaved(_transcriptId: string) {
   await store.fetchMeetings(props.projectId)
   view.value = 'list'
 }
