@@ -223,15 +223,17 @@ model Project {
 }
 
 model ProjectField {
-  id            String  @id @default(uuid())
-  projectId     String
-  label         String  @db.VarChar(200)
-  fieldType     String  @default("Text") @db.VarChar(50)
-  isRequired    Boolean @default(false)
-  defaultValue  String? @db.VarChar(500)
-  orderIndex    Int     @default(0)
-  fieldCategory String  @default("Dynamic") @db.VarChar(50)
-  options       String? @db.Text
+  id              String  @id @default(uuid())
+  projectId       String
+  label           String  @db.VarChar(200)
+  fieldType       String  @default("Text") @db.VarChar(50)
+  isRequired      Boolean @default(false)
+  defaultValue    String? @db.VarChar(500)
+  orderIndex      Int     @default(0)
+  fieldCategory   String  @default("Dynamic") @db.VarChar(50)
+  options         String? @db.Text
+  isBacklogDriver Boolean @default(false)
+  backlogHint     String? @db.VarChar(500)
 
   // Relations
   project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -668,6 +670,9 @@ model WorkPackage {
   slaDeadline       DateTime?
   slaKind           String?   @db.VarChar(20)   // ack|blocker|post_recette|post_prod
   slaBreached       Boolean   @default(false)
+
+  // ─── Sprint Transformation 5: IA backlog provenance ─────────────────────────
+  aiGeneratedFrom   String?   @db.VarChar(100)
 
   project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)

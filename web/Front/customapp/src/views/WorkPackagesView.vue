@@ -2,6 +2,13 @@
 <template>
   <ProjectModuleShell :project-id="projectId" title="Work Packages">
     <template #actions>
+      <NeoButton
+        v-if="canUseAi"
+        label="Générer backlog IA"
+        icon="pi pi-sparkles"
+        severity="secondary"
+        @click="showAiBacklog = true"
+      />
       <NeoButton label="Nouveau" icon="pi pi-plus" @click="showCreate = true" />
     </template>
 
@@ -143,6 +150,12 @@
         <NeoButton label="Créer" icon="pi pi-check" :loading="creating" @click="submitCreate" />
       </template>
     </AppModal>
+
+  <AiBacklogPreviewModal
+    v-model:visible="showAiBacklog"
+    :project-id="projectId"
+    @accepted="onAiBacklogAccepted"
+  />
 </template>
 
 <script setup lang="ts">
@@ -156,6 +169,7 @@ import SplitPanel from '@/components/common/SplitPanel.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
 import WpStatusTag from '@/components/common/WpStatusTag.vue'
 import WorkPackageDetail from '@/components/workpackages/WorkPackageDetail.vue'
+import AiBacklogPreviewModal from '@/components/pm/AiBacklogPreviewModal.vue'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
 import { useAuthStore } from '@/stores/authStore'
 import type { WpType, WpPriority, WpStatus, WorkPackage } from '@/types/work-package.types'
@@ -169,6 +183,10 @@ const authStore = useAuthStore()
 const projectId = ref(props.id || (route.params.id as string))
 const selectedId = ref<string | null>(null)
 const showCreate = ref(false)
+const showAiBacklog = ref(false)
+const canUseAi = computed(
+  () => authStore.userRole === 'ProjectManager' || authStore.userRole === 'Admin',
+)
 const creating = ref(false)
 
 const filters = reactive<{ q: string; status: string; type: string }>({ q: '', status: '', type: '' })
@@ -319,6 +337,10 @@ async function load() {
     status: filters.status || undefined,
     type: filters.type || undefined,
   })
+}
+
+async function onAiBacklogAccepted() {
+  await load()
 }
 
 async function submitCreate() {

@@ -3,9 +3,13 @@ import { AiService } from './ai.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
 import { OpenAiProvider } from './providers/openai.provider.js'
 import { GeminiProvider } from './providers/gemini.provider.js'
+import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
+import { BacklogService } from './backlog.service.js'
+import { BacklogController } from './backlog.controller.js'
 
 @Module({
-  providers: [AiService, AiProviderFactory, OpenAiProvider, GeminiProvider],
-  exports: [AiService],
+  controllers: [BacklogController],
+  providers: [AiService, AiProviderFactory, OpenAiProvider, GeminiProvider, ZaiFallbackProvider, BacklogService],
+  exports: [AiService, ZaiFallbackProvider, BacklogService],
 })
 export class AiModule {}
