@@ -433,6 +433,8 @@ export class ProjectsService {
           options: dto.options ?? null,
           fieldCategory: 'Custom',
           orderIndex: (maxOrder._max.orderIndex ?? 0) + 1,
+          isBacklogDriver: dto.isBacklogDriver ?? false,
+          backlogHint: dto.backlogHint ?? null,
         },
       });
 

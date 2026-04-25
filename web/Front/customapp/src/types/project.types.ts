@@ -92,6 +92,8 @@ export interface AddFieldPayload {
   fieldType: FieldType
   isRequired: boolean
   options: string | null
+  isBacklogDriver?: boolean
+  backlogHint?: string | null
 }
 
 // ─── Requests ─────────────────────────────────────────────────────────────────

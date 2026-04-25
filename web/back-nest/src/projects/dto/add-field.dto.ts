@@ -33,4 +33,15 @@ export class AddFieldDto {
   @IsString()
   @MaxLength(2000)
   options?: string;
+
+  @ApiPropertyOptional({ description: 'Si true, ce champ alimente la génération IA du backlog' })
+  @IsOptional()
+  @IsBoolean()
+  isBacklogDriver?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  backlogHint?: string;
 }

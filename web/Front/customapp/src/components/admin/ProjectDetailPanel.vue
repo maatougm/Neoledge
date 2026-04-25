@@ -158,6 +158,11 @@
             />
             <div class="add-field-required">
               <Checkbox v-model="newField.isRequired" :binary="true" />
+              <span class="add-field-required-label">Obligatoire</span>
+            </div>
+            <div class="add-field-required">
+              <Checkbox v-model="newField.isBacklogDriver" :binary="true" />
+              <span class="add-field-required-label" title="Cette question alimentera la génération IA du backlog">Backlog IA</span>
             </div>
             <NeoButton
               label="Ajouter"
@@ -167,6 +172,14 @@
               @click="handleAddField"
             />
           </div>
+          <NeoInputText
+            v-if="newField.isBacklogDriver"
+            v-model="newField.backlogHint"
+            label="Indication pour l'IA (optionnel)"
+            placeholder="Ex : lister les modules fonctionnels attendus"
+            :maxlength="500"
+            style="margin-top: 0.5rem;"
+          />
         </div>
       </div>
       <!-- Activity feed tab -->
@@ -232,7 +245,13 @@ const confirm = useNeoConfirm()
 
 const project = ref(store.currentProject?.id === props.projectId ? store.currentProject : null)
 const loading = ref(false)
-const newField = ref({ label: '', fieldType: 'Text' as FieldType, isRequired: false })
+const newField = ref({
+  label: '',
+  fieldType: 'Text' as FieldType,
+  isRequired: false,
+  isBacklogDriver: false,
+  backlogHint: '',
+})
 
 const projectProgress = computed(() =>
   project.value ? computeProgress(project.value) : 0,
@@ -316,10 +335,18 @@ const handleAddField = async () => {
     fieldType: newField.value.fieldType,
     isRequired: newField.value.isRequired,
     options: null,
+    isBacklogDriver: newField.value.isBacklogDriver,
+    backlogHint: newField.value.backlogHint.trim() || null,
   })
   if (result) {
     toast.add({ severity: 'success', detail: `Champ « ${result.label} » ajouté.`, life: 3000 })
-    newField.value = { label: '', fieldType: 'Text', isRequired: false }
+    newField.value = {
+      label: '',
+      fieldType: 'Text',
+      isRequired: false,
+      isBacklogDriver: false,
+      backlogHint: '',
+    }
   }
 }
 

@@ -53,17 +53,7 @@ export class TeamPlannerController {
   }
 }
 
-@Controller('admin/team-planner')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Admin')
-export class AdminTeamPlannerController {
-  constructor(private readonly service: TeamPlannerService) {}
-
-  @Get('utilization')
-  async utilization(@Query('from') from: string, @Query('to') to: string) {
-    if (!from || !to) throw new BadRequestException('from et to requis.');
-    const r = await this.service.getUtilization(from, to);
-    if (r.isFailure) throw new BadRequestException(r.error);
-    return r.value;
-  }
-}
+// AdminTeamPlannerController removed in Sprint Transformation 6:
+// the /admin/team-planner/utilization endpoint had no remaining UI consumer
+// (PM-only view since Sprint 2). The service.getUtilization() method is
+// kept in case a future cross-project admin dashboard wants to reuse it.

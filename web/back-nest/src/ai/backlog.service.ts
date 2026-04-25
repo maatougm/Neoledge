@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadGatewayException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadGatewayException, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -14,6 +14,15 @@ const AI_GENERATED_TAG = 'questionnaire+cahier+meeting';
 export class BacklogService {
   private readonly logger = new Logger(BacklogService.name);
 
+  /**
+   * In-memory cooldown per project to prevent burning OpenAI calls on
+   * accidental double-clicks or malicious request floods. Cheaper than a
+   * full ThrottlerModule reinstall and project-scoped is the right grain
+   * here (the same PM might preview multiple projects in parallel).
+   */
+  private readonly lastPreviewAt = new Map<string, number>();
+  private readonly PREVIEW_COOLDOWN_MS = 30_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -25,6 +34,17 @@ export class BacklogService {
    * AI provider. Returns a sanitized preview — NO DB writes.
    */
   async preview(projectId: string): Promise<ProposedBacklog> {
+    const now = Date.now();
+    const last = this.lastPreviewAt.get(projectId) ?? 0;
+    if (now - last < this.PREVIEW_COOLDOWN_MS) {
+      const wait = Math.ceil((this.PREVIEW_COOLDOWN_MS - (now - last)) / 1000);
+      throw new HttpException(
+        `Patientez ${wait}s avant de relancer la génération.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.lastPreviewAt.set(projectId, now);
+
     const project = await this.prisma.project.findUnique({
       where: { id: projectId, isDeleted: false },
       select: { id: true, name: true, aiOutput: true },
