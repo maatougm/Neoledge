@@ -56,7 +56,6 @@ export const useBudgetStore = defineStore('budget', () => {
       budget.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] fetchBudget', err)
     } finally {
       loading.value = false
     }
@@ -69,7 +68,6 @@ export const useBudgetStore = defineStore('budget', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] upsertBudget', err)
       throw err
     }
   }
@@ -81,7 +79,6 @@ export const useBudgetStore = defineStore('budget', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] createLineItem', err)
       throw err
     }
   }
@@ -99,7 +96,6 @@ export const useBudgetStore = defineStore('budget', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] updateLineItem', err)
       throw err
     }
   }
@@ -112,7 +108,6 @@ export const useBudgetStore = defineStore('budget', () => {
       }
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] deleteLineItem', err)
       throw err
     }
   }
@@ -123,7 +118,6 @@ export const useBudgetStore = defineStore('budget', () => {
       burn.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[budgetStore] fetchBurn', err)
       throw err
     }
   }

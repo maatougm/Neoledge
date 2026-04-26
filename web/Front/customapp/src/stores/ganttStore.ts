@@ -46,7 +46,6 @@ export const useGanttStore = defineStore('gantt', () => {
       dependencies.value = data.dependencies
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] fetchGantt', err)
     } finally {
       loading.value = false
     }
@@ -59,7 +58,6 @@ export const useGanttStore = defineStore('gantt', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] createMilestone', err)
       throw err
     }
   }
@@ -72,7 +70,6 @@ export const useGanttStore = defineStore('gantt', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] updateMilestone', err)
       throw err
     }
   }
@@ -83,7 +80,6 @@ export const useGanttStore = defineStore('gantt', () => {
       milestones.value = milestones.value.filter((m) => m.id !== id)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] deleteMilestone', err)
       throw err
     }
   }
@@ -94,7 +90,6 @@ export const useGanttStore = defineStore('gantt', () => {
       baselines.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] fetchBaselines', err)
       throw err
     }
   }
@@ -106,7 +101,6 @@ export const useGanttStore = defineStore('gantt', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] captureBaseline', err)
       throw err
     }
   }
@@ -117,7 +111,6 @@ export const useGanttStore = defineStore('gantt', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[ganttStore] compareBaseline', err)
       throw err
     }
   }

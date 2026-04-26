@@ -42,7 +42,6 @@ export const useTeamPlannerStore = defineStore('teamPlanner', () => {
       assignments.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[teamPlannerStore] fetchAssignments', err)
     } finally {
       loading.value = false
     }
@@ -54,7 +53,6 @@ export const useTeamPlannerStore = defineStore('teamPlanner', () => {
       capacity.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[teamPlannerStore] fetchCapacity', err)
       throw err
     }
   }
@@ -65,7 +63,6 @@ export const useTeamPlannerStore = defineStore('teamPlanner', () => {
       conflicts.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[teamPlannerStore] fetchConflicts', err)
       throw err
     }
   }
@@ -75,7 +72,6 @@ export const useTeamPlannerStore = defineStore('teamPlanner', () => {
       await api.patch(`/pm/team-planner/work-packages/${wpId}/reassign`, { assigneeId, startDate, dueDate })
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[teamPlannerStore] reassign', err)
       throw err
     }
   }

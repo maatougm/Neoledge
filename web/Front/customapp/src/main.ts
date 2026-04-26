@@ -28,7 +28,10 @@ const app = createApp(App)
 
 // ── Global Vue error handler ──────────────────────────────────────────────────
 app.config.errorHandler = (err, _instance, info) => {
-  console.error('[vue:error]', info, err)
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.error('[vue:error]', info, err)
+  }
 }
 
 const pinia = createPinia()

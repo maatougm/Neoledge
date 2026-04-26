@@ -46,7 +46,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       portfolios.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] fetchAll', err)
     } finally {
       loading.value = false
     }
@@ -59,7 +58,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] fetchOne', err)
       throw err
     }
   }
@@ -71,7 +69,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] create', err)
       throw err
     }
   }
@@ -82,7 +79,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       await fetchOne(portfolioId)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] addProject', err)
       throw err
     }
   }
@@ -93,7 +89,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       versions.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] fetchVersions', err)
       throw err
     }
   }
@@ -105,7 +100,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] createVersion', err)
       throw err
     }
   }
@@ -118,7 +112,6 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[portfolioStore] updateVersion', err)
       throw err
     }
   }

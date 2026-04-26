@@ -60,7 +60,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       agenda.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] fetchAgenda', err)
       throw err
     }
   }
@@ -70,7 +69,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       agenda.value = [...agenda.value, data]
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] addAgenda', err)
       throw err
     }
   }
@@ -81,7 +79,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       if (idx >= 0) agenda.value = [...agenda.value.slice(0, idx), data, ...agenda.value.slice(idx + 1)]
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] updateAgenda', err)
       throw err
     }
   }
@@ -91,7 +88,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       agenda.value = agenda.value.filter((a) => a.id !== id)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] deleteAgenda', err)
       throw err
     }
   }
@@ -103,7 +99,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       attendees.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] fetchAttendees', err)
       throw err
     }
   }
@@ -113,7 +108,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       attendees.value = [...attendees.value, data]
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] addAttendee', err)
       throw err
     }
   }
@@ -124,7 +118,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       if (idx >= 0) attendees.value = [...attendees.value.slice(0, idx), data, ...attendees.value.slice(idx + 1)]
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] updateAttendee', err)
       throw err
     }
   }
@@ -134,7 +127,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       attendees.value = attendees.value.filter((a) => a.id !== id)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] removeAttendee', err)
       throw err
     }
   }
@@ -146,7 +138,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       outcomes.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] fetchOutcomes', err)
       throw err
     }
   }
@@ -156,7 +147,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       outcomes.value = [...outcomes.value, data]
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] addOutcome', err)
       throw err
     }
   }
@@ -166,7 +156,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       outcomes.value = outcomes.value.filter((o) => o.id !== id)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] deleteOutcome', err)
       throw err
     }
   }
@@ -177,7 +166,6 @@ export const useMeetingExtrasStore = defineStore('meetingExtras', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[meetingExtrasStore] convertToWp', err)
       throw err
     }
   }

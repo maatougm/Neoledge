@@ -133,7 +133,6 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
           // eslint-disable-next-line no-console
-          console.error(`[analyticsStore] ${names[i]} failed:`, r.reason)
         }
       })
       if (firstError) {

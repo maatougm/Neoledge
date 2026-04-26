@@ -44,7 +44,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] fetchOne', err)
       return null
     }
   }
@@ -56,7 +55,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] create', err)
       return null
     }
   }
@@ -70,7 +68,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] update', err)
       return null
     }
   }
@@ -83,7 +80,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] remove', err)
       return false
     }
   }
@@ -94,7 +90,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] moveCard', err)
       return false
     }
   }
@@ -105,7 +100,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] addWatcher', err)
       return false
     }
   }
@@ -116,7 +110,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] removeWatcher', err)
       return false
     }
   }
@@ -127,7 +120,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] addDependency', err)
       return false
     }
   }
@@ -138,7 +130,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       return true
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] removeDependency', err)
       return false
     }
   }
@@ -149,7 +140,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       customFields.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] fetchCustomFields', err)
       customFields.value = []
     }
   }
@@ -160,7 +150,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       await fetchCustomFields(projectId)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] createCustomField', err)
       throw err
     }
   }
@@ -171,7 +160,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       await fetchCustomFields(projectId)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] deleteCustomField', err)
       throw err
     }
   }
@@ -181,7 +169,6 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
       await api.put(`/pm/projects/${projectId}/work-packages/${wpId}/custom-values`, { values })
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[workPackageStore] upsertCustomValues', err)
       throw err
     }
   }

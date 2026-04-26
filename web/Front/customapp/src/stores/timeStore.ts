@@ -52,7 +52,6 @@ export const useTimeStore = defineStore('time', () => {
       myEntries.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] fetchMy', err)
     } finally {
       loading.value = false
     }
@@ -67,7 +66,6 @@ export const useTimeStore = defineStore('time', () => {
       projectEntries.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] fetchProject', err)
       throw err
     }
   }
@@ -79,7 +77,6 @@ export const useTimeStore = defineStore('time', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] create', err)
       throw err
     }
   }
@@ -92,7 +89,6 @@ export const useTimeStore = defineStore('time', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] update', err)
       throw err
     }
   }
@@ -103,7 +99,6 @@ export const useTimeStore = defineStore('time', () => {
       myEntries.value = myEntries.value.filter((e) => e.id !== id)
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] remove', err)
       throw err
     }
   }
@@ -114,7 +109,6 @@ export const useTimeStore = defineStore('time', () => {
       weekEntries.value = data.entries
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] fetchWeek', err)
       throw err
     }
   }
@@ -125,7 +119,6 @@ export const useTimeStore = defineStore('time', () => {
       summary.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[timeStore] fetchSummary', err)
       throw err
     }
   }

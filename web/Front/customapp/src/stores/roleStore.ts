@@ -59,7 +59,6 @@ export const useRoleStore = defineStore('roles', () => {
       return resp.data
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to create role'
-      console.error('[roleStore] createRole', err)
       throw err
     }
   }
@@ -74,7 +73,6 @@ export const useRoleStore = defineStore('roles', () => {
       return resp.data
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to update role'
-      console.error('[roleStore] updateRole', err)
       throw err
     }
   }
@@ -85,7 +83,6 @@ export const useRoleStore = defineStore('roles', () => {
       roles.value = roles.value.filter((r) => r.id !== id)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to delete role'
-      console.error('[roleStore] deleteRole', err)
       throw err
     }
   }
@@ -97,7 +94,6 @@ export const useRoleStore = defineStore('roles', () => {
       return resp.data
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to clone role'
-      console.error('[roleStore] cloneRole', err)
       throw err
     }
   }
@@ -111,7 +107,6 @@ export const useRoleStore = defineStore('roles', () => {
       await api.post('/admin/roles/assignments', input)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to assign role'
-      console.error('[roleStore] assignRole', err)
       throw err
     }
   }
@@ -121,7 +116,6 @@ export const useRoleStore = defineStore('roles', () => {
       await api.delete(`/admin/roles/assignments/${assignmentId}`)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to unassign role'
-      console.error('[roleStore] unassign', err)
       throw err
     }
   }
@@ -134,7 +128,6 @@ export const useRoleStore = defineStore('roles', () => {
       return resp.data
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to list assignments'
-      console.error('[roleStore] listUserAssignments', err)
       throw err
     }
   }

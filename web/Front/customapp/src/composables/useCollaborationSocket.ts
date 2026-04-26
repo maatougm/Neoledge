@@ -118,8 +118,9 @@ export function useCollaborationSocket() {
         presenceList.value = []
       })
 
-      socket.on('connect_error', (err: Error) => {
-        console.warn('[CollaborationSocket] Connection error:', err.message)
+      socket.on('connect_error', () => {
+        // Silent — UI shows offline state via presenceList; no need to noise
+        // the console on every reconnect attempt.
       })
 
       socket.on('presence-update', (payload: unknown) => {
@@ -146,9 +147,9 @@ export function useCollaborationSocket() {
           }
         }
       })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn('[CollaborationSocket] Failed to initialize socket:', msg)
+    } catch {
+      // Initialization failure is non-fatal — collaboration features will
+      // simply remain inactive until the user reloads.
     }
   }
 

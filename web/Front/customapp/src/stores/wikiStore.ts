@@ -53,7 +53,6 @@ export const useWikiStore = defineStore('wiki', () => {
       tree.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] fetchTree', err)
     } finally {
       loading.value = false
     }
@@ -66,7 +65,6 @@ export const useWikiStore = defineStore('wiki', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] fetchPage', err)
       throw err
     }
   }
@@ -78,7 +76,6 @@ export const useWikiStore = defineStore('wiki', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] createPage', err)
       throw err
     }
   }
@@ -90,7 +87,6 @@ export const useWikiStore = defineStore('wiki', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] updatePage', err)
       throw err
     }
   }
@@ -102,7 +98,6 @@ export const useWikiStore = defineStore('wiki', () => {
       if (currentPage.value?.slug === slug) currentPage.value = null
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] deletePage', err)
       throw err
     }
   }
@@ -113,7 +108,6 @@ export const useWikiStore = defineStore('wiki', () => {
       revisions.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] fetchRevisions', err)
       throw err
     }
   }
@@ -125,7 +119,6 @@ export const useWikiStore = defineStore('wiki', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] restoreRevision', err)
       throw err
     }
   }
@@ -136,7 +129,6 @@ export const useWikiStore = defineStore('wiki', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[wikiStore] search', err)
       throw err
     }
   }

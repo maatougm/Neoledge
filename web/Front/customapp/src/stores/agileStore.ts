@@ -59,7 +59,6 @@ export const useAgileStore = defineStore('agile', () => {
       boards.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] fetchBoards', err)
     } finally {
       loading.value = false
     }
@@ -72,7 +71,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] fetchBoard', err)
       throw err
     }
   }
@@ -84,7 +82,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] createBoard', err)
       throw err
     }
   }
@@ -95,7 +92,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] createColumn', err)
       throw err
     }
   }
@@ -105,7 +101,6 @@ export const useAgileStore = defineStore('agile', () => {
       await api.patch(`/pm/projects/${projectId}/boards/${boardId}/cards/${wpId}/move`, { columnId, position })
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] moveCard', err)
       throw err
     }
   }
@@ -117,7 +112,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] fetchSprints', err)
       throw err
     }
   }
@@ -129,7 +123,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] createSprint', err)
       throw err
     }
   }
@@ -142,7 +135,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] startSprint', err)
       throw err
     }
   }
@@ -155,7 +147,6 @@ export const useAgileStore = defineStore('agile', () => {
       return data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] closeSprint', err)
       throw err
     }
   }
@@ -165,7 +156,6 @@ export const useAgileStore = defineStore('agile', () => {
       await api.post(`/pm/projects/${projectId}/sprints/${sprintId}/work-packages`, { workPackageIds })
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] addWpsToSprint', err)
       throw err
     }
   }
@@ -176,7 +166,6 @@ export const useAgileStore = defineStore('agile', () => {
       burndown.value = data
     } catch (err) {
       error.value = _errMsg(err)
-      console.error('[agileStore] fetchBurndown', err)
       throw err
     }
   }
