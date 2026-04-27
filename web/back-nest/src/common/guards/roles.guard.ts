@@ -49,8 +49,16 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    // 2. Permission path: resolve required roles into a union of permission
-    //    keys, then check the user's live permission set.
+    // 2. Permission path: resolve required roles into the INTERSECTION of
+    //    their exclusive permission keys, then check that the user holds ALL
+    //    of those keys.  Using a union + any-match was wrong: any role that
+    //    shares even one permission key with Admin (e.g. attachment.upload)
+    //    would pass an @Roles('Admin') check, allowing Member/PM to reach
+    //    admin-only endpoints.
+    //
+    //    Correct semantics: a user passes @Roles('Admin') only when their live
+    //    permission set is a superset of the Admin preset — i.e. they hold
+    //    *every* key the required roles define collectively.
     const wantedKeys = new Set<string>();
     for (const role of requiredRoles) {
       const preset = PRESET_ROLE_PERMISSIONS[role];
@@ -64,14 +72,14 @@ export class RolesGuard implements CanActivate {
     }
 
     for (const key of wantedKeys) {
-      if (await this.permissions.userHasPermission(user.userId, key)) {
-        return true;
+      if (!(await this.permissions.userHasPermission(user.userId, key))) {
+        this.logger.debug(
+          `Legacy @Roles shim denied user ${user.userId} — missing permission "${key}" (needed for roles [${requiredRoles.join(', ')}])`,
+        );
+        return false;
       }
     }
 
-    this.logger.debug(
-      `Legacy @Roles shim denied user ${user.userId} — needed one of [${requiredRoles.join(', ')}]`,
-    );
-    return false;
+    return true;
   }
 }

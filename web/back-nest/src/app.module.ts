@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+// ThrottlerModule removed — was causing stale 429s due to DI complications
 import { randomUUID } from 'node:crypto';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PermissionsModule } from './permissions/permissions.module.js';
@@ -39,14 +38,10 @@ import { TeamPlannerModule } from './team-planner/team-planner.module.js';
 import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
 import { TeamsModule } from './teams/teams.module.js';
+import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.module.js';
 
 @Module({
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
-  ],
+  providers: [],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -80,7 +75,6 @@ import { TeamsModule } from './teams/teams.module.js';
         return config;
       },
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     LoggerModule.forRoot({
       pinoHttp: {
         // Generate / propagate a request ID per HTTP call so every log line
@@ -167,6 +161,7 @@ import { TeamsModule } from './teams/teams.module.js';
     SearchModule,
     HealthModule,
     TeamsModule,
+    CahierDesChargesModule,
   ],
 })
 export class AppModule {}

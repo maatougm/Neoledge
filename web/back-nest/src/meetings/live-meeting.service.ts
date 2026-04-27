@@ -98,7 +98,9 @@ export class LiveMeetingService {
     if (now - last < this.COOLDOWN_MS) {
       return { checklist: previousChecklist, readyForCahier: false, hint: null };
     }
-    this.lastCallAt.set(projectId, now);
+    // Don't set lastCallAt yet — only after a successful AI call. Otherwise a
+    // transient Z.AI 502 burns the cooldown window for 8s, blocking the
+    // legitimate retry the client will issue.
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId, isDeleted: false },
@@ -133,6 +135,7 @@ export class LiveMeetingService {
 
     try {
       const raw = await this.callOpenAi(userMessage);
+      this.lastCallAt.set(projectId, Date.now()); // success — burn cooldown
       return this.sanitize(raw);
     } catch (e) {
       this.logger.error(`live checklist failed: ${e instanceof Error ? e.message : String(e)}`);

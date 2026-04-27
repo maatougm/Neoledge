@@ -1,6 +1,7 @@
 import {
   Controller, Get, Post, Put, Delete, Patch, Param, Query, Body,
-  UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException,
+  UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException, ParseUUIDPipe,
+  StreamableFile,
 } from '@nestjs/common';
 import type { FilterCriteria } from '../filters/saved-filters.service.js';
 import { ProjectsService } from './projects.service.js';
@@ -52,8 +53,20 @@ export class ProjectsController {
     return result.value;
   }
 
+  @Get('export')
+  async exportCsv(): Promise<StreamableFile> {
+    const csv = await this.service.exportToCsv();
+    const filename = `projets_${new Date().toISOString().slice(0, 10)}.csv`;
+    const bom = '﻿';
+    const buffer = Buffer.from(bom + csv, 'utf-8');
+    return new StreamableFile(buffer, {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${filename}"`,
+    });
+  }
+
   @Get(':id')
-  async getById(@Param('id') id: string) {
+  async getById(@Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.getById(id);
     if (result.isFailure) throw new NotFoundException(result.error);
     return result.value;
@@ -80,7 +93,7 @@ export class ProjectsController {
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProjectDto) {
     const result = await this.service.update(id, dto);
     if (result.isFailure) throw new NotFoundException(result.error);
     return result.value;
@@ -88,49 +101,49 @@ export class ProjectsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+  async delete(@CurrentUser() user: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.softDelete(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/restore')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async restore(@Param('id') id: string) {
+  async restore(@Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.restoreProjectAsync(id);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Delete(':id/hard-delete')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async hardDelete(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+  async hardDelete(@CurrentUser() user: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.hardDeleteProjectAsync(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/assign-manager')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async assignManager(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() dto: AssignManagerDto) {
+  async assignManager(@CurrentUser() user: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignManagerDto) {
     const result = await this.service.assignManager(id, dto.projectManagerId, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Post(':id/status')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async updateStatus(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: UpdateStatusDto) {
+  async updateStatus(@CurrentUser() user: JwtUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: UpdateStatusDto) {
     const result = await this.service.updateStatus(id, body.status, user.userId);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Patch(':id/archive')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async archive(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+  async archive(@CurrentUser() user: JwtUser, @Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.archive(id, user.userId);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/fields')
   @HttpCode(HttpStatus.CREATED)
-  async addField(@Param('id') id: string, @Body() dto: AddFieldDto) {
+  async addField(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AddFieldDto) {
     const result = await this.service.addField(id, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -138,21 +151,21 @@ export class ProjectsController {
 
   @Delete(':id/fields/:fieldId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeField(@Param('id') id: string, @Param('fieldId') fieldId: string) {
+  async removeField(@Param('id', ParseUUIDPipe) id: string, @Param('fieldId', ParseUUIDPipe) fieldId: string) {
     const result = await this.service.removeField(id, fieldId);
     if (result.isFailure) throw new BadRequestException(result.error);
   }
 
   @Patch(':id/toggle-manager-fields')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async toggleManagerFields(@Param('id') id: string, @Body() body: ToggleManagerFieldsDto) {
+  async toggleManagerFields(@Param('id', ParseUUIDPipe) id: string, @Body() body: ToggleManagerFieldsDto) {
     const result = await this.service.toggleManagerFields(id, body.allow);
     if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/duplicate')
   @HttpCode(HttpStatus.CREATED)
-  async duplicate(@Param('id') id: string, @Body() body: DuplicateProjectDto) {
+  async duplicate(@Param('id', ParseUUIDPipe) id: string, @Body() body: DuplicateProjectDto) {
     const result = await this.service.duplicate(id, body.name);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -177,7 +190,7 @@ export class ProjectsController {
   }
 
   @Get(':id/activity')
-  async getActivity(@Param('id') id: string) {
+  async getActivity(@Param('id', ParseUUIDPipe) id: string) {
     const result = await this.service.getActivity(id);
     return result.value;
   }
