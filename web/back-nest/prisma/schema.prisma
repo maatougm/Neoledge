@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
 }
 
 // ─── Enums (stored as VARCHAR — enum-as-string pattern) ──────────────────────
@@ -58,7 +58,7 @@ model AppUser {
   jobTitle            String?   @db.VarChar(100)
   phoneNumber         String?   @db.VarChar(50)
   department          String?   @db.VarChar(100)
-  preferences         String?   @db.LongText
+  preferences         String?   @db.Text
   totpSecret          String?   @db.VarChar(100)
   totpEnabled         Boolean   @default(false)
   totpVerifiedAt      DateTime?
@@ -385,7 +385,7 @@ model MeetingTranscript {
   detectedLanguages String    @default("") @db.VarChar(50)
   recordedAt        DateTime  @default(now())
   createdAt         DateTime  @default(now())
-  aiSummary         String?   @db.LongText
+  aiSummary         String?   @db.Text
   aiStatus          String    @default("none") @db.VarChar(20)
   aiStartedAt       DateTime?
   aiProcessedAt     DateTime?
@@ -439,7 +439,7 @@ model TranscriptSegment {
   id           String @id @default(uuid())
   transcriptId String
   speaker      String @default("Unknown") @db.VarChar(100)
-  text         String @default("") @db.LongText
+  text         String @default("") @db.Text
   startTime    Float
   endTime      Float
   language     String @default("") @db.VarChar(10)
@@ -505,7 +505,7 @@ model AuditLog {
   entityId   String   @db.VarChar(36)
   action     String   @db.VarChar(50)
   userId     String?
-  changes    String?  @db.LongText
+  changes    String?  @db.Text
   metadata   String?  @db.VarChar(1000)
   createdAt  DateTime @default(now())
 
@@ -520,7 +520,7 @@ model AuditLog {
 model AnalyticsCache {
   id         String   @id @default(uuid())
   cacheKey   String   @unique @db.VarChar(100)
-  data       String   @db.LongText
+  data       String   @db.Text
   computedAt DateTime @default(now())
 
   @@map("AnalyticsCache")
@@ -895,7 +895,7 @@ model WikiPage {
   projectId String
   title     String   @db.VarChar(255)
   slug      String   @db.VarChar(255)
-  content   String   @db.LongText
+  content   String   @db.Text
   authorId  String
   parentId  String?
   version   Int      @default(1)
@@ -920,7 +920,7 @@ model WikiRevision {
   wikiPageId String
   version    Int
   title      String   @db.VarChar(255)
-  content    String   @db.LongText
+  content    String   @db.Text
   authorId   String
   comment    String?  @db.VarChar(500)
   createdAt  DateTime @default(now())

@@ -11,30 +11,17 @@ import { PrismaService } from './prisma.service.js';
         const logger = new Logger('PrismaModule');
         const url = process.env.DATABASE_URL;
         if (!url) throw new Error('DATABASE_URL env var is not set');
-
-        // Provider is picked at runtime from DATABASE_URL scheme:
-        //   mysql://…   → MariaDB adapter (local dev w/ XAMPP)
-        //   postgres…   → native Prisma engine (prod container)
-        let client: PrismaClient;
-        if (url.startsWith('mysql://') || url.startsWith('mariadb://')) {
-          const { PrismaMariaDb } = await import('@prisma/adapter-mariadb');
-          const parsed = new URL(url);
-          const adapter = new PrismaMariaDb({
-            host: parsed.hostname,
-            port: Number(parsed.port) || 3306,
-            database: parsed.pathname.replace(/^\//, ''),
-            user: parsed.username || undefined,
-            password: parsed.password || undefined,
-          });
-          client = new PrismaClient({ adapter });
-          logger.log('Connected via MariaDB adapter');
-        } else {
-          // Postgres (prod) — Prisma 7 requires a driver adapter. Use pg.
-          const { PrismaPg } = await import('@prisma/adapter-pg');
-          const adapter = new PrismaPg({ connectionString: url });
-          client = new PrismaClient({ adapter });
-          logger.log('Connected via Postgres (pg) adapter');
+        if (!url.startsWith('postgres')) {
+          throw new Error(
+            `DATABASE_URL must use postgres:// — got "${url.split(':')[0]}://". MySQL/MariaDB support was removed; the project is Postgres-only.`,
+          );
         }
+
+        // Prisma 7 requires a driver adapter for non-rust engines.
+        const { PrismaPg } = await import('@prisma/adapter-pg');
+        const adapter = new PrismaPg({ connectionString: url });
+        const client = new PrismaClient({ adapter });
+        logger.log('Connected via Postgres (pg) adapter');
 
         await client.$connect();
 
