@@ -11,6 +11,7 @@ import router from './router'
 import { useAuthStore } from '@/stores/authStore'
 
 // ── NeoLibrary design system ─────────────────────────────────────────────────
+import PrimeVue from 'primevue/config'
 import { NeoLibraryThemePlugin } from '@neolibrary/components'
 import '@neolibrary/components/style.css'
 import 'primeicons/primeicons.css'
@@ -37,6 +38,9 @@ app.config.errorHandler = (err, _instance, info) => {
 const pinia = createPinia()
 app.use(pinia)
 app.use(router)
+// PrimeVue must be installed before NeoLibrary because NeoLibrary components
+// wrap PrimeVue ones, and App.vue calls usePrimeVue() to override z-index.
+app.use(PrimeVue, { ripple: false, unstyled: false })
 app.use(NeoLibraryThemePlugin, { theme: 'neoledge' })
 
 // ── Restore persisted JWT once, before any navigation guard runs ──────────────
