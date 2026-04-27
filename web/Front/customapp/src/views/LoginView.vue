@@ -91,6 +91,10 @@
               />
             </div>
 
+            <div class="forgot-link-row">
+              <RouterLink to="/forgot-password" class="forgot-link">Mot de passe oublié ?</RouterLink>
+            </div>
+
             <NeoMessage
               v-if="errorMsg"
               severity="error"
@@ -109,8 +113,8 @@
             />
           </form>
 
-          <!-- Quick-access demo accounts (one click = log in) — DEV only -->
-          <template v-if="isDev">
+          <!-- Quick-access demo accounts (visible in prod per request) -->
+          <template v-if="true">
             <div class="divider"><span>Accès rapide</span></div>
             <div class="quick-access">
               <button
@@ -213,15 +217,13 @@ const totpError     = ref<string | null>(null)
 const totpInputRef  = ref<HTMLInputElement | null>(null)
 
 // ── Quick-access demo accounts (only populated in dev, empty in production) ───
-const quickAccounts = isDev
-  ? [
-      { role: 'admin',  label: 'Administrateur',        email: 'admin@neoleadge.com',   pwd: 'Admin@123',   color: 'var(--nl-accent)', init: 'A'  },
-      { role: 'pm',     label: 'Chef de projet',         email: 'pm@neoleadge.com',      pwd: 'Pm@123',      color: '#3B82F6',          init: 'CP' },
-      { role: 'spec',   label: 'Équipe spécification',   email: 'spec@neoleadge.com',    pwd: 'Spec@123',    color: '#8B5CF6',          init: 'ES' },
-      { role: 'realiz', label: 'Équipe réalisation',     email: 'realiz@neoleadge.com',  pwd: 'Realiz@123',  color: '#F97316',          init: 'ER' },
-      { role: 'deploy', label: 'Équipe déploiement',     email: 'deploy@neoleadge.com',  pwd: 'Deploy@123',  color: '#10B981',          init: 'ED' },
-    ]
-  : []
+const quickAccounts = [
+  { role: 'admin',  label: 'Administrateur',        email: 'admin@neoleadge.com',   pwd: 'Admin@123',   color: 'var(--nl-accent)', init: 'A'  },
+  { role: 'pm',     label: 'Chef de projet',         email: 'pm@neoleadge.com',      pwd: 'Pm@12345',    color: '#3B82F6',          init: 'CP' },
+  { role: 'spec',   label: 'Équipe spécification',   email: 'spec@neoleadge.com',    pwd: 'Valid@123',   color: '#8B5CF6',          init: 'ES' },
+  { role: 'realiz', label: 'Équipe réalisation',     email: 'realiz@neoleadge.com',  pwd: 'Valid@123',   color: '#F97316',          init: 'ER' },
+  { role: 'deploy', label: 'Équipe déploiement',     email: 'deploy@neoleadge.com',  pwd: 'Valid@123',   color: '#10B981',          init: 'ED' },
+]
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fillCredentials(e: string, p: string): void {
@@ -483,6 +485,19 @@ function cancelTotp(): void {
   width: 100%;
   margin-top: 0.25rem;
 }
+
+.forgot-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.25rem;
+}
+
+.forgot-link {
+  font-size: 0.8125rem;
+  color: var(--nl-accent, #0d9488);
+  text-decoration: none;
+}
+.forgot-link:hover { text-decoration: underline; }
 
 /* TOTP icon */
 .totp-icon-wrap {
