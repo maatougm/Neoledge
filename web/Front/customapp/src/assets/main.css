@@ -1,5 +1,32 @@
 @import './base.css';
 
+/* ── Stacking order fix ─────────────────────────────────────────────────────
+   Teleported overlays (NeoSelect / NeoDatePicker / PrimeVue Select dropdown
+   panels) MUST render above the PrimeVue Dialog mask (default 1101) and our
+   custom AppModal scrim (9600). Without this fix, opening a Select inside a
+   Dialog renders the option panel behind the modal — see
+   /app/admin/templates "Nouveau modèle" report.
+   The PrimeVue 4 theme system ignores the legacy
+   `usePrimeVue().config.zIndex` API, so we override at the CSS level. */
+.p-overlay,
+.p-select-overlay,
+.p-dropdown-panel,
+.p-multiselect-panel,
+.p-datepicker-panel,
+.p-autocomplete-panel,
+.p-cascadeselect-panel,
+.p-treeselect-panel,
+[data-pc-section="overlay"] {
+  z-index: 11000 !important;
+}
+/* NeoSelect emits its overlay with these tailwind classes inline-styled to
+   z-index:1001. Boost it above the dialog mask. */
+.p-dialog-mask + .p-dialog *[class*="bg-white"][class*="z-50"],
+.p-dialog *[class*="bg-white"][class*="z-50"],
+.modal-scrim *[class*="bg-white"][class*="z-50"] {
+  z-index: 11000 !important;
+}
+
 /* ── PM Workspace utilities (new v3 design) ────────────────────────────────── */
 .nl-kbd {
   display: inline-flex; align-items: center; justify-content: center;
@@ -92,9 +119,9 @@
 
 
 /* ── Overlay stacking — keep PrimeVue/NeoLibrary dropdowns above AppModal ─────
-   AppModal uses z-index:900. Any teleported overlay panel from a Select,
-   DatePicker, AutoComplete, MultiSelect, etc. must render above it so users
-   can interact with dropdowns inside dialogs. */
+   AppModal scrim: z-index 9600. PrimeVue's dynamic z-index manager is configured
+   to start overlays at 10000 (App.vue → usePrimeVue().config.zIndex). These CSS
+   rules are a belt-and-suspenders fallback covering all known class variants. */
 .p-select-overlay,
 .p-datepicker-panel,
 .p-datepicker:not(.p-datepicker-inline),
@@ -107,7 +134,13 @@
 .p-tieredmenu,
 .p-contextmenu,
 .p-popover,
-.p-tooltip {
+.p-tooltip,
+/* PrimeVue 4 data-attribute overlay roots */
+[data-pc-section="panel"],
+[data-pc-name="select"] [data-pc-section="overlay"],
+[data-pc-name="datepicker"] [data-pc-section="panel"],
+[data-pc-name="multiselect"] [data-pc-section="overlay"],
+[data-pc-name="autocomplete"] [data-pc-section="overlay"] {
   z-index: 10000 !important;
 }
 
