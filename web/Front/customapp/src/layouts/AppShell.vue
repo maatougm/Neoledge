@@ -115,6 +115,13 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
     { items: [{ key: isAdmin ? 'admin-projects' : 'pm-projects', label: isAdmin ? 'Projets' : 'Mes projets', icon: 'pi-briefcase', to: isAdmin ? '/app/admin/projects' : '/app/pm/projects' }] },
     { heading: 'Projet', items: [
         { key: 'proj-overview',     label: 'Aperçu',         icon: 'pi-home',        to: base },
+        { key: 'proj-questionnaire', label: 'Questionnaire',  icon: 'pi-list-check',  to: `${base}/questionnaire` },
+        { key: 'proj-meetings',     label: 'Réunions',       icon: 'pi-microphone',  to: `${base}/meetings` },
+        { key: 'proj-cahier',       label: 'Cahier des charges', icon: 'pi-file-word', to: `${base}/cahier` },
+        { key: 'proj-validations',  label: 'Validations',    icon: 'pi-shield',      to: `${base}/validations` },
+        { key: 'proj-automation',   label: 'Automatisations', icon: 'pi-bolt',       to: `${base}/automation` },
+    ]},
+    { heading: 'Exécution', items: [
         { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
         { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
         { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },

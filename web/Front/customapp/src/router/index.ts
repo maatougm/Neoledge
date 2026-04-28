@@ -176,6 +176,41 @@ const router = createRouter({
               component: () => import('@/views/PMProjectDetailView.vue'),
               props: true,
             },
+            // 5 deep-links into the legacy tabbed PMProjectDetail for the
+            // questionnaire / cahier / meeting / validation / automation
+            // workflow. Each route mounts the same wrapper but passes a
+            // different ?tab= via the path so the sidebar nav can highlight
+            // the active item.
+            {
+              path: 'projects/:id/questionnaire',
+              name: 'pm-project-questionnaire',
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
+            },
+            {
+              path: 'projects/:id/meetings',
+              name: 'pm-project-meetings',
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
+            },
+            {
+              path: 'projects/:id/cahier',
+              name: 'pm-project-cahier',
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
+            },
+            {
+              path: 'projects/:id/validations',
+              name: 'pm-project-validations',
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
+            },
+            {
+              path: 'projects/:id/automation',
+              name: 'pm-project-automation',
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
+            },
             {
               path: 'projects/:id/workpackages',
               name: 'pm-workpackages',

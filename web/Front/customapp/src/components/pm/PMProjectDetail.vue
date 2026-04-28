@@ -125,14 +125,28 @@ import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
 
-const props = defineProps<{ project: ProjectDetail; validations: ProjectValidation[]; readonly?: boolean }>()
+const props = defineProps<{
+  project: ProjectDetail
+  validations: ProjectValidation[]
+  readonly?: boolean
+  /** Optional initial tab — used by router-driven mounts that pass `?tab=cahier` etc. */
+  initialTab?: string
+}>()
 const emit = defineEmits<{ close: [] }>()
 const store = usePmStore()
 const commentStore = useCommentStore()
 const authStore = useAuthStore()
 
 type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation' | 'cahier'
-const activeTab = ref<TabId>('questionnaire')
+const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'automation', 'cahier']
+const activeTab = ref<TabId>(
+  (VALID_TABS as string[]).includes(props.initialTab ?? '')
+    ? (props.initialTab as TabId)
+    : 'questionnaire',
+)
+watch(() => props.initialTab, (t) => {
+  if (t && (VALID_TABS as string[]).includes(t)) activeTab.value = t as TabId
+})
 
 const historyLoaded = ref(false)
 
