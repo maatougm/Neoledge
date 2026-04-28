@@ -52,8 +52,12 @@ class AllExceptionsFilter implements ExceptionFilter {
     );
 
     if (this.isProduction) {
-      // Sanitised response — never leak stack, error name, or Prisma codes
+      // Sanitised response — never leak stack, error name, or Prisma codes.
+      // Whitelisted business fields are passed through verbatim so the UI
+      // can act on them (e.g. `missingFields` for the AI driver-fields gate).
       let safeMessage = 'Internal server error';
+      const passthrough: Record<string, unknown> = {};
+      const PASSTHROUGH_KEYS = ['missingFields'];
       if (isHttp) {
         if (typeof rawMessage === 'string') {
           safeMessage = rawMessage;
@@ -62,16 +66,21 @@ class AllExceptionsFilter implements ExceptionFilter {
           typeof rawMessage === 'object' &&
           'message' in rawMessage
         ) {
-          const msg = (rawMessage as { message: unknown }).message;
+          const obj = rawMessage as Record<string, unknown>;
+          const msg = obj.message;
           safeMessage = Array.isArray(msg)
             ? msg.map((m) => String(m)).join(', ')
             : String(msg);
+          for (const k of PASSTHROUGH_KEYS) {
+            if (k in obj) passthrough[k] = obj[k];
+          }
         }
       }
 
       response.status(status).json({
         statusCode: status,
         message: safeMessage,
+        ...passthrough,
       });
       return;
     }
