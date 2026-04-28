@@ -166,7 +166,6 @@ function avatarColorClass(role: UserRole): string {
     ProjectManager: 'user-list__avatar--pm',
     SpecificationTeam: 'user-list__avatar--team',
     Member: 'user-list__avatar--team',
-    DeploymentTeam: 'user-list__avatar--team',
   }
   return map[role] ?? ''
 }
@@ -178,7 +177,6 @@ function roleBadgeClass(role: UserRole): string {
     ProjectManager: 'user-list__role-badge--pm',
     SpecificationTeam: 'user-list__role-badge--team',
     Member: 'user-list__role-badge--team',
-    DeploymentTeam: 'user-list__role-badge--team',
   }
   return map[role] ?? ''
 }

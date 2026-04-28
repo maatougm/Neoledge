@@ -19,6 +19,6 @@ export class CreateMilestoneDto {
   color?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   workPackageId?: string;
 }

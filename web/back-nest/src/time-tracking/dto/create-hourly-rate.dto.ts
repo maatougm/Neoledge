@@ -1,11 +1,11 @@
 import { IsDateString, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateHourlyRateDto {
-  @IsUUID()
+  @IsUUID('all')
   userId!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   projectId?: string;
 
   @IsNumber()

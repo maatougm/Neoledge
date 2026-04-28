@@ -33,7 +33,6 @@ import { AgileModule } from './agile/agile.module.js';
 import { TimeTrackingModule } from './time-tracking/time-tracking.module.js';
 import { BudgetingModule } from './budgeting/budgeting.module.js';
 import { WikiModule } from './wiki/wiki.module.js';
-import { PortfolioModule } from './portfolio/portfolio.module.js';
 import { TeamPlannerModule } from './team-planner/team-planner.module.js';
 import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -156,7 +155,6 @@ import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.
     TimeTrackingModule,
     BudgetingModule,
     WikiModule,
-    PortfolioModule,
     TeamPlannerModule,
     SearchModule,
     HealthModule,

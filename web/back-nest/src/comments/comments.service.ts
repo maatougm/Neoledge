@@ -62,6 +62,18 @@ export class CommentsService {
     // Notify mentioned users who are active members of the project.
     void this.notifyMentions(projectId, userId, comment.id, mentions);
 
+    // Project activity row so admin/activity feed + project activity tab update live
+    void this.prisma.projectActivity
+      .create({
+        data: {
+          projectId,
+          userId,
+          action: parentCommentId ? 'comment_replied' : 'comment_added',
+          detail: content.length > 120 ? `${content.slice(0, 120)}…` : content,
+        },
+      })
+      .catch(() => { /* non-fatal */ })
+
     return Result.ok(this.toDto({ ...comment, replies: [] }));
   }
 
@@ -150,8 +162,9 @@ export class CommentsService {
       id: c.id,
       projectId: c.projectId,
       userId: c.userId,
-      userName: `${c.user.firstName} ${c.user.lastName}`,
-      userAvatarPath: c.user.avatarPath ?? null,
+      user: c.user
+        ? { id: c.user.id, firstName: c.user.firstName, lastName: c.user.lastName, avatarPath: c.user.avatarPath ?? null }
+        : null,
       content: c.content,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,

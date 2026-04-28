@@ -104,7 +104,7 @@ GEMINI_API_KEY=...
 - `POST /admin/projects` — create (Admin)
 - `PATCH /pm/projects/:id/field-values` — save questionnaire
 - `POST /pm/projects/:id/fields` — add custom field
-- `POST /pm/projects/:id/validations` — submit validation
+- `POST /pm/projects/:id/validations` — submit validation. Body: `{ isApproved: boolean, comment?: string }`. Comment is **required when `isApproved === false`** (rejection must be motivated). The `@@unique([projectId, validatedByUserId, phase])` constraint is enforced at the service layer (400 "déjà soumis").
 
 **Meetings**
 - `POST /pm/projects/:id/meetings/upload` — upload audio for transcription

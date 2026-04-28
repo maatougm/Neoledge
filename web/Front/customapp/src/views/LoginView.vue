@@ -222,7 +222,6 @@ const quickAccounts = [
   { role: 'pm',     label: 'Chef de projet',         email: 'pm@neoleadge.com',      pwd: 'Pm@12345',    color: '#3B82F6',          init: 'CP' },
   { role: 'spec',   label: 'Équipe spécification',   email: 'spec@neoleadge.com',    pwd: 'Valid@123',   color: '#8B5CF6',          init: 'ES' },
   { role: 'realiz', label: 'Équipe réalisation',     email: 'realiz@neoleadge.com',  pwd: 'Valid@123',   color: '#F97316',          init: 'ER' },
-  { role: 'deploy', label: 'Équipe déploiement',     email: 'deploy@neoleadge.com',  pwd: 'Valid@123',   color: '#10B981',          init: 'ED' },
 ]
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

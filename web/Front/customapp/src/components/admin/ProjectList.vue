@@ -10,7 +10,11 @@
     <!-- Header -->
     <div class="project-list__header">
       <h2 class="project-list__title">Projets de déploiement</h2>
-      <NeoButton label="Nouveau projet" icon="pi pi-plus" @click="emit('create')" />
+      <div class="project-list__header-actions">
+        <NeoButton label="Export CSV" icon="pi pi-download" outlined severity="secondary" @click="handleExportCsv" />
+        <NeoButton label="Export PDF" icon="pi pi-file-pdf" outlined severity="secondary" @click="handleExportPdf" />
+        <NeoButton label="Nouveau projet" icon="pi pi-plus" @click="emit('create')" />
+      </div>
     </div>
 
     <!-- Toolbar -->
@@ -97,6 +101,8 @@
             @edit="emit('edit', project.id)"
             @delete="emit('delete', project.id)"
             @assign-manager="emit('assign-manager', project.id)"
+            @archive="handleArchive(project)"
+            @duplicate="handleDuplicate(project)"
           />
         </tbody>
       </table>
@@ -235,6 +241,61 @@ async function handleBulkAssign(managerId: string) {
   }
 }
 
+// ─── Row action handlers ───────────────────────────────────────────────────────
+
+function handleArchive(project: ProjectSummary): void {
+  confirm.require({
+    message: `Archiver le projet "${project.name}" ?`,
+    header: "Confirmer l'archivage",
+    icon: 'pi pi-exclamation-triangle',
+    accept: async () => {
+      try {
+        await store.archiveProject(project.id)
+        toast.add({ severity: 'success', detail: 'Projet archivé.', life: 3000 })
+      } catch {
+        toast.add({ severity: 'error', detail: "Erreur lors de l'archivage.", life: 4000 })
+      }
+    },
+  })
+}
+
+async function handleDuplicate(project: ProjectSummary): Promise<void> {
+  const newName = window.prompt('Nom du nouveau projet :', `${project.name} (copie)`)
+  if (!newName || !newName.trim()) return
+  const created = await store.duplicateProject(project.id, newName.trim())
+  if (created) {
+    toast.add({ severity: 'success', detail: `Projet dupliqué : ${created.name}`, life: 3000 })
+  } else if (store.error) {
+    toast.add({ severity: 'error', detail: store.error, life: 4000 })
+  }
+}
+
+// ─── Export ────────────────────────────────────────────────────────────────────
+
+async function handleExportCsv(): Promise<void> {
+  try {
+    const { default: api } = await import('@/lib/api')
+    const response = await api.get<Blob>('/admin/project/export', { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `projets_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.add({ severity: 'success', detail: 'Export CSV téléchargé.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: "Erreur lors de l'export.", life: 4000 })
+  }
+}
+
+function handleExportPdf(): void {
+  // Client-side PDF via print — simple, no library dependency.
+  window.print()
+}
+
 // ─── Progress helper ──────────────────────────────────────────────────────────
 
 type MaybeDetailFields = ProjectSummary & {
@@ -275,6 +336,23 @@ function progressPercent(project: ProjectSummary): number {
   color: var(--nl-text-1);
   margin: 0;
   letter-spacing: -0.01em;
+}
+
+.project-list__header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+@media print {
+  .project-list__header-actions,
+  .project-list__toolbar,
+  .project-list__bulk,
+  .project-list__pagination,
+  .ptr__actions-cell,
+  .ptr__td-check,
+  .project-list__th-check {
+    display: none !important;
+  }
 }
 
 .project-list__toolbar {

@@ -159,10 +159,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import DOMPurify from 'dompurify'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
+import { sanitize } from '@/lib/sanitize'
 import type { AiResults } from '@/types/pm.types'
 
 const props = defineProps<{
@@ -239,11 +239,10 @@ function renderSummary(text: string): string {
     })
     .join('')
 
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['h1', 'h2', 'p', 'li', 'br', 'strong', 'em'],
-    ALLOWED_ATTR: ['class'],
-    ALLOW_UNKNOWN_PROTOCOLS: false,
-  })
+  // Defense-in-depth: funnel generated HTML through the shared sanitizer
+  // before it hits v-html. The shared allow-list is a strict superset of
+  // the tags we actually emit here.
+  return sanitize(html)
 }
 
 /**

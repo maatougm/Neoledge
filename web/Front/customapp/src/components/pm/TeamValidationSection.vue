@@ -203,7 +203,6 @@ const ROLE_LABELS: Record<string, string> = {
   ProjectManager: 'Chef de projet',
   SpecificationTeam: 'Équipe spéc.',
   Member: 'Membre',
-  DeploymentTeam: 'Équipe déploiement',
 }
 
 const showForm = ref(false)

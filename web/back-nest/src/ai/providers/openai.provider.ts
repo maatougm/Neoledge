@@ -16,13 +16,16 @@ export class OpenAiProvider {
 
   constructor(private readonly config: ConfigService) {}
 
-  readonly modelName = 'gpt-4o-mini'
+  get modelName(): string {
+    return this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini'
+  }
 
   async analyze(transcriptText: string, _speakerNames: string[]): Promise<AiAnalysisResult> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const baseUrl = this.config.get<string>('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1'
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       signal: AbortSignal.timeout(60_000),
       headers: {

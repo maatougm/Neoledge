@@ -1,11 +1,11 @@
 import { IsBoolean, IsDateString, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateTimeEntryDto {
-  @IsUUID()
+  @IsUUID('all')
   projectId!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   workPackageId?: string;
 
   @IsNumber()

@@ -72,7 +72,6 @@ const ROUTE_LABELS: Record<string, string> = {
   'admin-users':         'Utilisateurs',
   'admin-activity':      'Activité',
   'admin-templates':     'Modèles',
-  'admin-portfolio':     'Portfolios',
   'admin-system':        'Système',
   'admin-trash':         'Corbeille',
   'pm-projects':         'Mes projets',

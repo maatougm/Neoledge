@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
-import type { CreateTemplateDto, CreateFromProjectDto, TemplateFieldDto } from './dto/template.dto.js';
+import { CreateTemplateDto, CreateFromProjectDto, TemplateFieldDto } from './dto/template.dto.js';
 
 @Injectable()
 export class TemplatesService {

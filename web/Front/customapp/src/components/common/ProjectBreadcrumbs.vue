@@ -1,8 +1,9 @@
 <!-- @file ProjectBreadcrumbs.vue — Home > Project > Module trail for /app/pm/projects/:id/* pages -->
 <template>
   <nav class="breadcrumbs" aria-label="Fil d'Ariane">
-    <router-link to="/app" class="breadcrumbs__item breadcrumbs__item--link">
-      <i class="pi pi-home breadcrumbs__icon" />
+    <router-link :to="projectsListPath" class="breadcrumbs__item breadcrumbs__item--link">
+      <i class="pi pi-list breadcrumbs__icon" />
+      <span>Projets</span>
     </router-link>
     <i class="pi pi-angle-right breadcrumbs__sep" />
 
@@ -24,6 +25,16 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+
+const authStore = useAuthStore()
+
+// Role-aware "back to list" path: Admin users land on /app/admin/projects,
+// everyone else on the PM/team project list. Prevents the breadcrumb sending
+// a PM back to the admin home they don't have permission for.
+const projectsListPath = computed<string>(() =>
+  authStore.userRole === 'Admin' ? '/app/admin/projects' : '/app/pm/projects',
+)
 
 const props = defineProps<{ projectId: string }>()
 const route = useRoute()

@@ -72,18 +72,18 @@ export class ClonePresetDto {
 }
 
 export class AssignRoleDto {
-  @IsUUID()
+  @IsUUID('all')
   userId!: string;
 
-  @IsUUID()
+  @IsUUID('all')
   roleId!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   projectId?: string | null;
 }
 
 export class UnassignRoleDto {
-  @IsUUID()
+  @IsUUID('all')
   assignmentId!: string;
 }

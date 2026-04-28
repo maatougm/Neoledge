@@ -2,7 +2,7 @@ import { IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class MoveCardDto {
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   columnId?: string | null;
 
   @IsOptional()

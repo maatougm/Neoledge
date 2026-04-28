@@ -22,6 +22,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard.js'
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js'
 import { CurrentUser } from '../common/decorators/current-user.decorator.js'
+import { isAudioBuffer } from './audio-signature.js'
 
 interface AuthUser { userId: string }
 
@@ -59,6 +60,13 @@ export class MeetingsController {
     @Body('title') title: string,
   ) {
     if (!audio || !audio.buffer.length) throw new BadRequestException('Fichier audio requis.')
+    // MIME type is client-supplied and cannot be trusted. Verify the real
+    // file signature from the buffer header before accepting the upload.
+    if (!isAudioBuffer(audio.buffer.subarray(0, 32))) {
+      throw new BadRequestException(
+        'Format audio non supporté — formats acceptés: MP3, WAV, OGG, FLAC, M4A, WebM',
+      )
+    }
     if (!title || typeof title !== 'string' || !title.trim()) {
       throw new BadRequestException('Le titre de la réunion est requis.')
     }

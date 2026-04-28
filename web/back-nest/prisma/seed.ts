@@ -82,7 +82,7 @@ async function main() {
     {
       id: ID.deploy1, firstName: 'Nadia', lastName: 'Simon',
       email: 'deploy@neoleadge.com', passwordHash: HASH('Deploy@123'),
-      role: 'DeploymentTeam', jobTitle: 'Ingénieure déploiement',
+      role: 'Member', jobTitle: 'Ingénieure déploiement',
       department: 'Infrastructure',
     },
     {
@@ -365,7 +365,7 @@ async function main() {
     },
     {
       projectId: ID.p4, validatedByUserId: ID.deploy1,
-      validatedByRole: 'DeploymentTeam', phase: 'Deployment',
+      validatedByRole: 'Member', phase: 'Deployment',
       isApproved: true, comment: 'Infrastructure prête. Plan de rollback validé.',
       validatedAt: new Date('2026-03-20'),
     },
@@ -376,7 +376,7 @@ async function main() {
     },
     {
       projectId: ID.p5, validatedByUserId: ID.deploy1,
-      validatedByRole: 'DeploymentTeam', phase: 'Deployment',
+      validatedByRole: 'Member', phase: 'Deployment',
       isApproved: true, comment: 'Déploiement réussi, toutes les vérifications passées.',
       validatedAt: new Date('2025-12-15'),
     },
@@ -485,7 +485,7 @@ async function main() {
   console.log('  ProjectManager pm2@neoleadge.com       / Pm@12345');
   console.log('  SpecTeam       spec@neoleadge.com      / Valid@123');
   console.log('  Member         real@neoleadge.com      / Valid@123');
-  console.log('  DeployTeam     deploy@neoleadge.com    / Valid@123');
+  console.log('  Member         deploy@neoleadge.com    / Deploy@123');
   console.log('  Member (2)     viewer@neoleadge.com    / Viewer@1');
 }
 

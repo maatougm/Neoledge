@@ -10,6 +10,6 @@ export class CreateWikiPageDto {
   content!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   parentId?: string;
 }

@@ -28,7 +28,7 @@ const GATED_TRANSITIONS: GatedTransition[] = [
   {
     from: 'DeploymentValidation',
     to: 'Completed',
-    requiredRole: 'DeploymentTeam',
+    requiredRole: 'ProjectManager',
   },
 ];
 

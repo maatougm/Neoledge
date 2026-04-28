@@ -55,7 +55,7 @@
             </div>
             <ul v-else class="po__wp-list">
               <li
-                v-for="wp in myWps.slice(0, 5)"
+                v-for="wp in (myWps || []).slice(0, 5)"
                 :key="wp.id"
                 class="po__wp nl-row"
                 @click="openWp(wp.id)"
@@ -84,7 +84,7 @@
             </div>
             <ul v-else class="po__wp-list">
               <li
-                v-for="wp in atRiskWps.slice(0, 5)"
+                v-for="wp in (atRiskWps || []).slice(0, 5)"
                 :key="wp.id"
                 class="po__wp nl-row"
                 @click="openWp(wp.id)"
@@ -155,7 +155,7 @@
               <p>Aucune activité récente.</p>
             </div>
             <ul v-else class="po__activity-list">
-              <li v-for="(a, i) in activity.slice(0, 6)" :key="i" class="po__activity">
+              <li v-for="(a, i) in (Array.isArray(activity) ? activity : []).slice(0, 6)" :key="i" class="po__activity">
                 <i class="pi po__activity-icon" :class="activityIcon(a.action)" />
                 <div class="po__activity-body">
                   <div class="po__activity-text">
@@ -182,6 +182,45 @@
                 :title="p.name"
               >
                 {{ initials(p.name) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Team responsibilities card -->
+          <div class="nl-card">
+            <div class="po__head">
+              <h2 class="po__head-title"><i class="pi pi-id-card" /> Responsables équipes</h2>
+              <button v-if="canEditResponsibilities && !editingResp" class="po__head-link" @click="editingResp = true">Modifier →</button>
+              <button v-if="editingResp" class="po__head-link" @click="saveResponsibilities">Enregistrer</button>
+            </div>
+
+            <div class="po__resp-grid">
+              <!-- Validation responsible -->
+              <div class="po__resp-row">
+                <span class="po__resp-label"><i class="pi pi-shield" /> Responsable validation</span>
+                <template v-if="editingResp">
+                  <select v-model="respValidationId" class="po__resp-select">
+                    <option value="">— Non assigné —</option>
+                    <option v-for="u in specUsers" :key="u.id" :value="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                  </select>
+                </template>
+                <span v-else class="po__resp-value">
+                  {{ responsibilities.validationResponsible ? `${responsibilities.validationResponsible.firstName} ${responsibilities.validationResponsible.lastName}` : '—' }}
+                </span>
+              </div>
+
+              <!-- Deployment responsible -->
+              <div class="po__resp-row">
+                <span class="po__resp-label"><i class="pi pi-send" /> Responsable déploiement</span>
+                <template v-if="editingResp">
+                  <select v-model="respDeploymentId" class="po__resp-select">
+                    <option value="">— Non assigné —</option>
+                    <option v-for="u in deployUsers" :key="u.id" :value="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                  </select>
+                </template>
+                <span v-else class="po__resp-value">
+                  {{ responsibilities.deploymentResponsible ? `${responsibilities.deploymentResponsible.firstName} ${responsibilities.deploymentResponsible.lastName}` : '—' }}
+                </span>
               </div>
             </div>
           </div>
@@ -214,6 +253,13 @@ interface WorkPackage {
 interface Milestone  { id: string; title: string; date: string; isReached: boolean }
 interface Activity   { action: string; details: string | null; userName: string | null; createdAt: string }
 interface Sprint     { id: string; name: string; isActive: boolean; startDate: string; endDate: string }
+interface AssignableUser { id: string; firstName: string; lastName: string; role: string }
+interface Responsibilities {
+  validationResponsibleId: string | null
+  deploymentResponsibleId: string | null
+  validationResponsible: { id: string; firstName: string; lastName: string } | null
+  deploymentResponsible: { id: string; firstName: string; lastName: string } | null
+}
 
 const props   = defineProps<{ id: string }>()
 const router  = useRouter()
@@ -232,6 +278,17 @@ const activeSprint    = ref<Sprint | null>(null)
 const budgetSpent     = ref<number>(0)
 const budgetTotal     = ref<number>(0)
 
+// Team responsibilities
+const allAssignableUsers  = ref<AssignableUser[]>([])
+const responsibilities    = ref<Responsibilities>({ validationResponsibleId: null, deploymentResponsibleId: null, validationResponsible: null, deploymentResponsible: null })
+const editingResp         = ref(false)
+const respValidationId    = ref<string>('')
+const respDeploymentId    = ref<string>('')
+
+const canEditResponsibilities = computed(() => authStore.userRole === 'Admin' || authStore.userRole === 'ProjectManager')
+const specUsers   = computed(() => allAssignableUsers.value.filter((u) => u.role === 'SpecificationTeam'))
+const deployUsers = computed(() => allAssignableUsers.value.filter((u) => u.role === 'Member'))
+
 const presenceList = collab.presenceList
 
 const isPinned    = computed<boolean>(() => uiStore.isProjectPinned(props.id))
@@ -244,11 +301,11 @@ const wpOverdue     = computed<number>(() => wps.value.filter((w) =>
 ).length)
 
 const myWps = computed<WorkPackage[]>(() =>
-  wps.value.filter((w) => w.assigneeId === authStore.userId && w.status !== 'Closed' && w.status !== 'Resolved'),
+  (Array.isArray(wps.value) ? wps.value : []).filter((w) => w.assigneeId === authStore.userId && w.status !== 'Closed' && w.status !== 'Resolved'),
 )
 
 const atRiskWps = computed<WorkPackage[]>(() =>
-  wps.value.filter((w) => {
+  (Array.isArray(wps.value) ? wps.value : []).filter((w) => {
     const isOpen = w.status !== 'Closed' && w.status !== 'Resolved'
     const overdue = w.dueDate && new Date(w.dueDate).getTime() < Date.now()
     const urgent  = w.priority === 'Urgent' || w.priority === 'Critical'
@@ -258,7 +315,8 @@ const atRiskWps = computed<WorkPackage[]>(() =>
 
 const statusByCount = computed(() => {
   const counts: Record<string, number> = {}
-  for (const w of wps.value) counts[w.status] = (counts[w.status] ?? 0) + 1
+  const list = Array.isArray(wps.value) ? wps.value : []
+  for (const w of list) counts[w.status] = (counts[w.status] ?? 0) + 1
   const order = ['New', 'InProgress', 'OnHold', 'Blocked', 'Resolved', 'Closed']
   return order.filter((s) => counts[s] > 0).map((s) => ({ status: s, count: counts[s] ?? 0 }))
 })
@@ -343,17 +401,17 @@ async function loadAll(): Promise<void> {
     projectName.value    = projRes.data.name
     projectStatus.value  = projRes.data.status
     projectEndDate.value = projRes.data.endDate
-    wps.value            = wpsRes.data.items
+    wps.value            = Array.isArray(wpsRes.data?.items) ? wpsRes.data.items : []
 
-    // Best-effort fetches — tolerate missing endpoints.
+    // Best-effort fetches — tolerate missing endpoints + varying response shapes.
     try {
-      const { data } = await api.get<Milestone[]>(`/pm/projects/${props.id}/milestones`, { suppressErrorToast: true } as never)
-      milestones.value = data
+      const { data } = await api.get<Milestone[] | { items: Milestone[] }>(`/pm/projects/${props.id}/milestones`, { suppressErrorToast: true } as never)
+      milestones.value = Array.isArray(data) ? data : (data?.items ?? [])
     } catch { /* silent */ }
 
     try {
-      const { data } = await api.get<Activity[]>(`/pm/projects/${props.id}/activity`, { suppressErrorToast: true } as never)
-      activity.value = data
+      const { data } = await api.get<Activity[] | { items: Activity[] }>(`/pm/projects/${props.id}/activity`, { suppressErrorToast: true } as never)
+      activity.value = Array.isArray(data) ? data : (data?.items ?? [])
     } catch { /* silent */ }
 
     try {
@@ -372,9 +430,31 @@ async function loadAll(): Promise<void> {
       budgetTotal.value = Number(data.total ?? 0)
     } catch { /* silent */ }
 
+    try {
+      const [usersRes, respRes] = await Promise.all([
+        api.get<AssignableUser[]>(`/pm/projects/${props.id}/assignable-users`, { suppressErrorToast: true } as never),
+        api.get<Responsibilities>(`/pm/projects/${props.id}/responsibilities`, { suppressErrorToast: true } as never),
+      ])
+      allAssignableUsers.value = usersRes.data
+      responsibilities.value   = respRes.data
+      respValidationId.value   = respRes.data.validationResponsibleId ?? ''
+      respDeploymentId.value   = respRes.data.deploymentResponsibleId ?? ''
+    } catch { /* silent */ }
+
   } finally {
     loading.value = false
   }
+}
+
+async function saveResponsibilities(): Promise<void> {
+  try {
+    const { data } = await api.patch<Responsibilities>(`/pm/projects/${props.id}/responsibilities`, {
+      validationResponsibleId:  respValidationId.value  || null,
+      deploymentResponsibleId:  respDeploymentId.value  || null,
+    })
+    responsibilities.value = data
+    editingResp.value = false
+  } catch { /* silent */ }
 }
 
 onMounted(() => {
@@ -470,6 +550,23 @@ onUnmounted(() => {
   color: #fff; font-size: 11px; font-weight: 600;
   border: 2px solid var(--nl-surface);
 }
+
+/* Team responsibilities */
+.po__resp-grid { display: flex; flex-direction: column; gap: var(--nl-sp-3); }
+.po__resp-row  { display: flex; flex-direction: column; gap: 4px; }
+.po__resp-label {
+  font-size: var(--nl-fs-xs); font-weight: 600; color: var(--nl-text-3);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  display: flex; align-items: center; gap: 4px;
+}
+.po__resp-value { font-size: var(--nl-fs-sm); color: var(--nl-text-1); font-weight: 500; }
+.po__resp-select {
+  width: 100%; padding: 6px 10px; border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius); background: var(--nl-surface-2);
+  color: var(--nl-text-1); font-size: var(--nl-fs-sm); font-family: var(--nl-font);
+  cursor: pointer;
+}
+.po__resp-select:focus { outline: 2px solid var(--nl-accent); outline-offset: 1px; }
 
 /* Mobile */
 @media (max-width: 900px) {

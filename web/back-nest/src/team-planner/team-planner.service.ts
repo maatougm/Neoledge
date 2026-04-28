@@ -57,7 +57,7 @@ export class TeamPlannerService {
       const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
       const users = await this.prisma.appUser.findMany({
-        where: { isActive: true, role: { in: ['ProjectManager', 'SpecificationTeam', 'Member', 'DeploymentTeam'] } },
+        where: { isActive: true, role: { in: ['ProjectManager', 'SpecificationTeam', 'Member'] } },
         select: { id: true, firstName: true, lastName: true },
       });
 

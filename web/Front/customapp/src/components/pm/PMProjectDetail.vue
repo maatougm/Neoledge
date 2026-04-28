@@ -175,14 +175,10 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 
 // Per-role tab visibility.
 // - SpecificationTeam: approves the cahier → focused on validation flow
-// - DeploymentTeam: receives the approved package → needs full context
-//   (questionnaire + meetings + cahier) to plan the deployment
 // - Member: not part of the approval flow — read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
   // Spec team: first sees the validation they own, then cahier context, then comms
   SpecificationTeam: ['validation', 'cahier', 'history', 'comments', 'activity'],
-  // Deploy team: needs full context before taking ownership
-  DeploymentTeam:    ['validation', 'questionnaire', 'meetings', 'cahier', 'history', 'comments', 'activity'],
   Member:            ['cahier', 'history', 'comments', 'activity'],
 }
 

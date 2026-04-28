@@ -181,24 +181,24 @@ describe('PhaseGateService', () => {
   // ── canTransition — DeploymentValidation → Completed gate ────────────────
 
   describe('canTransition — DeploymentValidation → Completed gate', () => {
-    it('blocks when no DeploymentTeam approval exists', async () => {
+    it('bloque si aucune approbation ProjectManager n\'existe', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(0);
 
       const result = await service.canTransition('proj-1', 'DeploymentValidation', 'Completed');
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('DeploymentTeam');
+      expect(result.error).toContain('ProjectManager');
       expect(mockPrisma.projectValidation.count).toHaveBeenCalledWith({
         where: {
           projectId: 'proj-1',
           phase: 'DeploymentValidation',
           isApproved: true,
-          validatedByRole: 'DeploymentTeam',
+          validatedByRole: 'ProjectManager',
         },
       });
     });
 
-    it('allows when at least 1 DeploymentTeam approval exists', async () => {
+    it('autorise si au moins 1 approbation ProjectManager existe', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(1);
 
       const result = await service.canTransition('proj-1', 'DeploymentValidation', 'Completed');

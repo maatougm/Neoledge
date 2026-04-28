@@ -28,6 +28,6 @@ export class BulkStatusDto extends BulkIdsDto {
 
 export class BulkAssignManagerDto extends BulkIdsDto {
   @ApiProperty()
-  @IsUUID()
+  @IsUUID('all')
   managerId: string;
 }

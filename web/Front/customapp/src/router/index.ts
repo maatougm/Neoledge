@@ -145,11 +145,6 @@ const router = createRouter({
               name: 'admin-roles',
               component: () => import('@/views/admin/RolesView.vue'),
             },
-            {
-              path: 'portfolio',
-              name: 'admin-portfolio',
-              component: () => import('@/views/PortfolioView.vue'),
-            },
           ],
         },
 
@@ -304,7 +299,6 @@ const router = createRouter({
             allowedRoles: [
               'SpecificationTeam',
               'Member',
-              'DeploymentTeam',
             ] as UserRole[],
           },
           beforeEnter: roleGuard,

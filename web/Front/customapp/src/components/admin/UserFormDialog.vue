@@ -94,7 +94,6 @@ const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   ProjectManager:     'Gestion et suivi des projets assignés.',
   SpecificationTeam:  'Valide les spécifications des projets.',
   Member:             'Membre de l\'équipe projet.',
-  DeploymentTeam:     'Déploiement et livraison des projets.',
 }
 
 const props = defineProps<{

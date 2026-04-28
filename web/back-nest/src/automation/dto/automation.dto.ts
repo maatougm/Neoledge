@@ -49,7 +49,7 @@ export class TriggerConditionDto {
 
 export class SendNotificationConfig {
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   userId?: string;
 
   @IsOptional()
@@ -59,7 +59,7 @@ export class SendNotificationConfig {
 }
 
 export class UpdateFieldConfig {
-  @IsUUID()
+  @IsUUID('all')
   fieldId!: string;
 
   @IsOptional()

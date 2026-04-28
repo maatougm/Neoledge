@@ -89,6 +89,8 @@
               <button role="menuitem" @click="emit('view')"><i class="pi pi-eye" /> Voir (panneau)</button>
               <button role="menuitem" @click="emit('edit')"><i class="pi pi-pencil" /> Modifier</button>
               <button role="menuitem" @click="emit('assign-manager')"><i class="pi pi-user-plus" /> Assigner un chef</button>
+              <button role="menuitem" @click="emit('duplicate')"><i class="pi pi-copy" /> Dupliquer</button>
+              <button role="menuitem" @click="emit('archive')"><i class="pi pi-inbox" /> Archiver</button>
               <div class="ptr__overflow-sep" />
               <button role="menuitem" class="ptr__overflow-danger" @click="emit('delete')"><i class="pi pi-trash" /> Supprimer</button>
             </div>
@@ -139,6 +141,8 @@ const emit = defineEmits<{
   edit: []
   delete: []
   'assign-manager': []
+  archive: []
+  duplicate: []
 }>()
 
 const statusLabel = (s: ProjectStatus) => PROJECT_STATUS_LABELS[s] ?? s

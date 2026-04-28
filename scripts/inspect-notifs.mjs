@@ -16,6 +16,19 @@ page.on('request', (r) => {
     events.push({ k: 'req', t: `${r.method()} ${u}` });
   }
 });
+page.on('websocket', (ws) => {
+  events.push({ k: 'ws-open', t: ws.url() });
+  ws.on('framereceived', (frame) => {
+    const txt = String(frame.payload || '').slice(0, 200);
+    if (txt && txt.length > 1) events.push({ k: 'ws-rx', t: txt });
+  });
+  ws.on('framesent', (frame) => {
+    const txt = String(frame.payload || '').slice(0, 200);
+    if (txt && txt.length > 1) events.push({ k: 'ws-tx', t: txt });
+  });
+  ws.on('close', () => events.push({ k: 'ws-close', t: ws.url() }));
+  ws.on('socketerror', (e) => events.push({ k: 'ws-err', t: `${ws.url()} | ${e}` }));
+});
 page.on('response', async (resp) => {
   const u = resp.url();
   if (u.includes('/notifications') || u.includes('/socket.io/')) {

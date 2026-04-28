@@ -6,7 +6,6 @@ export interface FeatureFlags {
   showGantt: boolean
   showBudget: boolean
   showWiki: boolean
-  showPortfolio: boolean
   showTeamPlanner: boolean
   showAudit: boolean
 }
@@ -15,7 +14,6 @@ const DEFAULTS: FeatureFlags = {
   showGantt: true,
   showBudget: true,
   showWiki: true,
-  showPortfolio: true,
   showTeamPlanner: true,
   showAudit: true,
 }

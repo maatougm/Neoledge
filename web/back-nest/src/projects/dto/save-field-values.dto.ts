@@ -13,7 +13,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FieldValueItemDto {
   @ApiProperty()
-  @IsUUID()
+  @IsUUID('all')
   projectFieldId: string;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 10000 })

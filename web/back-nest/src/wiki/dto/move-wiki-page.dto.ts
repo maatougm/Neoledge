@@ -2,6 +2,6 @@ import { IsOptional, IsUUID } from 'class-validator';
 
 export class MoveWikiPageDto {
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   parentId?: string | null;
 }

@@ -11,7 +11,6 @@ import {
   NotFoundException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
 import { NotificationsService } from './notifications.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -49,7 +48,6 @@ export class NotificationsController {
 
   /** Throttle write mutations: max 30 per minute per user. */
   @Patch(':id/read')
-  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   async markAsRead(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     const result = await this.service.markAsRead(id, user.userId);
@@ -65,7 +63,6 @@ export class NotificationsController {
 
   /** Throttle write mutations: max 30 per minute per user. */
   @Delete(':id')
-  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     const result = await this.service.delete(id, user.userId);

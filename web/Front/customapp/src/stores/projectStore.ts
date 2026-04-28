@@ -234,6 +234,22 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
+  const duplicateProject = async (projectId: string, newName: string): Promise<ProjectSummary | null> => {
+    loading.value = true
+    error.value = null
+    try {
+      const { data } = await api.post<ProjectSummary>(`/admin/project/${projectId}/duplicate`, { name: newName })
+      projects.value = [data, ...projects.value]
+      totalProjects.value += 1
+      return data
+    } catch (e: unknown) {
+      error.value = extractApiError(e, 'Erreur lors de la duplication.')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   const archiveProject = async (projectId: string) => {
     loading.value = true
     error.value = null
@@ -492,6 +508,7 @@ export const useProjectStore = defineStore('projects', () => {
     assignManager,
     updateStatus,
     archiveProject,
+    duplicateProject,
     addField,
     removeField,
     toggleManagerFields,

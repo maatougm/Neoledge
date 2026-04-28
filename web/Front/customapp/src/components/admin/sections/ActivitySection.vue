@@ -129,7 +129,7 @@ import type { ProjectActivity, ActivityStats } from '@/types/project.types'
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 20
-const REFRESH_INTERVAL_MS = 60_000
+const REFRESH_INTERVAL_MS = 15_000
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const activities = ref<ProjectActivity[]>([])
@@ -253,30 +253,42 @@ function loadMore(): void {
 // ── Action helpers ─────────────────────────────────────────────────────────────
 
 const ACTION_LABELS: Record<string, string> = {
-  created:              'Création',
-  updated:              'Mise à jour',
-  status_changed:       'Changement de statut',
-  deleted:              'Suppression',
-  validation_submitted: 'Validation soumise',
+  created:                'Création',
+  updated:                'Mise à jour',
+  status_changed:         'Changement de statut',
+  deleted:                'Suppression',
+  validation_submitted:   'Validation soumise',
+  comment_added:          'Commentaire ajouté',
+  comment_replied:        'Réponse à un commentaire',
+  comment_edited:         'Commentaire modifié',
+  comment_deleted:        'Commentaire supprimé',
+  ai_analysis_completed:  'Analyse IA terminée',
+  ai_analysis_failed:     'Analyse IA échouée',
   // Legacy action keys from PM feed
-  ProjectCreated:        'Projet créé',
-  StatusChanged:         'Statut modifié',
-  ManagerAssigned:       'Chef de projet assigné',
-  FieldUpdated:          'Champ mis à jour',
-  ValidationSubmitted:   'Validation soumise',
+  ProjectCreated:         'Projet créé',
+  StatusChanged:          'Statut modifié',
+  ManagerAssigned:        'Chef de projet assigné',
+  FieldUpdated:           'Champ mis à jour',
+  ValidationSubmitted:    'Validation soumise',
 }
 
 const ACTION_VERBS: Record<string, string> = {
-  created:              'a créé',
-  updated:              'a mis à jour',
-  status_changed:       'a modifié le statut de',
-  deleted:              'a supprimé',
-  validation_submitted: 'a soumis une validation pour',
-  ProjectCreated:        'a créé',
-  StatusChanged:         'a modifié le statut de',
-  ManagerAssigned:       'a assigné un chef de projet à',
-  FieldUpdated:          'a mis à jour un champ de',
-  ValidationSubmitted:   'a soumis une validation pour',
+  created:                'a créé',
+  updated:                'a mis à jour',
+  status_changed:         'a modifié le statut de',
+  deleted:                'a supprimé',
+  validation_submitted:   'a soumis une validation pour',
+  comment_added:          'a commenté',
+  comment_replied:        'a répondu dans',
+  comment_edited:         'a modifié un commentaire sur',
+  comment_deleted:        'a supprimé un commentaire sur',
+  ai_analysis_completed:  'a terminé l\'analyse IA sur',
+  ai_analysis_failed:     'a échoué à analyser',
+  ProjectCreated:         'a créé',
+  StatusChanged:          'a modifié le statut de',
+  ManagerAssigned:        'a assigné un chef de projet à',
+  FieldUpdated:           'a mis à jour un champ de',
+  ValidationSubmitted:    'a soumis une validation pour',
 }
 
 function actionLabel(action: string): string {
@@ -289,32 +301,44 @@ function actionVerb(action: string): string {
 
 function dotClass(action: string): string {
   const map: Record<string, string> = {
-    created:              'dot--created',
-    updated:              'dot--updated',
-    status_changed:       'dot--status',
-    deleted:              'dot--deleted',
-    validation_submitted: 'dot--validation',
-    ProjectCreated:        'dot--created',
-    StatusChanged:         'dot--status',
-    ManagerAssigned:       'dot--updated',
-    FieldUpdated:          'dot--updated',
-    ValidationSubmitted:   'dot--validation',
+    created:                'dot--created',
+    updated:                'dot--updated',
+    status_changed:         'dot--status',
+    deleted:                'dot--deleted',
+    validation_submitted:   'dot--validation',
+    comment_added:          'dot--updated',
+    comment_replied:        'dot--updated',
+    comment_edited:         'dot--updated',
+    comment_deleted:        'dot--deleted',
+    ai_analysis_completed:  'dot--created',
+    ai_analysis_failed:     'dot--deleted',
+    ProjectCreated:         'dot--created',
+    StatusChanged:          'dot--status',
+    ManagerAssigned:        'dot--updated',
+    FieldUpdated:           'dot--updated',
+    ValidationSubmitted:    'dot--validation',
   }
   return map[action] ?? 'dot--default'
 }
 
 function actionIcon(action: string): string {
   const map: Record<string, string> = {
-    created:              'pi pi-plus-circle',
-    updated:              'pi pi-pencil',
-    status_changed:       'pi pi-arrow-right',
-    deleted:              'pi pi-trash',
-    validation_submitted: 'pi pi-check-circle',
-    ProjectCreated:        'pi pi-plus-circle',
-    StatusChanged:         'pi pi-arrow-right',
-    ManagerAssigned:       'pi pi-user',
-    FieldUpdated:          'pi pi-pencil',
-    ValidationSubmitted:   'pi pi-check-circle',
+    created:                'pi pi-plus-circle',
+    updated:                'pi pi-pencil',
+    status_changed:         'pi pi-arrow-right',
+    deleted:                'pi pi-trash',
+    validation_submitted:   'pi pi-check-circle',
+    comment_added:          'pi pi-comment',
+    comment_replied:        'pi pi-comment',
+    comment_edited:         'pi pi-pencil',
+    comment_deleted:        'pi pi-trash',
+    ai_analysis_completed:  'pi pi-sparkles',
+    ai_analysis_failed:     'pi pi-exclamation-triangle',
+    ProjectCreated:         'pi pi-plus-circle',
+    StatusChanged:          'pi pi-arrow-right',
+    ManagerAssigned:        'pi pi-user',
+    FieldUpdated:           'pi pi-pencil',
+    ValidationSubmitted:    'pi pi-check-circle',
   }
   return map[action] ?? 'pi pi-info-circle'
 }

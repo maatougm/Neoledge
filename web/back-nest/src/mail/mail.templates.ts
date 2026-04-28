@@ -190,6 +190,29 @@ export function commentMentionEmail(
   return baseLayout(`Mention dans ${safeProjectName}`, body);
 }
 
+export function forgotPasswordEmail(firstName: string, resetUrl: string): string {
+  const safeName = escapeHtml(firstName);
+  const safeUrl = escapeHtml(resetUrl);
+  const body = `
+    ${heading('Réinitialisation de votre mot de passe')}
+    ${paragraph(`Bonjour <strong>${safeName}</strong>,`)}
+    ${paragraph('Vous avez demandé la réinitialisation de votre mot de passe NeoLeadge. Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe :')}
+    <div style="text-align:center;margin:24px 0;">
+      <a href="${safeUrl}" style="display:inline-block;background-color:${BRAND_COLOR};color:#ffffff;font-size:15px;font-weight:600;padding:12px 28px;border-radius:${BORDER_RADIUS};text-decoration:none;">
+        Réinitialiser mon mot de passe
+      </a>
+    </div>
+    ${paragraph('<span style="font-size:13px;color:#6b7280;">Ce lien est valable pendant <strong>1 heure</strong>. Après ce délai, vous devrez faire une nouvelle demande.</span>')}
+    ${divider()}
+    <div style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:${BORDER_RADIUS};padding:12px 16px;">
+      <p style="margin:0;font-size:13px;color:#92400e;">
+        ⚠️ Si vous n'avez pas demandé cette réinitialisation, ignorez cet email. Votre mot de passe ne sera pas modifié.
+      </p>
+    </div>
+  `;
+  return baseLayout('Réinitialisation de votre mot de passe NeoLeadge', body);
+}
+
 export function passwordResetEmail(tempPassword: string): string {
   const safeTempPassword = escapeHtml(tempPassword);
   const body = `

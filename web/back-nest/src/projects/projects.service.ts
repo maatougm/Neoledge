@@ -789,13 +789,6 @@ export class ProjectsService {
       `${resolvedRole} — phase ${validation.phase}${validation.comment ? ` : ${validation.comment.slice(0, 120)}` : ''}`,
     ).catch((e) => this.logger.warn(`activity log failed: ${e instanceof Error ? e.message : e}`));
 
-    // If the SpecificationTeam approves, hand the package over to DeploymentTeam.
-    if (resolvedRole === 'SpecificationTeam' && dto.isApproved === true) {
-      void this.notifyDeploymentOnApproval(projectId, project.name).catch((e) =>
-        this.logger.warn(`DeploymentTeam notification failed: ${e instanceof Error ? e.message : String(e)}`),
-      );
-    }
-
     // Notify the PM whenever the SpecificationTeam submits a review (approve OR reject),
     // so the PM can either kick off the backlog (approved) or correct the cahier (rejected).
     if (resolvedRole === 'SpecificationTeam' && project.projectManagerId) {
@@ -820,32 +813,6 @@ export class ProjectsService {
       comment: validation.comment,
       validatedAt: validation.validatedAt,
     });
-  }
-
-  /** Notify all DeploymentTeam users that a cahier has been approved and is ready to deploy. */
-  private async notifyDeploymentOnApproval(projectId: string, projectName: string): Promise<void> {
-    const deployers = await this.prisma.appUser.findMany({
-      where: { role: 'DeploymentTeam', isActive: true },
-      select: { id: true },
-    });
-    if (deployers.length === 0) return;
-    const { randomUUID } = await import('crypto');
-    await this.prisma.notification.createMany({
-      data: deployers.map((u) => ({
-        id: randomUUID(),
-        userId: u.id,
-        type: 'cahier_approved',
-        reason: 'cahier_approved',
-        title: 'Cahier des charges approuvé — à déployer',
-        message: `Le cahier de « ${projectName} » a été approuvé par l'équipe de spécification. Questionnaire, transcriptions et cahier consultables.`,
-        projectId,
-        entityType: 'Project',
-        entityId: projectId,
-        link: `/app/pm/projects/${projectId}`,
-        isRead: false,
-      })),
-    });
-    this.logger.log(`Notified ${deployers.length} DeploymentTeam user(s) about approval for project ${projectId}`);
   }
 
   /**

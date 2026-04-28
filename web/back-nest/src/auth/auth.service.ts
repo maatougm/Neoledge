@@ -1,10 +1,13 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TotpService } from './totp.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { MailService } from '../mail/mail.service.js';
+import { forgotPasswordEmail } from '../mail/mail.templates.js';
 import { getJwtSecret } from './jwt-secret.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -33,6 +36,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly totpService: TotpService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   async login(email: string, password: string): Promise<LoginResult> {
@@ -149,7 +153,7 @@ export class AuthService {
     const user = await this.prisma.appUser.findUnique({ where: { id: userId } });
 
     if (!user || !user.totpSecret) {
-      throw new UnauthorizedException('Aucun secret 2FA en attente. Veuillez d\'abord lancer la configuration.');
+      throw new UnauthorizedException(this.authFailureMessage('Aucun secret 2FA en attente. Veuillez d\'abord lancer la configuration.'));
     }
 
     const isValid = await this.totpService.verify(code, user.totpSecret);
@@ -159,7 +163,7 @@ export class AuthService {
         where: { id: userId },
         data: { failedLoginAttempts: { increment: 1 } },
       });
-      throw new UnauthorizedException('Code TOTP invalide.');
+      throw new UnauthorizedException(this.authFailureMessage('Code TOTP invalide.'));
     }
 
     await this.prisma.appUser.update({
@@ -174,19 +178,46 @@ export class AuthService {
 
   async disableTotp(userId: string, code: string): Promise<void> {
     const user = await this.prisma.appUser.findUnique({ where: { id: userId } });
-
-    if (!user || !user.totpSecret || !user.totpEnabled) {
-      throw new UnauthorizedException('La 2FA n\'est pas activée pour ce compte.');
+    if (!user) {
+      throw new UnauthorizedException(this.authFailureMessage('Utilisateur introuvable.'));
     }
 
-    const isValid = await this.totpService.verify(code, user.totpSecret);
+    // No secret at all → already disabled. Return idempotently so the UI
+    // doesn't get stuck when the client state is ahead of the server state.
+    if (!user.totpSecret) {
+      if (user.totpEnabled || user.totpVerifiedAt) {
+        await this.prisma.appUser.update({
+          where: { id: userId },
+          data: { totpEnabled: false, totpVerifiedAt: null },
+        });
+      }
+      return;
+    }
 
+    // If 2FA setup started but never enabled (totpEnabled=false, secret present),
+    // we still let the user clear the orphan secret WITHOUT a code — it's a
+    // stuck state, not an active protection.
+    if (!user.totpEnabled) {
+      await this.prisma.appUser.update({
+        where: { id: userId },
+        data: {
+          totpEnabled: false,
+          totpSecret: null,
+          totpVerifiedAt: null,
+          failedLoginAttempts: 0,
+        },
+      });
+      return;
+    }
+
+    // Actively-enabled 2FA → require a valid current code
+    const isValid = await this.totpService.verify(code, user.totpSecret);
     if (!isValid) {
       await this.prisma.appUser.update({
         where: { id: userId },
         data: { failedLoginAttempts: { increment: 1 } },
       });
-      throw new UnauthorizedException('Code TOTP invalide.');
+      throw new UnauthorizedException(this.authFailureMessage('Code TOTP invalide.'));
     }
 
     await this.prisma.appUser.update({
@@ -223,7 +254,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException(this.authFailureMessage('User not found'));
     }
 
     // When a user is required to change their password (freshly-seeded or
@@ -237,8 +268,14 @@ export class AuthService {
         user.passwordHash,
       );
       if (!isCurrentValid) {
-        throw new UnauthorizedException('Current password is incorrect');
+        throw new UnauthorizedException(this.authFailureMessage('Current password is incorrect'));
       }
+    }
+
+    // Reject re-using the current password as the new one. Runs BEFORE the
+    // expensive bcrypt.genSalt/hash path so the cheap check fails fast.
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('New password must differ from current password');
     }
 
     const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
@@ -248,6 +285,59 @@ export class AuthService {
       where: { id: userId },
       data: {
         passwordHash: newHash,
+        mustChangePassword: false,
+        tokenVersion: { increment: 1 },
+      },
+    });
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.appUser.findUnique({ where: { email } });
+
+    // Always return success to avoid leaking whether the email exists.
+    if (!user || !user.isActive) return;
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.appUser.update({
+      where: { id: user.id },
+      data: { passwordResetToken: tokenHash, passwordResetTokenExpiry: expiry },
+    });
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+
+    void this.mail
+      .send(user.email, 'Réinitialisation de votre mot de passe NeoLeadge', forgotPasswordEmail(user.firstName, resetUrl))
+      .catch((e) => this.logger.error('forgotPassword email failed', e));
+  }
+
+  async resetPasswordByToken(rawToken: string, newPassword: string): Promise<void> {
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await this.prisma.appUser.findFirst({
+      where: {
+        passwordResetToken: tokenHash,
+        passwordResetTokenExpiry: { gt: new Date() },
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(this.authFailureMessage('Lien de réinitialisation invalide ou expiré.'));
+    }
+
+    const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
+    const newHash = await bcrypt.hash(newPassword, salt);
+
+    await this.prisma.appUser.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        passwordResetToken: null,
+        passwordResetTokenExpiry: null,
         mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },

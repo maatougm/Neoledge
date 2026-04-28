@@ -152,7 +152,6 @@ export class CahierDesChargesService {
       .catch((e) => this.logger.warn(`activity log failed: ${e instanceof Error ? e.message : e}`))
 
     // Notify SpecificationTeam (the approvers) that a cahier is ready to review.
-    // We also include Member + DeploymentTeam since they validate downstream phases.
     // Only fire notifications on the FIRST save (aiOutput was null) OR on regenerations
     // so reviewers always know fresh content is available.
     void this.notifyReviewTeams(project.id, project.name).catch((e) =>
@@ -186,39 +185,6 @@ export class CahierDesChargesService {
     }))
     await this.prisma.notification.createMany({ data: rows })
     this.logger.log(`Notified ${reviewers.length} SpecificationTeam user(s) about cahier for project ${projectId}`)
-  }
-
-  /**
-   * When the SpecificationTeam APPROVES the cahier, hand the full package over to
-   * the DeploymentTeam (questionnaire + transcripts + approved cahier). They get
-   * one notification per active DeploymentTeam user.
-   */
-  async notifyDeploymentOnApproval(projectId: string): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { name: true },
-    })
-    const deployers = await this.prisma.appUser.findMany({
-      where: { role: 'DeploymentTeam', isActive: true },
-      select: { id: true },
-    })
-    if (deployers.length === 0 || !project) return
-
-    const rows = deployers.map((u) => ({
-      id: crypto.randomUUID(),
-      userId: u.id,
-      type: 'cahier_approved',
-      reason: 'cahier_approved',
-      title: 'Cahier des charges approuvé — à déployer',
-      message: `Le cahier de « ${project.name} » a été approuvé par l'équipe de spécification. Questionnaire, transcriptions et cahier consultables.`,
-      projectId,
-      entityType: 'Project',
-      entityId: projectId,
-      link: `/app/pm/projects/${projectId}`,
-      isRead: false,
-    }))
-    await this.prisma.notification.createMany({ data: rows })
-    this.logger.log(`Notified ${deployers.length} DeploymentTeam user(s) about approval for project ${projectId}`)
   }
 
   /** Retrieve the previously saved cahier JSON — or null if none. */

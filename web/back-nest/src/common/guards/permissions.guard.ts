@@ -32,7 +32,7 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const req = context.switchToHttp().getRequest<{
-      user?: { userId?: string };
+      user?: { userId?: string; role?: string };
       params?: Record<string, string>;
     }>();
 
@@ -40,6 +40,9 @@ export class PermissionsGuard implements CanActivate {
     if (!userId) {
       throw new ForbiddenException('Not authenticated');
     }
+
+    // Admins have all permissions — bypass the DB lookup entirely.
+    if (req.user?.role === 'Admin') return true;
 
     const projectId = meta.projectParam ? req.params?.[meta.projectParam] : undefined;
 

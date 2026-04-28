@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
+import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
+import type { AiAnalysisResult } from './ai.types.js'
 
 /** Strip API keys and auth tokens from error messages before persisting. */
 function sanitizeAiError(message: string): string {
@@ -22,6 +24,7 @@ export class AiService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerFactory: AiProviderFactory,
+    private readonly zaiFallback: ZaiFallbackProvider,
   ) {}
 
   /** On startup, mark any rows stuck in processing as failed. */
@@ -69,9 +72,19 @@ export class AiService implements OnModuleInit {
 
       const uniqueSpeakers = [...new Set(transcript.segments.map((s) => s.speaker))]
 
-      // 3. Call AI provider
+      // 3. Call AI provider — on error, fall back to Z.AI if configured
       const provider = this.providerFactory.getProvider()
-      const result = await provider.analyze(fullText, uniqueSpeakers)
+      let result: AiAnalysisResult
+      let modelUsed = provider.modelName
+      try {
+        result = await provider.analyze(fullText, uniqueSpeakers)
+      } catch (primaryErr: unknown) {
+        if (!this.zaiFallback.isConfigured()) throw primaryErr
+        const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
+        this.logger.warn(`Primary provider (${provider.modelName}) failed: ${msg.slice(0, 200)} — falling back to Z.AI`)
+        result = await this.zaiFallback.analyze(fullText, uniqueSpeakers)
+        modelUsed = `${this.zaiFallback.modelName} (fallback)`
+      }
 
       // 4. Persist results in a transaction
       await this.prisma.$transaction(async (tx) => {
@@ -86,7 +99,7 @@ export class AiService implements OnModuleInit {
             aiSummary: result.summary,
             aiStatus: 'completed',
             aiProcessedAt: new Date(),
-            aiModel: provider.modelName,
+            aiModel: modelUsed,
             aiError: null,
           },
         })
@@ -117,10 +130,27 @@ export class AiService implements OnModuleInit {
         }
       })
 
-      this.logger.log(`AI analysis completed for transcript ${transcriptId} (model: ${provider.modelName})`)
+      this.logger.log(`AI analysis completed for transcript ${transcriptId} (model: ${modelUsed})`)
+
+      // Log to global activity feed so admin/activity page reflects AI completions.
+      void this.prisma.projectActivity
+        .create({
+          data: {
+            projectId: transcript.projectId,
+            userId: null,
+            action: 'ai_analysis_completed',
+            detail: `Analyse IA terminée (${modelUsed}) — ${result.actionItems.length} action(s), ${result.decisions.length} décision(s)`,
+          },
+        })
+        .catch(() => { /* non-fatal */ })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
       this.logger.error(`AI analysis failed for transcript ${transcriptId}: ${message}`)
+
+      const transcript = await this.prisma.meetingTranscript.findUnique({
+        where: { id: transcriptId },
+        select: { projectId: true },
+      })
 
       await this.prisma.meetingTranscript.update({
         where: { id: transcriptId },
@@ -129,6 +159,20 @@ export class AiService implements OnModuleInit {
           aiError: sanitizeAiError(message),
         },
       })
+
+      // Log failure so the activity feed shows it too.
+      if (transcript) {
+        void this.prisma.projectActivity
+          .create({
+            data: {
+              projectId: transcript.projectId,
+              userId: null,
+              action: 'ai_analysis_failed',
+              detail: sanitizeAiError(message),
+            },
+          })
+          .catch(() => { /* non-fatal */ })
+      }
     }
   }
 }

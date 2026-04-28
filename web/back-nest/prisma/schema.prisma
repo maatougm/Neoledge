@@ -12,7 +12,7 @@ datasource db {
 // MySQL enum-column ALTER TABLE rewrites on every value addition. Application
 // code validates values at the DTO / service layer.
 //
-// UserRole:           Admin | ProjectManager | SpecificationTeam | Member | DeploymentTeam
+// UserRole:           Admin | ProjectManager | SpecificationTeam | Member
 //
 // ProjectStatus — 8 canonical RACI phases + 2 technical states:
 //   Technical:  Draft | Archived
@@ -90,7 +90,6 @@ model AppUser {
   hourlyRates        HourlyRate[]         @relation("HourlyRateUser")
   wikiPages          WikiPage[]           @relation("WikiPageAuthor")
   wikiRevisions      WikiRevision[]       @relation("WikiRevisionAuthor")
-  portfolios         Portfolio[]          @relation("PortfolioCreator")
   agendaItems        MeetingAgendaItem[]  @relation("AgendaResponsible")
   meetingAttendances MeetingAttendee[]    @relation("MeetingAttendeeUser")
   meetingOutcomes    MeetingOutcome[]     @relation("OutcomeOwner")
@@ -208,7 +207,6 @@ model Project {
   milestones     Milestone[]
   ganttBaselines GanttBaseline[]
   wikiPages       WikiPage[]
-  portfolioLinks  PortfolioProject[]
   roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   handovers       Handover[]
   cahierFeedback  CahierFeedback[]
@@ -933,34 +931,6 @@ model WikiRevision {
   @@map("WikiRevisions")
 }
 
-model Portfolio {
-  id          String   @id @default(uuid())
-  name        String   @db.VarChar(200)
-  description String?  @db.Text
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  createdBy AppUser            @relation("PortfolioCreator", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  projects  PortfolioProject[]
-
-  @@map("Portfolios")
-}
-
-model PortfolioProject {
-  id          String   @id @default(uuid())
-  portfolioId String
-  projectId   String
-  position    Int      @default(0)
-  createdAt   DateTime @default(now())
-
-  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([portfolioId, projectId])
-  @@index([portfolioId, position])
-  @@map("PortfolioProjects")
-}
 
 model MeetingAgendaItem {
   id            String   @id @default(uuid())

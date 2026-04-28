@@ -106,7 +106,7 @@ export class MeetingsService {
       if (!response.ok) {
         const text = await response.text()
         this.logger.error(`Transcription service error: ${response.status} ${text}`)
-        return Result.fail<any>(`Erreur de transcription : ${text}`)
+        return Result.fail<any>('Service de transcription indisponible. Veuillez réessayer ultérieurement.')
       }
 
       const rawJson: unknown = await response.json()
@@ -156,7 +156,7 @@ export class MeetingsService {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
       this.logger.error(`Transcription failed: ${message}`)
-      return Result.fail<any>(`Erreur de transcription : ${message}`)
+      return Result.fail<any>('Service de transcription indisponible. Veuillez réessayer ultérieurement.')
     }
   }
 

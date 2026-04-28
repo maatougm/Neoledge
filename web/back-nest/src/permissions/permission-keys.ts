@@ -79,10 +79,6 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   { key: 'time.view_all', resource: 'time', description: 'View all time entries' },
   { key: 'time.admin', resource: 'time', description: 'Lock timesheets, manage rates' },
 
-  // portfolio
-  { key: 'portfolio.view', resource: 'portfolio', description: 'View portfolios' },
-  { key: 'portfolio.manage', resource: 'portfolio', description: 'Manage portfolios' },
-
   // team planner
   { key: 'team_planner.view', resource: 'team_planner', description: 'View team planner' },
   { key: 'team_planner.edit', resource: 'team_planner', description: 'Reassign work on planner' },
@@ -145,7 +141,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'budget.edit',
     'time.log',
     'time.view_all',
-    'portfolio.view',
     'team_planner.view',
     'team_planner.edit',
     'meeting.view',
@@ -184,20 +179,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'wiki.view',
     'wiki.edit',
     'meeting.view',
-    'time.log',
-    'attachment.upload',
-  ],
-
-  DeploymentTeam: [
-    'project.view',
-    'project.validate',
-    'wp.view',
-    'wp.edit',
-    'wp.comment',
-    'gantt.view',
-    'wiki.view',
-    'meeting.view',
-    'meeting.upload',
     'time.log',
     'attachment.upload',
   ],

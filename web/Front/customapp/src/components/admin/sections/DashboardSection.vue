@@ -330,7 +330,11 @@ const todayLabel = computed(() =>
   flex-direction: column;
   gap: 1.5rem;
   font-family: var(--nl-font);
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
+.dash > * { min-width: 0; }
 
 /* ── Heading ─────────────────────────────────────────────────────────────────── */
 .dash-heading {
@@ -513,7 +517,7 @@ const todayLabel = computed(() =>
 /* ── Pipeline ────────────────────────────────────────────────────────────────── */
 .pipeline {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
   align-items: end;
 }
@@ -622,6 +626,12 @@ const todayLabel = computed(() =>
   display: grid;
   grid-template-columns: 1fr 280px;
   gap: 1rem;
+}
+
+@media (max-width: 1280px) {
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Deadline list ───────────────────────────────────────────────────────────── */

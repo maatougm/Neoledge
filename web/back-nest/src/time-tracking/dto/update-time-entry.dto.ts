@@ -26,6 +26,6 @@ export class UpdateTimeEntryDto {
   isBillable?: boolean;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   workPackageId?: string | null;
 }

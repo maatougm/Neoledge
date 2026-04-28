@@ -9,11 +9,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
-import { TotpCodeDto, TotpLoginDto } from './dto/totp-enable.dto.js';
+import { TotpCodeDto, TotpLoginDto, DisableTotpDto } from './dto/totp-enable.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -25,7 +26,6 @@ export class AuthController {
   // ── Standard Login ──────────────────────────────────────────────────────────
 
   @Post('auth/login')
-  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate user — returns JWT or TOTP challenge' })
   @ApiResponse({ status: 200, description: 'Login successful or TOTP required' })
@@ -44,7 +44,6 @@ export class AuthController {
   // ── TOTP Login (step 2) ─────────────────────────────────────────────────────
 
   @Post('auth/login/totp')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete TOTP challenge after step-1 login' })
   @ApiResponse({ status: 200, description: 'TOTP verified — full JWT returned' })
@@ -116,7 +115,6 @@ export class AuthController {
   }
 
   @Post('auth/2fa/enable')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -132,7 +130,6 @@ export class AuthController {
   }
 
   @Post('auth/2fa/disable')
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -141,10 +138,31 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid TOTP code' })
   async disableTotp(
     @CurrentUser() user: { userId: string },
-    @Body() dto: TotpCodeDto,
+    @Body() dto: DisableTotpDto,
   ) {
-    await this.authService.disableTotp(user.userId, dto.code);
+    await this.authService.disableTotp(user.userId, dto.code ?? '');
     return { message: '2FA désactivée avec succès.' };
+  }
+
+  // ── Forgot / Reset Password ─────────────────────────────────────────────────
+
+  @Post('auth/forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a password reset link by email' })
+  @ApiResponse({ status: 200, description: 'Reset link sent if account exists' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.forgotPassword(dto.email);
+    return { message: 'Si un compte correspond à cet email, un lien de réinitialisation a été envoyé.' };
+  }
+
+  @Post('auth/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using the emailed token' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async resetPasswordByToken(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPasswordByToken(dto.token, dto.newPassword);
+    return { message: 'Mot de passe réinitialisé avec succès.' };
   }
 
   /** No-op logout endpoint — JWT is stateless; client already cleared the token. */

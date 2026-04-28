@@ -30,7 +30,6 @@ const colorClass = computed(() => {
     ProjectManager:    'role-tag--pm',
     SpecificationTeam: 'role-tag--team',
     Member:            'role-tag--team',
-    DeploymentTeam:    'role-tag--team',
   }
   return map[props.role] ?? 'role-tag--unknown'
 })

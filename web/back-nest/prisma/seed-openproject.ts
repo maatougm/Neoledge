@@ -1,7 +1,7 @@
 /**
  * @file prisma/seed-openproject.ts
  * @desc Seeds coherent demo data across the new OpenProject-parity tables:
- *       Work Packages, Sprints, Milestones, Budget, Time, Wiki, Portfolio,
+ *       Work Packages, Sprints, Milestones, Budget, Time, Wiki,
  *       Meeting extras. Idempotent — safe to re-run.
  *
  * Usage: cd web/back-nest && npx tsx prisma/seed-openproject.ts
@@ -44,7 +44,7 @@ async function main() {
   const admin = users.find((u) => u.role === 'Admin');
   const pms = users.filter((u) => u.role === 'ProjectManager');
   const team = users.filter((u) =>
-    ['SpecificationTeam', 'Member', 'DeploymentTeam'].includes(u.role),
+    ['SpecificationTeam', 'Member'].includes(u.role),
   );
   if (!admin) throw new Error('No Admin user found.');
 
@@ -57,7 +57,6 @@ async function main() {
     ProjectManager: 95,
     SpecificationTeam: 75,
     Member: 70,
-    DeploymentTeam: 65,
   };
   for (const u of users) {
     const exists = await prisma.hourlyRate.findFirst({
@@ -457,27 +456,6 @@ async function main() {
           ],
         });
       }
-    }
-  }
-
-  // ── 3. Portfolio (single "Projets stratégiques 2026") ───────────────────
-  console.log('3. Portfolio…');
-  let portfolio = await prisma.portfolio.findFirst({ where: { name: 'Projets stratégiques 2026' } });
-  if (!portfolio) {
-    portfolio = await prisma.portfolio.create({
-      data: {
-        name: 'Projets stratégiques 2026',
-        description: 'Portefeuille consolidé des projets clés de l\'année.',
-        createdById: admin.id,
-      },
-    });
-  }
-  for (const [i, p] of projects.entries()) {
-    const exists = await prisma.portfolioProject.findFirst({ where: { portfolioId: portfolio.id, projectId: p.id } });
-    if (!exists) {
-      await prisma.portfolioProject.create({
-        data: { portfolioId: portfolio.id, projectId: p.id, position: i },
-      });
     }
   }
 

@@ -89,6 +89,105 @@ export class PmController {
     return (result.value as { items: unknown[] }).items;
   }
 
+  /** Users available to be assigned as team responsibles (SpecificationTeam + Member). */
+  @Get('projects/:id/assignable-users')
+  @ProjectAccess('id')
+  async getAssignableUsers() {
+    const users = await this.prisma.appUser.findMany({
+      where: {
+        isActive: true,
+        role: { in: ['SpecificationTeam', 'Member', 'ProjectManager', 'Admin'] },
+      },
+      select: { id: true, firstName: true, lastName: true, role: true },
+      orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
+    });
+    return users;
+  }
+
+  /** Current team responsibility assignments for a project. */
+  @Get('projects/:id/responsibilities')
+  @ProjectAccess('id')
+  async getResponsibilities(@Param('id') projectId: string) {
+    return this.loadResponsibilities(projectId);
+  }
+
+  /** Save team responsibility assignments (validationResponsibleId, deploymentResponsibleId). */
+  @Patch('projects/:id/responsibilities')
+  @ProjectAccess('id')
+  async saveResponsibilities(
+    @Param('id') projectId: string,
+    @Body() body: { validationResponsibleId?: string | null; deploymentResponsibleId?: string | null },
+  ) {
+    await this.upsertResponsibility(projectId, 'Responsable validation',  body.validationResponsibleId ?? null);
+    await this.upsertResponsibility(projectId, 'Responsable déploiement', body.deploymentResponsibleId ?? null);
+    return this.loadResponsibilities(projectId);
+  }
+
+  private async upsertResponsibility(projectId: string, label: string, userId: string | null): Promise<void> {
+    // Ensure the system ProjectField exists (identified by label + fieldCategory='System')
+    let field = await this.prisma.projectField.findFirst({
+      where: { projectId, label, fieldCategory: 'System' },
+    });
+    if (!field) {
+      field = await this.prisma.projectField.create({
+        data: {
+          projectId,
+          label,
+          fieldType: 'Text',
+          isRequired: false,
+          orderIndex: 9999,
+          fieldCategory: 'System',
+        },
+      });
+    }
+    // Upsert the value
+    await this.prisma.projectFieldValue.upsert({
+      where: { projectId_projectFieldId: { projectId, projectFieldId: field.id } },
+      create: { projectId, projectFieldId: field.id, value: userId ?? '' },
+      update: { value: userId ?? '', updatedAt: new Date() },
+    });
+  }
+
+  private async loadResponsibilities(projectId: string): Promise<{
+    validationResponsibleId: string | null;
+    deploymentResponsibleId: string | null;
+    validationResponsible: { id: string; firstName: string; lastName: string } | null;
+    deploymentResponsible: { id: string; firstName: string; lastName: string } | null;
+  }> {
+    const LABEL_VAL = 'Responsable validation';
+    const LABEL_DEP = 'Responsable déploiement';
+
+    const fields = await this.prisma.projectField.findMany({
+      where: { projectId, label: { in: [LABEL_VAL, LABEL_DEP] }, fieldCategory: 'System' },
+      include: { values: { where: { projectId } } },
+    });
+
+    const getVal = (lbl: string): string | null => {
+      const f = fields.find((x) => x.label === lbl);
+      return f?.values[0]?.value || null;
+    };
+
+    const valId = getVal(LABEL_VAL);
+    const depId = getVal(LABEL_DEP);
+
+    const userIds = [valId, depId].filter(Boolean) as string[];
+    const users = userIds.length
+      ? await this.prisma.appUser.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+
+    const find = (id: string | null) => users.find((u) => u.id === id) ?? null;
+
+    return {
+      validationResponsibleId: valId,
+      deploymentResponsibleId: depId,
+      validationResponsible: find(valId),
+      deploymentResponsible: find(depId),
+    };
+  }
+
   @Post('projects/:id/validations')
   @ProjectAccess('id')
   async submitValidation(

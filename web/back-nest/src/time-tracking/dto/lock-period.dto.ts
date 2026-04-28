@@ -8,6 +8,6 @@ export class LockPeriodDto {
   to!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('all')
   userId?: string;
 }
