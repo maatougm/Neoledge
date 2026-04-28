@@ -33,9 +33,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
-        entryFileNames: `assets/[name].js`,
-        chunkFileNames: `assets/[name].js`,
-        assetFileNames: `assets/[name].[ext]`,
+        // Content-hashed filenames = cache-bust on every change.
+        // Without [hash] the browser caches stale chunks and fails with
+        // cross-bundle import mismatches (e.g. _plugin-vue_export-helper
+        // receiving a primitive instead of an SFC object).
+        entryFileNames: `assets/[name]-[hash].js`,
+        chunkFileNames: `assets/[name]-[hash].js`,
+        assetFileNames: `assets/[name]-[hash].[ext]`,
         manualChunks(id: string) {
           if (!id.includes('node_modules')) return
           if (id.includes('chart.js')) return 'chart'
