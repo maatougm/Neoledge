@@ -24,7 +24,13 @@ export const useConfigStore = defineStore('config', () => {
       import.meta.env.BASE_URL + 'config.json?_=' + Date.now(),
     )
 
-    apiUrl.value = (data.GLB_API_URL as string).replace(/\/+$/, '')
+    // Fall back to the current origin when GLB_API_URL is empty — prod
+    // serves backend + frontend behind the same domain (Caddy + nginx),
+    // so window.location.origin is the correct base for both axios calls
+    // and Socket.IO. Without this fallback, useNotificationSocket() never
+    // calls connect() because configStore.apiUrl stays falsy.
+    const raw = (data.GLB_API_URL as string) || ''
+    apiUrl.value = (raw || window.location.origin).replace(/\/+$/, '')
     eliseUrl.value = data.GLB_ELISE_URL ?? ''
   }
 
