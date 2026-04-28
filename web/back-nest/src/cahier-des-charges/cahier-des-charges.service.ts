@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
@@ -259,6 +259,35 @@ export class CahierDesChargesService {
     this.logger.log(`Cahier feedback saved: ${status} for project ${projectId}`)
   }
 
+  /**
+   * Refuse to generate when fields marked `isBacklogDriver=true` have no
+   * answer. Returns 412 Precondition Failed with the missing field labels
+   * so the UI can surface a clear "fill these first" error.
+   */
+  private async assertDriverFieldsFilled(projectId: string): Promise<void> {
+    const drivers = await this.prisma.projectField.findMany({
+      where: { projectId, isBacklogDriver: true },
+      select: { id: true, label: true, values: { select: { value: true } } },
+    })
+    if (drivers.length === 0) return
+    const missing = drivers
+      .filter((f) => {
+        const v = f.values[0]?.value
+        return !v || v.trim() === ''
+      })
+      .map((f) => f.label)
+    if (missing.length > 0) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.PRECONDITION_FAILED,
+          message: 'Champs IA obligatoires non renseignés. Remplissez le questionnaire avant de générer.',
+          missingFields: missing,
+        },
+        HttpStatus.PRECONDITION_FAILED,
+      )
+    }
+  }
+
   // ─── 2. Build AI prompt ────────────────────────────────────────────────────
 
   /**
@@ -346,6 +375,11 @@ export class CahierDesChargesService {
     projectId?: string,
   ): Promise<CahierAiResult> {
     const provider = this.config.get<string>('AI_PROVIDER', 'openai').toLowerCase()
+
+    // Driver-fields gate — block if any field marked "alimente l'IA" has no answer.
+    if (projectId) {
+      await this.assertDriverFieldsFilled(projectId)
+    }
 
     // Fetch past feedback to inject into prompt (AI learning)
     let pastFeedback: string[] = []

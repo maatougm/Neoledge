@@ -67,17 +67,36 @@
             <NeoButton label="Ajouter un champ" icon="pi pi-plus" outlined size="small" @click="addRow" />
           </div>
           <div v-for="(row, idx) in form.fields" :key="row.uid" class="field-row">
-            <NeoInputText v-model="row.label" placeholder="Libellé" class="flex-2" />
-            <NeoSelect
-              v-model="row.fieldType"
-              :options="fieldTypeOptions"
-              optionLabel="label"
-              optionValue="value"
-              style="min-width:120px"
-            />
-            <button class="remove-row-btn" title="Supprimer" @click="removeRow(idx)">
-              <i class="pi pi-times" />
-            </button>
+            <div class="field-row__main">
+              <NeoInputText v-model="row.label" placeholder="Libellé" class="flex-2" />
+              <NeoSelect
+                v-model="row.fieldType"
+                :options="fieldTypeOptions"
+                optionLabel="label"
+                optionValue="value"
+                style="min-width:120px"
+              />
+              <button class="remove-row-btn" title="Supprimer" @click="removeRow(idx)">
+                <i class="pi pi-times" />
+              </button>
+            </div>
+            <div class="field-row__flags">
+              <label class="field-flag">
+                <input v-model="row.isRequired" type="checkbox" />
+                <span>Obligatoire</span>
+              </label>
+              <label class="field-flag" title="Cet champ alimente la génération IA du cahier des charges et du backlog. Sans réponse, l'IA bloque la génération.">
+                <input v-model="row.isBacklogDriver" type="checkbox" />
+                <span>Alimente l'IA <i class="pi pi-sparkles" style="color:var(--nl-accent)" /></span>
+              </label>
+              <NeoInputText
+                v-if="row.isBacklogDriver"
+                v-model="row.backlogHint"
+                placeholder="Indication pour l'IA (optionnel)"
+                :maxlength="500"
+                style="flex:1; min-width:0;"
+              />
+            </div>
           </div>
           <div v-if="form.fields.length === 0" class="no-fields">Aucun champ ajouté.</div>
         </div>
@@ -147,7 +166,14 @@ const fieldTypeOptions = [
   { value: 'Checkbox', label: 'Case à cocher' },
 ]
 
-interface FieldRow { uid: string; label: string; fieldType: string; isRequired: boolean }
+interface FieldRow {
+  uid: string
+  label: string
+  fieldType: string
+  isRequired: boolean
+  isBacklogDriver: boolean
+  backlogHint: string
+}
 const emptyForm = (): { name: string; description: string; fields: FieldRow[] } => ({
   name: '', description: '', fields: [],
 })
@@ -166,7 +192,14 @@ onMounted(() => {
 })
 
 function addRow() {
-  form.fields.push({ uid: crypto.randomUUID(), label: '', fieldType: 'Text', isRequired: false })
+  form.fields.push({
+    uid: crypto.randomUUID(),
+    label: '',
+    fieldType: 'Text',
+    isRequired: false,
+    isBacklogDriver: false,
+    backlogHint: '',
+  })
 }
 
 function removeRow(idx: number) {
@@ -191,6 +224,8 @@ async function handleCreate() {
         isRequired: f.isRequired,
         displayOrder: i,
         options: null,
+        isBacklogDriver: f.isBacklogDriver,
+        backlogHint: f.backlogHint.trim() || null,
       })),
     })
     if (result) {
@@ -284,10 +319,20 @@ async function handleApply() {
 .fields-block-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); }
 
 .field-row {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.6rem 1rem; border-bottom: 1px solid var(--nl-surface-2); flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  padding: 0.6rem 1rem; border-bottom: 1px solid var(--nl-surface-2);
 }
 .field-row:last-child { border-bottom: none; }
+.field-row__main { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.field-row__flags {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding-left: 0.25rem;
+}
+.field-flag {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: 0.8125rem; color: var(--nl-text-2); cursor: pointer;
+}
+.field-flag input[type="checkbox"] { margin: 0; }
 .flex-2 { flex: 2; min-width: 120px; }
 
 .remove-row-btn {

@@ -51,6 +51,11 @@ export class BacklogService {
     });
     if (!project) throw new NotFoundException('Projet non trouvé');
 
+    // Driver-fields gate — refuse to call the AI if any field marked
+    // "alimente l'IA" has no answer. The PM gets a clear list of what's
+    // missing instead of a degraded AI output.
+    await this.assertDriverFieldsFilled(projectId);
+
     const context = await this.buildContext(projectId, project.name, project.aiOutput);
     if (context.length < 40) {
       // Not enough signal — return empty rather than burning an AI call.
@@ -94,6 +99,35 @@ export class BacklogService {
     });
     this.logger.log(`accepted backlog for project ${projectId}: ${created} WP(s) created`);
     return { created };
+  }
+
+  /**
+   * Refuse to call the AI when fields marked `isBacklogDriver=true` have no
+   * answer. Returns 412 Precondition Failed with the missing field labels so
+   * the UI can ask the PM to fill them first.
+   */
+  private async assertDriverFieldsFilled(projectId: string): Promise<void> {
+    const drivers = await this.prisma.projectField.findMany({
+      where: { projectId, isBacklogDriver: true },
+      select: { id: true, label: true, values: { select: { value: true } } },
+    });
+    if (drivers.length === 0) return; // no drivers configured → nothing to enforce
+    const missing = drivers
+      .filter((f) => {
+        const v = f.values[0]?.value;
+        return !v || v.trim() === '';
+      })
+      .map((f) => f.label);
+    if (missing.length > 0) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.PRECONDITION_FAILED,
+          message: 'Champs IA obligatoires non renseignés. Remplissez le questionnaire avant de générer.',
+          missingFields: missing,
+        },
+        HttpStatus.PRECONDITION_FAILED,
+      );
+    }
   }
 
   private toWpCreate(

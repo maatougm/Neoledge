@@ -6,6 +6,22 @@
       <i class="pi pi-spin pi-cog" /> Génération en cours…
     </div>
 
+    <div v-else-if="missingFields.length > 0" class="ai-bk__missing">
+      <NeoMessage
+        severity="error"
+        text="Champs IA obligatoires non renseignés. Remplissez le questionnaire avant de relancer la génération."
+      />
+      <ul class="ai-bk__missing-list">
+        <li v-for="(field, i) in missingFields" :key="i">
+          <i class="pi pi-times-circle" /> {{ field }}
+        </li>
+      </ul>
+      <p class="ai-bk__missing-hint">
+        Ces champs sont marqués <strong>« Alimente l'IA »</strong> dans le template du projet —
+        l'IA ne peut pas produire un cahier ni un backlog cohérents sans leurs réponses.
+      </p>
+    </div>
+
     <NeoMessage
       v-else-if="!loading && proposed.epics.length === 0"
       severity="warn"
@@ -94,6 +110,7 @@ const toast = useNeoToast()
 const loading = ref(false)
 const accepting = ref(false)
 const proposed = ref<ProposedBacklog>({ epics: [] })
+const missingFields = ref<string[]>([])
 
 const visible = computed({
   get: () => props.visible,
@@ -115,6 +132,7 @@ const acceptLabel = computed(() => `Créer les tâches sélectionnées (${select
 async function load(): Promise<void> {
   loading.value = true
   proposed.value = { epics: [] }
+  missingFields.value = []
   try {
     const { data } = await api.post<ProposedBacklog>(
       `/pm/projects/${props.projectId}/ai/generate-backlog`,
@@ -127,9 +145,18 @@ async function load(): Promise<void> {
       })),
     }
   } catch (e: unknown) {
-    const detail = e instanceof Error ? e.message : 'Erreur inconnue'
-    toast.add({ severity: 'error', detail: `Échec génération IA : ${detail}`, life: 4000 })
-    close()
+    // Backend returns 412 + { missingFields: string[] } when driver fields
+    // marked "alimente l'IA" are still empty. Surface the list inline
+    // instead of a single-line toast so the PM knows what to fill.
+    const err = e as { response?: { status?: number; data?: { missingFields?: string[]; message?: string } } }
+    if (err?.response?.status === 412 && Array.isArray(err.response.data?.missingFields)) {
+      missingFields.value = err.response.data.missingFields ?? []
+      // Don't close — keep the modal open with the inline error.
+    } else {
+      const detail = e instanceof Error ? e.message : 'Erreur inconnue'
+      toast.add({ severity: 'error', detail: `Échec génération IA : ${detail}`, life: 4000 })
+      close()
+    }
   } finally {
     loading.value = false
   }
@@ -196,6 +223,37 @@ watch(
   color: var(--nl-text-2);
 }
 .ai-bk__loading .pi { margin-right: 8px; }
+
+.ai-bk__missing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ai-bk__missing-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--nl-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-bk__missing-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: #991b1b;
+}
+.ai-bk__missing-list .pi { color: #dc2626; }
+.ai-bk__missing-hint {
+  font-size: 0.8125rem;
+  color: var(--nl-text-3);
+  margin: 0;
+  font-style: italic;
+}
 
 .ai-bk__list {
   max-height: 60vh;
