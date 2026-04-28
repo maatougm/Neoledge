@@ -212,41 +212,46 @@ onMounted(() => {
 
 // ── Pipeline config ────────────────────────────────────────────────────────────
 const PIPELINE_PHASES: ProjectStatus[] = [
-  'Draft', 'InProgress', 'SpecificationValidation',
-  'Realization', 'DeploymentValidation', 'Completed',
+  'Draft', 'Kickoff', 'CadrageTechnique', 'Environnement',
+  'Parametrage', 'Integration', 'Recette', 'MEP', 'Cloture',
 ]
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
-  Draft:                   '#94a3b8',
-  InProgress:              '#3b82f6',
-  SpecificationValidation: '#f59e0b',
-  Realization:             '#6366f1',
-  DeploymentValidation:    '#f59e0b',
-  Completed:               '#10b981',
-  Archived:                '#cbd5e1',
+  Draft:            '#94a3b8',
+  Kickoff:          '#93c5fd',
+  CadrageTechnique: '#3b82f6',
+  Environnement:    '#1d4ed8',
+  Parametrage:      '#fbbf24',
+  Integration:      '#d97706',
+  Recette:          '#f97316',
+  MEP:              '#10b981',
+  Cloture:          '#0d9488',
+  Archived:         '#cbd5e1',
 }
 
 // ── KPI computeds ─────────────────────────────────────────────────────────────
+const TERMINAL_STATUSES: ProjectStatus[] = ['Cloture', 'Archived']
+
 const activeCount = computed(() =>
-  projectStore.projects.filter(p => p.status !== 'Completed' && p.status !== 'Archived').length
+  projectStore.projects.filter(p => !TERMINAL_STATUSES.includes(p.status)).length
 )
 
 const overdueCount = computed(() => {
   const now = Date.now()
   return projectStore.projects.filter(p => {
-    if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return false
+    if (!p.endDate || TERMINAL_STATUSES.includes(p.status)) return false
     return new Date(p.endDate).getTime() < now
   }).length
 })
 
 const pendingValidationCount = computed(() =>
   projectStore.projects.filter(
-    p => p.status === 'SpecificationValidation' || p.status === 'DeploymentValidation'
+    p => p.status === 'Parametrage' || p.status === 'MEP'
   ).length
 )
 
 const completedCount = computed(() =>
-  projectStore.projects.filter(p => p.status === 'Completed').length
+  projectStore.projects.filter(p => p.status === 'Cloture').length
 )
 
 // ── Pipeline helpers ───────────────────────────────────────────────────────────
@@ -277,7 +282,7 @@ const completionPct = computed(() => {
 
 // ── Health stats ──────────────────────────────────────────────────────────────
 const HEALTH_STATS = computed(() => [
-  { label: 'En cours',        count: projectStore.projects.filter(p => p.status === 'InProgress').length, color: '#3b82f6' },
+  { label: 'En cours',        count: projectStore.projects.filter(p => !TERMINAL_STATUSES.includes(p.status) && p.status !== 'Draft').length, color: '#3b82f6' },
   { label: 'En validation',   count: pendingValidationCount.value,                                        color: '#f59e0b' },
   { label: 'En retard',       count: overdueCount.value,                                                  color: '#e11d48' },
   { label: 'Terminés',        count: completedCount.value,                                                color: '#10b981' },
@@ -289,7 +294,7 @@ const upcomingDeadlines = computed(() => {
   const cutoff = now + 14 * 24 * 60 * 60 * 1000
   return projectStore.projects
     .filter(p => {
-      if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return false
+      if (!p.endDate || TERMINAL_STATUSES.includes(p.status)) return false
       return new Date(p.endDate).getTime() < cutoff
     })
     .slice()

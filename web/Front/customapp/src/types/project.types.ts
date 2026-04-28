@@ -10,30 +10,39 @@ import type { UserResponse } from './user.types'
 
 export type ProjectStatus =
   | 'Draft'
-  | 'InProgress'
-  | 'SpecificationValidation'
-  | 'Realization'
-  | 'DeploymentValidation'
-  | 'Completed'
+  | 'Kickoff'
+  | 'CadrageTechnique'
+  | 'Environnement'
+  | 'Parametrage'
+  | 'Integration'
+  | 'Recette'
+  | 'MEP'
+  | 'Cloture'
   | 'Archived'
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   Draft: 'Brouillon',
-  InProgress: 'En cours',
-  SpecificationValidation: 'Validation spécification',
-  Realization: 'Réalisation',
-  DeploymentValidation: 'Validation déploiement',
-  Completed: 'Terminé',
+  Kickoff: 'Lancement',
+  CadrageTechnique: 'Cadrage technique',
+  Environnement: 'Environnement',
+  Parametrage: 'Paramétrage',
+  Integration: 'Intégration',
+  Recette: 'Recette',
+  MEP: 'Mise en production',
+  Cloture: 'Clôture',
   Archived: 'Archivé',
 }
 
 export const PROJECT_STATUS_SEVERITY: Record<ProjectStatus, string> = {
   Draft: 'secondary',
-  InProgress: 'info',
-  SpecificationValidation: 'warn',
-  Realization: 'info',
-  DeploymentValidation: 'warn',
-  Completed: 'success',
+  Kickoff: 'info',
+  CadrageTechnique: 'info',
+  Environnement: 'info',
+  Parametrage: 'warning',
+  Integration: 'warning',
+  Recette: 'warning',
+  MEP: 'success',
+  Cloture: 'success',
   Archived: 'secondary',
 }
 
@@ -69,6 +78,10 @@ export interface ProjectSummary {
   startDate: string
   endDate: string
   createdAt: string
+  /** Backend-computed: % of WPs in a terminal status (Resolved + Closed). */
+  progressPct?: number
+  wpClosed?: number
+  wpTotal?: number
 }
 
 export interface ProjectDetail {

@@ -243,6 +243,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
 import { formatRelative } from '@/lib/formatDate'
+import { isTerminal } from '@/lib/wpStatus'
 import api from '@/lib/api'
 
 interface WorkPackage {
@@ -294,19 +295,19 @@ const presenceList = collab.presenceList
 const isPinned    = computed<boolean>(() => uiStore.isProjectPinned(props.id))
 
 const wpTotal       = computed<number>(() => wps.value.length)
-const wpClosed      = computed<number>(() => wps.value.filter((w) => w.status === 'Closed' || w.status === 'Resolved').length)
+const wpClosed      = computed<number>(() => wps.value.filter((w) => isTerminal(w.status)).length)
 const overallProgress = computed<number>(() => wpTotal.value ? Math.round((wpClosed.value / wpTotal.value) * 100) : 0)
 const wpOverdue     = computed<number>(() => wps.value.filter((w) =>
-  w.dueDate && new Date(w.dueDate).getTime() < Date.now() && w.status !== 'Closed' && w.status !== 'Resolved',
+  w.dueDate && new Date(w.dueDate).getTime() < Date.now() && !isTerminal(w.status),
 ).length)
 
 const myWps = computed<WorkPackage[]>(() =>
-  (Array.isArray(wps.value) ? wps.value : []).filter((w) => w.assigneeId === authStore.userId && w.status !== 'Closed' && w.status !== 'Resolved'),
+  (Array.isArray(wps.value) ? wps.value : []).filter((w) => w.assigneeId === authStore.userId && !isTerminal(w.status)),
 )
 
 const atRiskWps = computed<WorkPackage[]>(() =>
   (Array.isArray(wps.value) ? wps.value : []).filter((w) => {
-    const isOpen = w.status !== 'Closed' && w.status !== 'Resolved'
+    const isOpen = !isTerminal(w.status)
     const overdue = w.dueDate && new Date(w.dueDate).getTime() < Date.now()
     const urgent  = w.priority === 'Urgent' || w.priority === 'Critical'
     return isOpen && (overdue || urgent)

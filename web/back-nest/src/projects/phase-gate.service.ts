@@ -4,11 +4,14 @@ import { Result } from '../common/result.js';
 
 const STATUS_ORDER = [
   'Draft',
-  'InProgress',
-  'SpecificationValidation',
-  'Realization',
-  'DeploymentValidation',
-  'Completed',
+  'Kickoff',
+  'CadrageTechnique',
+  'Environnement',
+  'Parametrage',
+  'Integration',
+  'Recette',
+  'MEP',
+  'Cloture',
 ] as const;
 
 type OrderedStatus = (typeof STATUS_ORDER)[number];
@@ -21,13 +24,13 @@ interface GatedTransition {
 
 const GATED_TRANSITIONS: GatedTransition[] = [
   {
-    from: 'SpecificationValidation',
-    to: 'Realization',
+    from: 'Parametrage',
+    to: 'Integration',
     requiredRole: 'SpecificationTeam',
   },
   {
-    from: 'DeploymentValidation',
-    to: 'Completed',
+    from: 'MEP',
+    to: 'Cloture',
     requiredRole: 'ProjectManager',
   },
 ];

@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { AutomationService } from '../automation/automation.service.js';
 import { BULK_MAX } from './dto/bulk.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
+import { TERMINAL_WP_STATUSES } from '../work-packages/wp-status.constants.js';
 
 /** Per-field optimistic lock token coming from the client. */
 export interface FieldValueWrite {
@@ -76,7 +77,10 @@ export class ProjectsService {
         where,
         skip,
         take,
-        include: { projectManager: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        include: {
+          projectManager: { select: { id: true, firstName: true, lastName: true, email: true } },
+          workPackages: { where: { isDeleted: false }, select: { status: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.project.count({ where }),
@@ -101,7 +105,10 @@ export class ProjectsService {
         where,
         skip,
         take: clampedTake,
-        include: { projectManager: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        include: {
+          projectManager: { select: { id: true, firstName: true, lastName: true, email: true } },
+          workPackages: { where: { isDeleted: false }, select: { status: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.project.count({ where }),
@@ -147,7 +154,10 @@ export class ProjectsService {
         where,
         skip: clampedSkip,
         take: clampedTake,
-        include: { projectManager: { select: { id: true, firstName: true, lastName: true, email: true } } },
+        include: {
+          projectManager: { select: { id: true, firstName: true, lastName: true, email: true } },
+          workPackages: { where: { isDeleted: false }, select: { status: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.project.count({ where }),
@@ -879,6 +889,13 @@ export class ProjectsService {
   }
 
   private toSummary(p: any) {
+    // Aggregate WP counts (Prisma `_count` with where filter — single query
+    // per project loaded with the right include). Computed once here so all
+    // list endpoints expose the same `progressPct`.
+    const allWps = Array.isArray(p.workPackages) ? p.workPackages : [];
+    const wpTotal = allWps.length;
+    const wpClosed = allWps.filter((w: any) => (TERMINAL_WP_STATUSES as readonly string[]).includes(w.status)).length;
+    const progressPct = wpTotal === 0 ? 0 : Math.round((wpClosed / wpTotal) * 100);
     return {
       id: p.id,
       name: p.name,
@@ -889,6 +906,9 @@ export class ProjectsService {
       startDate: p.startDate,
       endDate: p.endDate,
       createdAt: p.createdAt,
+      progressPct,
+      wpClosed,
+      wpTotal,
     };
   }
 

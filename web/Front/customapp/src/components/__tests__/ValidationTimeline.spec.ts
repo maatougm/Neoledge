@@ -46,7 +46,7 @@ const makeValidation = (overrides: Partial<ProjectValidation> = {}): ProjectVali
   projectId: 'p1',
   validatedByRole: 'Admin',
   validatedByName: 'Alice Dupont',
-  phase: 'InProgress',
+  phase: 'Kickoff',
   isApproved: true,
   comment: null,
   validatedAt: '2026-04-09T14:30:00.000Z',
@@ -65,7 +65,7 @@ describe('ValidationTimeline', () => {
       data: [
         makeValidation({ id: 'v1' }),
         makeValidation({ id: 'v2', isApproved: false }),
-        makeValidation({ id: 'v3', phase: 'Realization' }),
+        makeValidation({ id: 'v3', phase: 'Recette' }),
       ],
     })
 

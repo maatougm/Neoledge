@@ -149,12 +149,16 @@ const statusLabel = (s: ProjectStatus) => PROJECT_STATUS_LABELS[s] ?? s
 
 function statusBadgeClass(s: ProjectStatus): string {
   const map: Record<string, string> = {
-    Draft: 'ptr__badge--draft',
-    InProgress: 'ptr__badge--inprogress',
-    SpecificationValidation: 'ptr__badge--spec',
-    Realization: 'ptr__badge--realization',
-    DeploymentValidation: 'ptr__badge--deploy',
-    Completed: 'ptr__badge--completed',
+    Draft:            'ptr__badge--draft',
+    Kickoff:          'ptr__badge--inprogress',
+    CadrageTechnique: 'ptr__badge--spec',
+    Environnement:    'ptr__badge--spec',
+    Parametrage:      'ptr__badge--realization',
+    Integration:      'ptr__badge--realization',
+    Recette:          'ptr__badge--mep',
+    MEP:              'ptr__badge--mep',
+    Cloture:          'ptr__badge--completed',
+    Completed:        'ptr__badge--completed',
   }
   return map[s] ?? ''
 }
@@ -257,7 +261,7 @@ const formatDate = (iso: string) =>
 .ptr__badge--inprogress  { background: var(--nl-accent-light);  color: var(--nl-accent); }
 .ptr__badge--spec        { background: #F5F3FF;                 color: #7C3AED; }
 .ptr__badge--realization { background: #FFF7ED;                 color: var(--nl-warning); }
-.ptr__badge--deploy      { background: #EFF6FF;                 color: #2563EB; }
+.ptr__badge--mep         { background: #ECFDF5;                 color: #059669; }
 .ptr__badge--completed   { background: var(--nl-success-light); color: var(--nl-success); }
 
 /* ── Progress ─────────────────────────────────────────────────────────────── */

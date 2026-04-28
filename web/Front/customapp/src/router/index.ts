@@ -67,11 +67,22 @@ const router = createRouter({
       component: () => import('@/layouts/AppShell.vue'),
       meta: { requiresAuth: true },
       children: [
-        // Unified Home (same for every role — an inbox/today view)
+        // Unified Home (inbox/today view for PM + team roles).
+        // Admins are redirected to their dashboard via the beforeEnter hook
+        // below — they don't need the personal inbox, their landing IS the
+        // command-center KPIs.
         {
           path: '',
           name: 'app-home',
           component: () => import('@/views/HomeView.vue'),
+          beforeEnter: (_to, _from, next) => {
+            const auth = useAuthStore()
+            if (auth.userRole === 'Admin') {
+              next({ name: 'admin-dashboard' })
+              return
+            }
+            next()
+          },
         },
         {
           path: 'home',

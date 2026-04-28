@@ -386,7 +386,7 @@ const exportCsv = () => {
 
 // ─── Deadline badge helper ─────────────────────────────────────────────────────
 const isNearDeadline = (p: ProjectSummary): boolean => {
-  if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return false
+  if (!p.endDate || p.status === 'Cloture' || p.status === 'Archived') return false
   const diff = new Date(p.endDate).getTime() - Date.now()
   return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000
 }

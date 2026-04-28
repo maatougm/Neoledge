@@ -69,7 +69,7 @@ export const useProjectStore = defineStore('projects', () => {
   // ─── Getters ─────────────────────────────────────────────────────────────────
   const draftProjects = computed(() => projects.value.filter((p) => p.status === 'Draft'))
   const activeProjects = computed(() =>
-    projects.value.filter((p) => p.status !== 'Draft' && p.status !== 'Completed'),
+    projects.value.filter((p) => p.status !== 'Draft' && p.status !== 'Cloture' && p.status !== 'Archived'),
   )
 
   // ─── Actions ─────────────────────────────────────────────────────────────────

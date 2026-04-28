@@ -361,17 +361,15 @@ async function loadMilestones(): Promise<void> {
 }
 
 function projectStatusToPhase(status: string): string | null {
-  if (status === 'SpecificationValidation') return 'Specification'
-  if (status === 'Realization')             return 'Realization'
-  if (status === 'DeploymentValidation')    return 'Deployment'
+  if (status === 'Parametrage') return 'Parametrage'
+  if (status === 'MEP')         return 'MEP'
   return null
 }
 
 function canValidatePhase(role: string, phase: string): boolean {
   if (role === 'Admin') return true
-  if (phase === 'Specification') return role === 'SpecificationTeam'
-  if (phase === 'Realization')   return role === 'Member'
-  if (phase === 'Deployment')    return role === 'ProjectManager'
+  if (phase === 'Parametrage') return role === 'SpecificationTeam'
+  if (phase === 'MEP')         return role === 'ProjectManager'
   return false
 }
 

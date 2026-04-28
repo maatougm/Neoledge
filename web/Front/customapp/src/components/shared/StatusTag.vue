@@ -29,22 +29,29 @@ const label = computed(
 
 type StatusColorKey =
   | 'Draft'
-  | 'InProgress'
-  | 'SpecificationValidation'
-  | 'Realization'
-  | 'DeploymentValidation'
-  | 'Completed'
+  | 'Kickoff'
+  | 'CadrageTechnique'
+  | 'Environnement'
+  | 'Parametrage'
+  | 'Integration'
+  | 'Recette'
+  | 'MEP'
+  | 'Cloture'
   | 'Archived'
 
 const colorClass = computed(() => {
   const map: Record<string, string> = {
-    Draft:                   'status-tag--draft',
-    InProgress:              'status-tag--in-progress',
-    SpecificationValidation: 'status-tag--spec-validation',
-    Realization:             'status-tag--realization',
-    DeploymentValidation:    'status-tag--deploy-validation',
-    Completed:               'status-tag--completed',
-    Archived:                'status-tag--archived',
+    Draft:            'status-tag--draft',
+    Kickoff:          'status-tag--in-progress',
+    CadrageTechnique: 'status-tag--in-progress',
+    Environnement:    'status-tag--in-progress',
+    Parametrage:      'status-tag--spec-validation',
+    Integration:      'status-tag--realization',
+    Recette:          'status-tag--realization',
+    MEP:              'status-tag--mep',
+    Cloture:          'status-tag--completed',
+    Completed:        'status-tag--completed',
+    Archived:         'status-tag--archived',
   }
   return map[props.status] ?? 'status-tag--draft'
 })
@@ -90,7 +97,7 @@ const colorClass = computed(() => {
   color: #D97706;
 }
 
-.status-tag--deploy-validation {
+.status-tag--mep {
   background: #F0FDFA;
   color: #0D9488;
 }

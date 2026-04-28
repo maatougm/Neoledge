@@ -35,14 +35,14 @@ const mockSummaryActive: ProjectSummary = {
   ...mockSummary,
   id: 'p2',
   name: 'Projet Beta',
-  status: 'InProgress',
+  status: 'Kickoff',
 }
 
 const mockSummaryCompleted: ProjectSummary = {
   ...mockSummary,
   id: 'p3',
   name: 'Projet Gamma',
-  status: 'Completed',
+  status: 'Cloture',
 }
 
 const mockField: ProjectField = {
@@ -212,9 +212,9 @@ describe('useProjectStore', () => {
       const originalRef = store.projects
 
       vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
-      await store.updateStatus('p1', 'InProgress')
+      await store.updateStatus('p1', 'Kickoff')
 
-      expect(store.projects[0].status).toBe('InProgress')
+      expect(store.projects[0].status).toBe('Kickoff')
       expect(store.projects).not.toBe(originalRef)
     })
 
@@ -223,7 +223,7 @@ describe('useProjectStore', () => {
       store.currentProject = { ...mockDetail }
 
       vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
-      await store.updateStatus('p1', 'InProgress')
+      await store.updateStatus('p1', 'Kickoff')
 
       expect(store.currentProject?.status).toBe('InProgress')
     })

@@ -163,15 +163,15 @@ async function main() {
     },
     {
       id: ID.p4,
-      name: 'Archivage électronique — Ministère Finances',
+      name: 'Mise en production Elise v4 — CHU Bordeaux',
       clientName: 'Ministère de l\'Économie et des Finances',
-      status: 'DeploymentValidation',
+      status: 'MEP',
       priority: 'Critical',
       projectManagerId: R.pm2,
       createdByAdminId: R.admin,
       startDate: new Date('2025-10-01'),
       endDate:   new Date('2026-04-30'),
-      tags: 'archivage,ministère,compliance',
+      tags: 'archivage,ministère,mep',
       budget: 210000,
     },
     {
@@ -295,7 +295,7 @@ async function main() {
     { projectId: ID.p3, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
     { projectId: ID.p3, userId: R.pm2,     action: 'status_change', detail: 'Statut → Realization' },
     { projectId: ID.p4, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
-    { projectId: ID.p4, userId: R.pm2,     action: 'status_change', detail: 'Statut → DeploymentValidation' },
+    { projectId: ID.p4, userId: R.pm2,     action: 'status_change', detail: 'Statut → MEP' },
     { projectId: ID.p5, userId: R.pm1,     action: 'status_change', detail: 'Statut → Completed' },
     { projectId: ID.p6, userId: R.admin,   action: 'create',        detail: 'Projet créé' },
   ];
@@ -326,9 +326,9 @@ async function main() {
     // p3: Draft → InProgress (12 days), InProgress → Realization (30 days)
     { projectId: ID.p3, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',       createdAt: new Date('2025-11-01') },
     { projectId: ID.p3, userId: ID.pm2,   action: 'status_change', detail: 'Statut changé: InProgress → Realization', createdAt: new Date('2025-11-13') },
-    // p4: Draft → InProgress (7 days), InProgress → DeploymentValidation (45 days)
-    { projectId: ID.p4, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress',              createdAt: new Date('2025-12-01') },
-    { projectId: ID.p4, userId: ID.pm2,   action: 'status_change', detail: 'Statut changé: InProgress → DeploymentValidation', createdAt: new Date('2025-12-08') },
+    // p4: Draft → Kickoff (7 days), Kickoff → MEP (45 days)
+    { projectId: ID.p4, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → Kickoff', createdAt: new Date('2025-12-01') },
+    { projectId: ID.p4, userId: ID.pm2,   action: 'status_change', detail: 'Statut changé: Kickoff → MEP',   createdAt: new Date('2025-12-08') },
     // p5: Draft → InProgress (5 days), InProgress → Completed (60 days)
     { projectId: ID.p5, userId: ID.admin, action: 'status_change', detail: 'Statut changé: Draft → InProgress', createdAt: new Date('2025-07-01') },
     { projectId: ID.p5, userId: ID.pm1,   action: 'status_change', detail: 'Statut changé: InProgress → Completed', createdAt: new Date('2025-07-06') },
@@ -468,7 +468,7 @@ async function main() {
     { entityType: 'AppUser', entityId: R.pm2, action: 'LOGIN', userId: R.pm2 },
     { entityType: 'Project', entityId: ID.p4, action: 'VALIDATE', userId: R.deploy1 },
     { entityType: 'Project', entityId: ID.p5, action: 'STATUS_CHANGE', userId: R.pm1,
-      metadata: JSON.stringify({ from: 'DeploymentValidation', to: 'Completed' }) },
+      metadata: JSON.stringify({ from: 'MEP', to: 'Cloture' }) },
   ];
 
   for (const log of auditLogs) {

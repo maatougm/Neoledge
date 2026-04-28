@@ -34,7 +34,7 @@ const mockDeleted2: DeletedProjectSummary = {
   name: 'Projet Supprimé Beta',
   clientName: 'Client B',
   projectManagerName: null,
-  status: 'InProgress',
+  status: 'Kickoff',
   deletedAt: '2026-04-02T12:00:00Z',
   deletedByName: null,
 }

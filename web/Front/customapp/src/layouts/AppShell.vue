@@ -64,7 +64,8 @@ const collab      = useCollaborationSocket()
 
 const adminNav: NavSection[] = [
   { items: [
-      { key: 'app-home',          label: 'Accueil',         icon: 'pi-inbox',        to: '/app' },
+      // "Accueil" removed — admin lands directly on the dashboard.
+      // Per-user inbox is for PM/team roles; admin's home IS the KPI dashboard.
       { key: 'admin-dashboard',   label: 'Tableau de bord', icon: 'pi-chart-line',   to: '/app/admin/dashboard' },
   ]},
   { heading: 'Gestion', items: [

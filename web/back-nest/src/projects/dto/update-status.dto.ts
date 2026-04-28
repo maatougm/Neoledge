@@ -3,11 +3,14 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export const PROJECT_STATUSES = [
   'Draft',
-  'InProgress',
-  'SpecificationValidation',
-  'Realization',
-  'DeploymentValidation',
-  'Completed',
+  'Kickoff',
+  'CadrageTechnique',
+  'Environnement',
+  'Parametrage',
+  'Integration',
+  'Recette',
+  'MEP',
+  'Cloture',
   'Archived',
 ] as const;
 

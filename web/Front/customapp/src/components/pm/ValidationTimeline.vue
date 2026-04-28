@@ -60,13 +60,16 @@ import type { ProjectStatus } from '@/types/project.types'
 const props = defineProps<{ projectId: string }>()
 
 const PHASE_LABELS: Record<ProjectStatus | string, string> = {
-  Draft:                   'Brouillon',
-  InProgress:              'En cours',
-  SpecificationValidation: 'Validation cahier',
-  Realization:             'Réalisation',
-  DeploymentValidation:    'Validation déploiement',
-  Completed:               'Terminé',
-  Archived:                'Archivé',
+  Draft:            'Brouillon',
+  Kickoff:          'Lancement',
+  CadrageTechnique: 'Cadrage technique',
+  Environnement:    'Environnement',
+  Parametrage:      'Paramétrage',
+  Integration:      'Intégration',
+  Recette:          'Recette',
+  MEP:              'Mise en production',
+  Cloture:          'Clôture',
+  Archived:         'Archivé',
 }
 
 const ROLE_LABELS: Record<string, string> = {

@@ -119,27 +119,33 @@ const store = usePmStore()
 // ─── Phase pipeline ────────────────────────────────────────────────────────────
 
 const PIPELINE_PHASES: ProjectStatus[] = [
-  'Draft', 'InProgress', 'SpecificationValidation', 'Realization', 'DeploymentValidation', 'Completed',
+  'Draft', 'Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP', 'Cloture',
 ]
 
 const PHASE_SHORT_LABELS: Record<ProjectStatus, string> = {
-  Draft:                   'Brouillon',
-  InProgress:              'En cours',
-  SpecificationValidation: 'Spéc.',
-  Realization:             'Réalisation',
-  DeploymentValidation:    'Déploiement',
-  Completed:               'Terminé',
-  Archived:                'Archivé',
+  Draft:            'Brouillon',
+  Kickoff:          'Lancement',
+  CadrageTechnique: 'Cadrage',
+  Environnement:    'Env.',
+  Parametrage:      'Param.',
+  Integration:      'Intégr.',
+  Recette:          'Recette',
+  MEP:              'MEP',
+  Cloture:          'Clôture',
+  Archived:         'Archivé',
 }
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
-  Draft:                   'var(--nl-border-strong)',
-  InProgress:              '#3b82f6',
-  SpecificationValidation: '#f59e0b',
-  Realization:             '#6366f1',
-  DeploymentValidation:    '#f59e0b',
-  Completed:               '#10b981',
-  Archived:                'var(--nl-border-strong)',
+  Draft:            'var(--nl-border-strong)',
+  Kickoff:          '#93c5fd',
+  CadrageTechnique: '#3b82f6',
+  Environnement:    '#1d4ed8',
+  Parametrage:      '#f59e0b',
+  Integration:      '#d97706',
+  Recette:          '#f97316',
+  MEP:              '#10b981',
+  Cloture:          '#0d9488',
+  Archived:         'var(--nl-border-strong)',
 }
 
 function phaseIndex(status: ProjectStatus): number {
@@ -156,9 +162,10 @@ function statusColor(status: ProjectStatus): string {
 type FilterValue = 'all' | 'active' | 'pending' | 'completed'
 const activeFilter = ref<FilterValue>('all')
 
-const activeCount    = computed(() => store.projects.filter(p => p.status !== 'Completed' && p.status !== 'Archived').length)
-const pendingCount   = computed(() => store.projects.filter(p => p.status === 'SpecificationValidation' || p.status === 'DeploymentValidation').length)
-const completedCount = computed(() => store.projects.filter(p => p.status === 'Completed').length)
+const TERMINAL_STATUSES: ProjectStatus[] = ['Cloture', 'Archived']
+const activeCount    = computed(() => store.projects.filter(p => !TERMINAL_STATUSES.includes(p.status)).length)
+const pendingCount   = computed(() => store.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP').length)
+const completedCount = computed(() => store.projects.filter(p => p.status === 'Cloture').length)
 
 const STATUS_FILTERS = computed<{ value: FilterValue; label: string; count: number }[]>(() => [
   { value: 'all',       label: 'Tous',         count: store.projects.length },
@@ -169,16 +176,16 @@ const STATUS_FILTERS = computed<{ value: FilterValue; label: string; count: numb
 
 const filtered = computed<ProjectSummary[]>(() => {
   if (activeFilter.value === 'all')       return store.projects
-  if (activeFilter.value === 'active')    return store.projects.filter(p => p.status !== 'Completed' && p.status !== 'Archived')
-  if (activeFilter.value === 'pending')   return store.projects.filter(p => p.status === 'SpecificationValidation' || p.status === 'DeploymentValidation')
-  if (activeFilter.value === 'completed') return store.projects.filter(p => p.status === 'Completed')
+  if (activeFilter.value === 'active')    return store.projects.filter(p => !TERMINAL_STATUSES.includes(p.status))
+  if (activeFilter.value === 'pending')   return store.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP')
+  if (activeFilter.value === 'completed') return store.projects.filter(p => p.status === 'Cloture')
   return store.projects
 })
 
 // ─── Urgency ───────────────────────────────────────────────────────────────────
 
 function urgencyClass(iso: string, status: ProjectStatus): string {
-  if (status === 'Completed' || status === 'Archived') return 'urgency--done'
+  if (TERMINAL_STATUSES.includes(status)) return 'urgency--done'
   const ms = new Date(iso).getTime() - Date.now()
   if (ms < 0)                return 'urgency--overdue'
   if (ms < 7 * 86_400_000)  return 'urgency--critical'
@@ -187,8 +194,8 @@ function urgencyClass(iso: string, status: ProjectStatus): string {
 }
 
 function urgencyLabel(iso: string, status: ProjectStatus): string {
-  if (status === 'Completed') return 'Terminé'
-  if (status === 'Archived')  return 'Archivé'
+  if (status === 'Cloture') return 'Clôturé'
+  if (status === 'Archived') return 'Archivé'
   const ms = new Date(iso).getTime() - Date.now()
   if (ms < 0) return 'En retard'
   const days = Math.ceil(ms / 86_400_000)
@@ -196,7 +203,7 @@ function urgencyLabel(iso: string, status: ProjectStatus): string {
 }
 
 function cardUrgencyClass(p: ProjectSummary): string {
-  if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return ''
+  if (!p.endDate || TERMINAL_STATUSES.includes(p.status)) return ''
   const ms = new Date(p.endDate).getTime() - Date.now()
   if (ms < 0)               return 'project-card--overdue'
   if (ms < 7 * 86_400_000) return 'project-card--critical'

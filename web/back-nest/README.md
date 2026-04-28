@@ -188,11 +188,14 @@ void this.auditService.log(
 | Phase | Items |
 |-------|-------|
 | **Draft** | Cadrage initial validé, Équipe projet identifiée, Budget prévisionnel approuvé |
-| **InProgress** | Kick-off réalisé, Planning de projet communiqué, Accès environnements configurés |
-| **SpecificationValidation** | Cahier des charges rédigé, Spécifications fonctionnelles validées, Revue technique effectuée |
-| **Realization** | Développements terminés, Tests unitaires passés, Recette interne effectuée |
-| **DeploymentValidation** | Déploiement en pré-production réalisé, Tests de recette client OK, Documentation livrée |
-| **Completed** | Mise en production effectuée, Formation utilisateurs réalisée, Clôture projet validée |
+| **Kickoff** | Kick-off réalisé, Planning de projet communiqué, Interlocuteurs clients identifiés |
+| **CadrageTechnique** | Cahier des charges rédigé, Spécifications fonctionnelles validées, Revue technique effectuée |
+| **Environnement** | Accès environnements configurés, Infrastructure de recette prête, Comptes de service créés |
+| **Parametrage** | Paramétrage application réalisé, Données de référence chargées, Validation paramétrage par équipe spéc. |
+| **Integration** | Connecteurs d'intégration développés, Tests d'intégration passés, Recette interne effectuée |
+| **Recette** | Plan de recette établi, Tests de recette client OK, PV de recette signé |
+| **MEP** | Mise en production réalisée, Tests de smoke post-déploiement OK, Documentation livrée |
+| **Cloture** | Formation utilisateurs réalisée, Clôture projet validée, Bilan projet transmis |
 
 **Checklists Controller Endpoints:**
 
@@ -317,7 +320,7 @@ src/
 - name: String
 - description: String | null
 - clientName: String
-- status: ProjectStatus (enum: Draft, InProgress, SpecificationValidation, Realization, DeploymentValidation, Completed)
+- status: ProjectStatus (enum: Draft, Kickoff, CadrageTechnique, Environnement, Parametrage, Integration, Recette, MEP, Cloture, Archived)
 - startDate: DateTime | null
 - endDate: DateTime | null
 - createdByAdminId: String (FK)

@@ -120,7 +120,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NeoButton, NeoMessage, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import { useProjectStore, computeProgress } from '@/stores/projectStore'
+import { useProjectStore } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
 import { PROJECT_STATUS_LABELS } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
@@ -298,19 +298,11 @@ function handleExportPdf(): void {
 
 // ─── Progress helper ──────────────────────────────────────────────────────────
 
-type MaybeDetailFields = ProjectSummary & {
-  fields?: { id: string; isRequired: boolean }[]
-  fieldValues?: { projectFieldId: string; value: string | null }[]
-}
-
 function progressPercent(project: ProjectSummary): number {
-  const p = project as MaybeDetailFields
-  if (!p.fields || !p.fieldValues) return 0
-  return computeProgress({
-    ...(p as unknown as import('@/types/project.types').ProjectDetail),
-    fields: p.fields as import('@/types/project.types').ProjectField[],
-    fieldValues: p.fieldValues as import('@/types/project.types').ProjectFieldValue[],
-  })
+  // Backend now ships `progressPct` (% of WPs in a terminal status) on every
+  // ProjectSummary, so the frontend can render a meaningful progress bar
+  // straight from the list endpoint without needing the full project detail.
+  return project.progressPct ?? 0
 }
 </script>
 

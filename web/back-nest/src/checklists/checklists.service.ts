@@ -8,30 +8,45 @@ const PHASE_DEFAULTS: Record<string, string[]> = {
     'Équipe projet identifiée',
     'Budget prévisionnel approuvé',
   ],
-  InProgress: [
+  Kickoff: [
     'Kick-off réalisé',
     'Planning de projet communiqué',
-    'Accès environnements configurés',
+    'Interlocuteurs clients identifiés',
   ],
-  SpecificationValidation: [
+  CadrageTechnique: [
     'Cahier des charges rédigé',
     'Spécifications fonctionnelles validées',
     'Revue technique effectuée',
   ],
-  Realization: [
-    'Développements terminés',
-    'Tests unitaires passés',
+  Environnement: [
+    'Accès environnements configurés',
+    'Infrastructure de recette prête',
+    'Comptes de service créés',
+  ],
+  Parametrage: [
+    'Paramétrage application réalisé',
+    'Données de référence chargées',
+    'Validation paramétrage par équipe spéc.',
+  ],
+  Integration: [
+    'Connecteurs d\'intégration développés',
+    'Tests d\'intégration passés',
     'Recette interne effectuée',
   ],
-  DeploymentValidation: [
-    'Déploiement en pré-production réalisé',
+  Recette: [
+    'Plan de recette établi',
     'Tests de recette client OK',
+    'PV de recette signé',
+  ],
+  MEP: [
+    'Mise en production réalisée',
+    'Tests de smoke post-déploiement OK',
     'Documentation livrée',
   ],
-  Completed: [
-    'Mise en production effectuée',
+  Cloture: [
     'Formation utilisateurs réalisée',
     'Clôture projet validée',
+    'Bilan projet transmis',
   ],
 };
 
