@@ -190,7 +190,7 @@
                     icon="pi pi-user-edit"
                     size="small"
                     outlined
-                    title="Assigner chef de projet"
+                    title="Changer le chef de projet"
                     @click="openAssign(p.id, p.name)"
                   />
                   <NeoButton

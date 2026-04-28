@@ -9,7 +9,7 @@
   <div v-if="visible" class="dialog-overlay" @click.self="emit('close')">
     <div class="dialog-panel">
       <div class="dialog-header">
-        <h3 class="dialog-title">Assigner un chef de projet</h3>
+        <h3 class="dialog-title">Changer le chef de projet</h3>
         <button class="dialog-close" @click="emit('close')">
           <i class="pi pi-times" />
         </button>

@@ -88,7 +88,7 @@
             >
               <button role="menuitem" @click="emit('view')"><i class="pi pi-eye" /> Voir (panneau)</button>
               <button role="menuitem" @click="emit('edit')"><i class="pi pi-pencil" /> Modifier</button>
-              <button role="menuitem" @click="emit('assign-manager')"><i class="pi pi-user-plus" /> Assigner un chef</button>
+              <button role="menuitem" @click="emit('assign-manager')"><i class="pi pi-user-plus" /> Changer le chef</button>
               <button role="menuitem" @click="emit('duplicate')"><i class="pi pi-copy" /> Dupliquer</button>
               <button role="menuitem" @click="emit('archive')"><i class="pi pi-inbox" /> Archiver</button>
               <div class="ptr__overflow-sep" />
