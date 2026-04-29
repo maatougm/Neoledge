@@ -171,51 +171,29 @@
               </td>
               <td class="cell-date">{{ formatDate(p.createdAt) }}</td>
               <td>
-                <div class="action-row">
+                <div class="action-row" @click.stop>
                   <NeoButton
                     icon="pi pi-eye"
                     size="small"
                     outlined
-                    title="Gérer le questionnaire"
+                    title="Gérer le questionnaire (panneau)"
                     @click="selectedProjectId = p.id"
                   />
                   <NeoButton
                     icon="pi pi-external-link"
                     size="small"
                     outlined
-                    title="Ouvrir (Work Packages, Gantt, Budget…)"
+                    title="Ouvrir le projet (modules)"
                     @click="openProjectModules(p.id)"
                   />
                   <NeoButton
-                    icon="pi pi-user-edit"
+                    icon="pi pi-ellipsis-v"
                     size="small"
                     outlined
-                    title="Changer le chef de projet"
-                    @click="openAssign(p.id, p.name)"
-                  />
-                  <NeoButton
-                    icon="pi pi-copy"
-                    size="small"
-                    outlined
-                    title="Dupliquer"
-                    @click="openDuplicate(p.id, p.name)"
-                  />
-                  <NeoButton
-                    icon="pi pi-inbox"
-                    size="small"
-                    outlined
-                    severity="warn"
-                    :disabled="p.status === 'Archived'"
-                    title="Archiver"
-                    @click="handleArchive(p.id, p.name)"
-                  />
-                  <NeoButton
-                    icon="pi pi-trash"
-                    size="small"
-                    outlined
-                    severity="danger"
-                    title="Supprimer"
-                    @click="handleDelete(p.id, p.name)"
+                    severity="secondary"
+                    :title="`Plus d'actions pour ${p.name}`"
+                    :aria-label="`Menu d'actions pour ${p.name}`"
+                    @click="toggleMenu($event, p)"
                   />
                 </div>
               </td>
@@ -224,6 +202,56 @@
         </table>
       </div>
     </template>
+
+    <!-- Row overflow menu — single shared instance, positioned per row click -->
+    <Teleport to="body">
+      <div
+        v-if="menuOpenProject"
+        class="ptr__overflow-menu"
+        role="menu"
+        :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+        @click="closeMenu"
+      >
+        <div class="ptr__overflow-group">Modules</div>
+        <button role="menuitem" @click="goToModule('pm-project-questionnaire')">
+          <i class="pi pi-list-check" /> Questionnaire
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-cahier')">
+          <i class="pi pi-file-word" /> Cahier des charges
+        </button>
+        <button role="menuitem" @click="goToModule('pm-workpackages')">
+          <i class="pi pi-list" /> Backlog (Work Packages)
+        </button>
+        <button role="menuitem" @click="goToModule('pm-gantt')">
+          <i class="pi pi-calendar" /> Gantt
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-validations')">
+          <i class="pi pi-shield" /> Validations
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-meetings')">
+          <i class="pi pi-microphone" /> Réunions
+        </button>
+        <div class="ptr__overflow-sep" />
+        <div class="ptr__overflow-group">Gestion</div>
+        <button role="menuitem" @click="onAssignFromMenu">
+          <i class="pi pi-user-edit" /> Changer le chef de projet
+        </button>
+        <button role="menuitem" @click="onDuplicateFromMenu">
+          <i class="pi pi-copy" /> Dupliquer
+        </button>
+        <button
+          role="menuitem"
+          :disabled="menuOpenProject.status === 'Archived'"
+          @click="onArchiveFromMenu"
+        >
+          <i class="pi pi-inbox" /> Archiver
+        </button>
+        <div class="ptr__overflow-sep" />
+        <button class="ptr__overflow-danger" role="menuitem" @click="onDeleteFromMenu">
+          <i class="pi pi-trash" /> Supprimer
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Assign manager dialog -->
     <AssignManagerDialog
@@ -268,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Dialog from 'primevue/dialog'
@@ -293,6 +321,69 @@ const router       = useRouter()
 function openProjectModules(id: string) {
   router.push(`/app/pm/projects/${id}`)
 }
+
+// ─── Row overflow menu (single shared instance) ──────────────────────────────
+const menuOpenProject = ref<ProjectSummary | null>(null)
+const menuPos         = ref<{ top: number; left: number }>({ top: 0, left: 0 })
+
+function toggleMenu(event: MouseEvent, project: ProjectSummary): void {
+  if (menuOpenProject.value?.id === project.id) {
+    menuOpenProject.value = null
+    return
+  }
+  const btn = (event.currentTarget as HTMLElement | null) ?? (event.target as HTMLElement | null)
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const MENU_WIDTH = 220
+    menuPos.value = {
+      top: rect.bottom + 4,
+      left: Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
+    }
+  }
+  menuOpenProject.value = project
+}
+
+function closeMenu(): void {
+  menuOpenProject.value = null
+}
+
+function goToModule(routeName: string): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  router.push({ name: routeName, params: { id: project.id } })
+}
+
+function onAssignFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  openAssign(project.id, project.name)
+}
+
+function onDuplicateFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  openDuplicate(project.id, project.name)
+}
+
+function onArchiveFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project || project.status === 'Archived') return
+  closeMenu()
+  handleArchive(project.id, project.name)
+}
+
+function onDeleteFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  handleDelete(project.id, project.name)
+}
+
+onMounted(() => document.addEventListener('click', closeMenu))
+onUnmounted(() => document.removeEventListener('click', closeMenu))
 
 const showForm          = ref(false)
 const selectedProjectId = ref<string | null>(null)

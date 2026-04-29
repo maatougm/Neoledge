@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { Result } from '../common/result.js';
 
 @Injectable()
 export class OutcomesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(OutcomesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async list(meetingId: string, type?: string) {
     try {
@@ -97,6 +103,26 @@ export class OutcomesService {
         where: { id: outcomeId },
         data: { workPackageId: wp.id },
       });
+
+      // Notify the assignee (if set and not the converter themselves) — mirrors
+      // the WorkPackagesService.create() path so meeting-converted tasks also
+      // surface in the assignee's inbox immediately.
+      if (wp.assigneeId && wp.assigneeId !== authorId) {
+        void this.notifications
+          .notifyEnhanced({
+            userId: wp.assigneeId,
+            type: 'work_package_assigned',
+            title: 'Nouvelle tâche assignée',
+            message: `"${wp.title}" vous a été assigné`,
+            projectId,
+            reason: 'Assignee',
+            entityType: 'work_package',
+            entityId: wp.id,
+            actorId: authorId,
+            link: `/app/pm/projects/${projectId}/workpackages`,
+          })
+          .catch((e) => this.logger.error('notifyEnhanced (outcome → WP) failed', e));
+      }
 
       return Result.ok(wp);
     } catch (err: unknown) {

@@ -8,12 +8,12 @@
       <div class="cahier-header-left">
         <i class="pi pi-file-word cahier-icon" />
         <span class="cahier-title">Cahier des charges</span>
-        <NeoTag v-if="lastGenerated" value="Généré" severity="success" />
+        <NeoTag v-if="savedContent" value="Enregistré" severity="success" />
         <NeoTag v-else-if="generating" value="En cours..." severity="info" />
       </div>
       <div class="cahier-header-right" @click.stop>
         <NeoButton
-          label="Générer le cahier"
+          :label="savedContent ? 'Régénérer' : 'Générer le cahier'"
           icon="pi pi-sparkles"
           size="small"
           :loading="generating"
@@ -47,13 +47,15 @@
         <NeoButton label="Réessayer" icon="pi pi-refresh" size="small" @click="handleGenerate" />
       </div>
 
-      <!-- Success state: download + feedback -->
-      <div v-else-if="lastGenerated" class="cahier-result">
+      <!-- Success state: inline preview + download + feedback -->
+      <div v-else-if="savedContent" class="cahier-result">
         <div class="cahier-success">
           <i class="pi pi-check-circle cahier-success-icon" />
           <div>
-            <p class="cahier-success-text">Cahier des charges généré avec succès.</p>
-            <p class="cahier-success-meta">{{ lastGenerated }}</p>
+            <p class="cahier-success-text">Cahier des charges enregistré.</p>
+            <p class="cahier-success-meta">
+              Dernière sauvegarde : {{ savedAtLabel }} — visible par l'équipe de validation.
+            </p>
           </div>
         </div>
 
@@ -71,6 +73,42 @@
             @click="handleGenerate"
             :disabled="generating"
           />
+        </div>
+
+        <!-- Inline rendering of the saved cahier -->
+        <div class="cahier-doc">
+          <CahierDocSection title="1.1 Objectif du document" :markdown="savedContent.objectifDocument" />
+          <CahierDocSection title="1.2 Contexte" :markdown="savedContent.contexte" />
+          <CahierDocSection title="2.1 Objectif du projet" :markdown="savedContent.objectifProjet" />
+          <CahierDocSection title="2.2.1 Périmètre — Éléments inclus" :markdown="savedContent.perimetreInclus" />
+          <CahierDocSection title="2.2.2 Périmètre — Éléments exclus" :markdown="savedContent.perimetreExclus" />
+
+          <h3 class="cahier-doc-h">2.3 Exigences fonctionnelles</h3>
+          <div v-if="savedContent.exigencesFonctionnelles?.length">
+            <CahierDocSection
+              v-for="(s, i) in savedContent.exigencesFonctionnelles"
+              :key="`ef-${i}`"
+              :title="s.title"
+              :markdown="s.content"
+              level="sub"
+            />
+          </div>
+          <p v-else class="cahier-doc-empty">À définir</p>
+
+          <h3 class="cahier-doc-h">2.4 Architecture technique</h3>
+          <div v-if="savedContent.architectureTechnique?.length">
+            <CahierDocSection
+              v-for="(s, i) in savedContent.architectureTechnique"
+              :key="`at-${i}`"
+              :title="s.title"
+              :markdown="s.content"
+              level="sub"
+            />
+          </div>
+          <p v-else class="cahier-doc-empty">À définir</p>
+
+          <CahierDocSection title="2.5 Livrables" :markdown="savedContent.livrables" />
+          <CahierDocSection title="3. Conclusion" :markdown="savedContent.conclusion" />
         </div>
 
         <!-- Feedback section -->
@@ -150,8 +188,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/lib/api'
+import CahierDocSection from './CahierDocSection.vue'
+
+interface CahierSection {
+  title: string
+  content: string
+}
+
+interface CahierAiResult {
+  objectifDocument: string
+  contexte: string
+  objectifProjet: string
+  perimetreInclus: string
+  perimetreExclus: string
+  exigencesFonctionnelles: CahierSection[]
+  architectureTechnique: CahierSection[]
+  livrables: string
+  conclusion: string
+}
 
 const props = defineProps<{ projectId: string }>()
 
@@ -159,7 +215,8 @@ const expanded = ref(true)
 const generating = ref(false)
 const downloading = ref(false)
 const error = ref<string | null>(null)
-const lastGenerated = ref<string | null>(null)
+const savedContent = ref<CahierAiResult | null>(null)
+const savedAt = ref<string | null>(null)
 const submittingFeedback = ref(false)
 
 const feedbackComment = ref('')
@@ -179,9 +236,32 @@ const sectionOptions = [
   { label: 'Conclusion', value: 'conclusion' },
 ]
 
-onMounted(async () => {
-  await loadFeedback()
+const savedAtLabel = computed(() => {
+  if (!savedAt.value) return ''
+  try {
+    return new Date(savedAt.value).toLocaleString('fr-FR')
+  } catch {
+    return savedAt.value
+  }
 })
+
+onMounted(async () => {
+  await Promise.all([loadSaved(), loadFeedback()])
+})
+
+async function loadSaved() {
+  try {
+    const { data } = await api.get<{ aiContent: CahierAiResult | null; savedAt: string | null }>(
+      `/pm/projects/${props.projectId}/cahier-des-charges/saved`,
+    )
+    if (data.aiContent) {
+      savedContent.value = data.aiContent
+      savedAt.value = data.savedAt
+    }
+  } catch {
+    // No saved cahier yet — empty state will render.
+  }
+}
 
 async function loadFeedback() {
   try {
@@ -197,19 +277,48 @@ async function handleGenerate() {
   error.value = null
 
   try {
+    // 1. Generate via /preview → JSON (no file download)
+    const { data } = await api.get<{
+      formData: unknown
+      aiContent: CahierAiResult
+      transcriptCount: number
+      generatedAt: string
+    }>(`/pm/projects/${props.projectId}/cahier-des-charges/preview`)
+
+    // 2. Persist to Project.aiOutput so the Cahier tab keeps showing it next time,
+    //    and so SpecificationTeam + automation rules get notified on the backend.
+    await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, {
+      aiContent: data.aiContent,
+    })
+
+    savedContent.value = data.aiContent
+    savedAt.value = new Date().toISOString()
+  } catch (e: unknown) {
+    const resp = (e as { response?: { data?: { message?: string; missingFields?: string[] } } })?.response?.data
+    const missing = resp?.missingFields
+    if (Array.isArray(missing) && missing.length > 0) {
+      error.value = `Champs IA obligatoires non renseignés : ${missing.join(', ')}. Remplissez le questionnaire avant de générer.`
+    } else {
+      error.value = resp?.message ?? 'Erreur lors de la génération du cahier des charges.'
+    }
+  } finally {
+    generating.value = false
+  }
+}
+
+async function handleDownload() {
+  downloading.value = true
+  try {
     const { data, headers } = await api.get(
       `/pm/projects/${props.projectId}/cahier-des-charges/generate`,
       { responseType: 'blob' },
     )
-
-    // Extract filename from Content-Disposition
     const disposition = headers['content-disposition'] ?? ''
     const match = disposition.match(/filename="?([^"]+)"?/)
     const fileName = match?.[1]
       ? decodeURIComponent(match[1])
       : `Cahier-des-charges_${props.projectId}.docx`
 
-    // Trigger browser download
     const url = URL.createObjectURL(data)
     const link = document.createElement('a')
     link.href = url
@@ -218,20 +327,12 @@ async function handleGenerate() {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-
-    lastGenerated.value = new Date().toLocaleString('fr-FR')
   } catch (e: unknown) {
     const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-    error.value = msg ?? 'Erreur lors de la génération du cahier des charges.'
+    error.value = msg ?? 'Erreur lors du téléchargement du cahier.'
   } finally {
-    generating.value = false
+    downloading.value = false
   }
-}
-
-async function handleDownload() {
-  downloading.value = true
-  await handleGenerate()
-  downloading.value = false
 }
 
 async function submitFeedback(status: 'approved' | 'rejected') {
@@ -340,6 +441,30 @@ async function submitFeedback(status: 'approved' | 'rejected') {
   display: flex;
   gap: 10px;
   margin-bottom: 24px;
+}
+
+/* Inline cahier document preview (rendered from saved AI JSON) */
+.cahier-doc {
+  border: 1px solid var(--nl-border, #e0e0e0);
+  border-radius: 6px;
+  padding: 16px 20px;
+  background: var(--nl-surface-alt, #fafbfc);
+  margin-bottom: 24px;
+}
+
+.cahier-doc-h {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--nl-text-1, #111);
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--nl-border, #e0e0e0);
+}
+
+.cahier-doc-empty {
+  font-style: italic;
+  color: var(--nl-text-muted, #888);
+  margin: 0 0 12px 12px;
 }
 
 /* Feedback */

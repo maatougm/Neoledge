@@ -19,6 +19,7 @@ export const KNOWN_TRIGGER_EVENTS = [
   'work_package_created',
   'work_package_status_changed',
   'milestone_reached',
+  'cahier_generated',
 ] as const;
 
 export const KNOWN_ACTION_TYPES = ['send_notification', 'update_field'] as const;

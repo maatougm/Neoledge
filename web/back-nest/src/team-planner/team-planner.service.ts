@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { Result } from '../common/result.js';
 import { DEFAULT_DAILY_CAPACITY_HOURS } from '../common/enums/statuses.js';
 
@@ -9,7 +10,10 @@ const DAILY_CAPACITY_HOURS = DEFAULT_DAILY_CAPACITY_HOURS;
 export class TeamPlannerService {
   private readonly logger = new Logger(TeamPlannerService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async getAssignments(filters: { from: string; to: string; userIds?: string[]; projectIds?: string[] }) {
     try {
@@ -124,12 +128,38 @@ export class TeamPlannerService {
     }
   }
 
-  async reassign(wpId: string, dto: { assigneeId: string; startDate?: string; dueDate?: string }) {
+  async reassign(wpId: string, dto: { assigneeId: string; startDate?: string; dueDate?: string }, actorId?: string) {
     try {
+      const existing = await this.prisma.workPackage.findUnique({
+        where: { id: wpId },
+        select: { id: true, title: true, projectId: true, assigneeId: true, isDeleted: true },
+      });
+      if (!existing || existing.isDeleted) return Result.fail('Work package introuvable.');
+
       const data: Record<string, unknown> = { assigneeId: dto.assigneeId };
       if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
       if (dto.dueDate !== undefined) data.dueDate = new Date(dto.dueDate);
       const wp = await this.prisma.workPackage.update({ where: { id: wpId }, data });
+
+      // Notify the new assignee if it actually changed and isn't the actor themselves.
+      const assigneeChanged = !!dto.assigneeId && dto.assigneeId !== existing.assigneeId;
+      if (assigneeChanged) {
+        void this.notifications
+          .notifyEnhanced({
+            userId: dto.assigneeId,
+            type: 'work_package_assigned',
+            title: 'Tâche réassignée',
+            message: `"${existing.title}" vous a été assigné`,
+            projectId: existing.projectId,
+            reason: 'Assignee',
+            entityType: 'work_package',
+            entityId: wpId,
+            actorId: actorId ?? null,
+            link: `/app/pm/projects/${existing.projectId}/workpackages`,
+          })
+          .catch((e) => this.logger.error('notifyEnhanced (team-planner reassign) failed', e));
+      }
+
       return Result.ok(wp);
     } catch {
       return Result.fail('Échec de la réaffectation.');

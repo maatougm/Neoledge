@@ -191,6 +191,8 @@ const triggerOptions = [
   { value: 'sprint_closed',                  label: 'Sprint : clôturé' },
   // v2.0 milestone events
   { value: 'milestone_reached',              label: 'Jalon : atteint' },
+  // Cahier des charges
+  { value: 'cahier_generated',               label: 'Cahier des charges : généré' },
 ]
 
 const actionOptions = [

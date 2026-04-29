@@ -116,6 +116,17 @@
 .ptr__overflow-danger:hover { background: var(--nl-danger-light) !important; }
 .ptr__overflow-danger .pi { color: var(--nl-danger) !important; }
 .ptr__overflow-sep { height: 1px; background: var(--nl-separator); margin: 4px 0; }
+.ptr__overflow-menu button:disabled { opacity: 0.5; cursor: not-allowed; }
+.ptr__overflow-menu button:disabled:hover { background: transparent; }
+.ptr__overflow-group {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nl-text-3);
+  user-select: none;
+}
 
 
 /* ── Overlay stacking — keep PrimeVue/NeoLibrary dropdowns above AppModal ─────
