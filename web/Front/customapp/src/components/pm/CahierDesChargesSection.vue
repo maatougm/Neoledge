@@ -189,6 +189,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { NeoButton, NeoTag, NeoSelect } from '@neolibrary/components'
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
 
