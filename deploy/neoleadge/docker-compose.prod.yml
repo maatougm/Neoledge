@@ -54,7 +54,9 @@ services:
       AI_FALLBACK_BASE_URL: ${AI_FALLBACK_BASE_URL:-}
       AI_FALLBACK_MODEL: ${AI_FALLBACK_MODEL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TRANSCRIPTION_URL: ${TRANSCRIPTION_URL:-}
+      # Pinned to the docker-internal service name — overriding via .env.prod
+      # would break the compose-network resolution.
+      TRANSCRIPTION_URL: http://transcription:8000
       TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS}
       THROTTLER_WHITELIST: ${THROTTLER_WHITELIST:-}
@@ -72,6 +74,33 @@ services:
     restart: unless-stopped
     mem_limit: 768m
     mem_reservation: 192m
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    networks: [ neoleadge-net ]
+
+  # ── Python transcription microservice ──────────────────────────────────────
+  # Uses faster-whisper + speechbrain ECAPA. Bound to the internal
+  # neoleadge-net only; no host port published (per its Dockerfile lockdown).
+  # Models cache to /home/nonroot/.cache so they persist across restarts.
+  transcription:
+    build:
+      context: ../../web/Transcription
+      dockerfile: Dockerfile
+    container_name: neoleadge_transcription
+    environment:
+      TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
+      ALLOWED_ORIGIN: http://server:3000
+      # Default to "base" (~140 MB) to fit the test box's RAM. Override to
+      # "small" / "medium" / "large-v3" via .env.prod for higher quality.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      DEVICE: ${TRANSCRIPTION_DEVICE:-cpu}
+      COMPUTE_TYPE: ${TRANSCRIPTION_COMPUTE_TYPE:-int8}
+    volumes:
+      - neoleadge_models:/home/nonroot/.cache
+    restart: unless-stopped
+    mem_limit: 3g
+    mem_reservation: 512m
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
@@ -98,6 +127,7 @@ volumes:
   neoleadge_db:
   neoleadge_uploads:
   neoleadge_logs:
+  neoleadge_models:
 
 networks:
   neoleadge-net:
