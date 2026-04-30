@@ -2,6 +2,9 @@ fastapi==0.115.0
 uvicorn[standard]==0.32.0
 python-multipart==0.0.12
 faster-whisper==1.1.0
+# faster-whisper 1.1+ imports `requests` for the model-download path but
+# doesn't pin it transitively. Pin a stable wheel range here.
+requests>=2.31,<3
 numpy==1.26.4
 scikit-learn==1.4.2
 torch==2.3.1
