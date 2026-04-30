@@ -96,8 +96,14 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL:-base}
       DEVICE: ${TRANSCRIPTION_DEVICE:-cpu}
       COMPUTE_TYPE: ${TRANSCRIPTION_COMPUTE_TYPE:-int8}
+      # The Dockerfile creates `nonroot` as a system user with no HOME, so
+      # huggingface_hub (default cache: $HOME/.cache) lands at /nonexistent
+      # and can't write. Pin caches under /app (owned by nonroot per Dockerfile).
+      HOME: /app
+      HF_HOME: /app/.cache/huggingface
+      XDG_CACHE_HOME: /app/.cache
     volumes:
-      - neoleadge_models:/home/nonroot/.cache
+      - neoleadge_models:/app/.cache
     restart: unless-stopped
     mem_limit: 3g
     mem_reservation: 512m

@@ -12,7 +12,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Run as a non-root user — limits blast radius of any RCE via ffmpeg/torchaudio.
+# /app/.cache is the cache root for HuggingFace + speechbrain downloads. We
+# create + chown it BEFORE the volume mount so the named volume inherits
+# nonroot ownership instead of root.
 RUN addgroup --system nonroot && adduser --system --ingroup nonroot nonroot \
+    && mkdir -p /app/.cache \
     && chown -R nonroot:nonroot /app
 USER nonroot
 
