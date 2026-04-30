@@ -73,13 +73,10 @@ export class MeetingsService {
   ) {}
 
   async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
-    // No default fallback — TRANSCRIPTION_URL is validated as required at startup.
-    // Using a fallback here would silently shadow the env-validation failure.
+    // No default fallback URL — TRANSCRIPTION_URL is validated as required at startup.
     const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
 
     // SSRF guard: only allow http(s) schemes pointing to the configured host.
-    // This prevents a compromised config value from routing audio buffers to
-    // arbitrary internal services.
     try {
       const parsed = new URL(serviceUrl)
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -91,34 +88,27 @@ export class MeetingsService {
       return Result.fail<any>('Configuration de transcription invalide.')
     }
 
+    // Try the local model first; if the local service is unreachable or errors out,
+    // fall back to OpenAI's Whisper API (when OPENAI_API_KEY is set).
+    let data: TranscriptionResponse
+    let usedFallback = false
     try {
-      const formData = new FormData()
-      formData.append('audio', new Blob([audioBuffer as unknown as BlobPart]), fileName)
-
-      const transcriptionSecret = this.config.get<string>('TRANSCRIPTION_SECRET', '')
-      const headers: Record<string, string> = {}
-      if (transcriptionSecret) {
-        headers['x-transcription-secret'] = transcriptionSecret
-      }
-
-      const response = await fetch(`${serviceUrl}/transcribe`, { method: 'POST', body: formData, headers })
-
-      if (!response.ok) {
-        const text = await response.text()
-        this.logger.error(`Transcription service error: ${response.status} ${text}`)
+      data = await this.callLocalTranscription(serviceUrl, audioBuffer, fileName)
+    } catch (localErr: unknown) {
+      const msg = localErr instanceof Error ? localErr.message : String(localErr)
+      this.logger.warn(`Local transcription failed: ${msg} — attempting Whisper API fallback`)
+      try {
+        data = await this.callWhisperApiFallback(audioBuffer, fileName)
+        usedFallback = true
+        this.logger.log('Whisper API fallback succeeded')
+      } catch (fallbackErr: unknown) {
+        const fmsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        this.logger.error(`Whisper API fallback also failed: ${fmsg}`)
         return Result.fail<any>('Service de transcription indisponible. Veuillez réessayer ultérieurement.')
       }
+    }
 
-      const rawJson: unknown = await response.json()
-      let data: TranscriptionResponse
-      try {
-        data = validateTranscriptionResponse(rawJson)
-      } catch (validationErr: unknown) {
-        const msg = validationErr instanceof Error ? validationErr.message : String(validationErr)
-        this.logger.error(`Transcription service returned invalid response shape: ${msg}`)
-        return Result.fail<any>(`Réponse de transcription invalide : ${msg}`)
-      }
-
+    try {
       const transcript = await this.prisma.meetingTranscript.create({
         data: {
           projectId,
@@ -144,6 +134,10 @@ export class MeetingsService {
         await this.prisma.transcriptSegment.createMany({ data: segments })
       }
 
+      if (usedFallback) {
+        this.logger.log(`Transcript ${transcript.id} created via Whisper API fallback`)
+      }
+
       // Fire-and-forget AI analysis if enabled
       const aiEnabled = this.config.get<string>('AI_ENABLED', 'false')
       if (aiEnabled === 'true' || aiEnabled === '1') {
@@ -155,8 +149,142 @@ export class MeetingsService {
       return this.getById(transcript.id)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
-      this.logger.error(`Transcription failed: ${message}`)
-      return Result.fail<any>('Service de transcription indisponible. Veuillez réessayer ultérieurement.')
+      this.logger.error(`Transcript persistence failed: ${message}`)
+      return Result.fail<any>('Erreur lors de la sauvegarde de la transcription.')
+    }
+  }
+
+  /**
+   * POST audio to the local Python transcription service. Throws on any non-2xx
+   * response or invalid JSON shape so the caller can fall back to the API path.
+   */
+  private async callLocalTranscription(
+    serviceUrl: string,
+    audioBuffer: Buffer,
+    fileName: string,
+  ): Promise<TranscriptionResponse> {
+    const formData = new FormData()
+    formData.append('audio', new Blob([audioBuffer as unknown as BlobPart]), fileName)
+
+    const transcriptionSecret = this.config.get<string>('TRANSCRIPTION_SECRET', '')
+    const headers: Record<string, string> = {}
+    if (transcriptionSecret) {
+      headers['x-transcription-secret'] = transcriptionSecret
+    }
+
+    // 5-minute hard timeout — long enough for a 30-min audio file on CPU,
+    // short enough that a hung container can't pile up requests indefinitely.
+    const response = await fetch(`${serviceUrl}/transcribe`, {
+      method: 'POST',
+      body: formData,
+      headers,
+      signal: AbortSignal.timeout(300_000),
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`local service returned ${response.status}: ${text.slice(0, 200)}`)
+    }
+
+    const rawJson: unknown = await response.json()
+    return validateTranscriptionResponse(rawJson)
+  }
+
+  /**
+   * Fallback path: Z.AI speech-to-text (glm-asr) — OpenAI-compatible
+   * `/audio/transcriptions` endpoint. Reuses AI_FALLBACK_API_KEY (the same
+   * key already used by ZaiFallbackProvider for chat completions).
+   *
+   * Returns a `TranscriptionResponse` with a single "Speaker 1" since
+   * Z.AI's ASR doesn't diarize. Throws if no API key is configured or the
+   * call fails.
+   *
+   * Operators can override:
+   *   - WHISPER_FALLBACK_BASE_URL  (default: https://api.z.ai/api/paas/v4)
+   *   - WHISPER_FALLBACK_MODEL     (default: glm-asr)
+   *   - WHISPER_FALLBACK_API_KEY   (default: AI_FALLBACK_API_KEY)
+   */
+  private async callWhisperApiFallback(
+    audioBuffer: Buffer,
+    fileName: string,
+  ): Promise<TranscriptionResponse> {
+    const apiKey =
+      this.config.get<string>('WHISPER_FALLBACK_API_KEY', '') ||
+      this.config.get<string>('AI_FALLBACK_API_KEY', '')
+    if (!apiKey) {
+      throw new Error('AI_FALLBACK_API_KEY (Z.AI) not configured — fallback unavailable')
+    }
+    const baseUrl = (
+      this.config.get<string>('WHISPER_FALLBACK_BASE_URL', '') ||
+      'https://api.z.ai/api/paas/v4'
+    ).replace(/\/+$/, '')
+    const model = this.config.get<string>('WHISPER_FALLBACK_MODEL', 'glm-asr')
+
+    const form = new FormData()
+    form.append('file', new Blob([audioBuffer as unknown as BlobPart]), fileName)
+    form.append('model', model)
+    form.append('response_format', 'verbose_json')
+    form.append('timestamp_granularities[]', 'segment')
+
+    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      body: form,
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(300_000),
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`Whisper API returned ${response.status}: ${text.slice(0, 300)}`)
+    }
+
+    const raw = (await response.json()) as {
+      task?: string
+      language?: string
+      duration?: number
+      text?: string
+      segments?: Array<{
+        id: number
+        start: number
+        end: number
+        text: string
+        avg_logprob?: number
+        no_speech_prob?: number
+      }>
+    }
+
+    const language = (raw.language ?? '').slice(0, 10) || 'auto'
+    const duration = typeof raw.duration === 'number' && isFinite(raw.duration) ? raw.duration : 0
+
+    const apiSegments = Array.isArray(raw.segments) ? raw.segments : []
+    const segments: TranscriptionSegment[] = apiSegments.length > 0
+      ? apiSegments.map((s) => ({
+          speaker: 'Speaker 1',
+          text: typeof s.text === 'string' ? s.text.trim().slice(0, 10_000) : '',
+          start_time: typeof s.start === 'number' && isFinite(s.start) ? s.start : 0,
+          end_time: typeof s.end === 'number' && isFinite(s.end) ? s.end : 0,
+          language,
+          // OpenAI's avg_logprob is in [-inf, 0]; map to a [0,1] confidence.
+          confidence: typeof s.avg_logprob === 'number' && isFinite(s.avg_logprob)
+            ? Math.max(0, Math.min(1, Math.exp(s.avg_logprob)))
+            : 0.85,
+        }))
+      // No segment-level data — synthesize one segment from the flat text.
+      : raw.text && raw.text.trim()
+      ? [{
+          speaker: 'Speaker 1',
+          text: raw.text.trim().slice(0, 10_000),
+          start_time: 0,
+          end_time: duration,
+          language,
+          confidence: 0.85,
+        }]
+      : []
+
+    return {
+      segments,
+      duration_seconds: duration,
+      detected_languages: language && language !== 'auto' ? [language] : [],
     }
   }
 
