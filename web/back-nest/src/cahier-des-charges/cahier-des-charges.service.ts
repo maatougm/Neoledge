@@ -217,6 +217,64 @@ export class CahierDesChargesService {
     )
   }
 
+  /** Aggregate validation status of the saved cahier for the project overview / banner. */
+  async getCahierStatus(projectId: string): Promise<{
+    cahierSavedAt: string | null
+    status: 'none' | 'pending' | 'approved' | 'rejected'
+    lastFeedback: { status: string; comment: string; section: string | null; createdAt: string; userName: string | null } | null
+    approverCount: number
+    rejectionCount: number
+  }> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { aiOutput: true },
+    })
+
+    let cahierSavedAt: string | null = null
+    if (project?.aiOutput) {
+      try {
+        const parsed = JSON.parse(project.aiOutput) as { savedAt?: string }
+        cahierSavedAt = parsed.savedAt ?? null
+      } catch { /* ignore */ }
+    }
+
+    if (!cahierSavedAt) {
+      return { cahierSavedAt: null, status: 'none', lastFeedback: null, approverCount: 0, rejectionCount: 0 }
+    }
+
+    // Only consider feedback rows submitted AFTER the latest save.
+    const savedDate = new Date(cahierSavedAt)
+    const feedback = await this.prisma.cahierFeedback.findMany({
+      where: { projectId, createdAt: { gte: savedDate } },
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: { firstName: true, lastName: true } } },
+    })
+
+    const approverCount = feedback.filter((f) => f.status === 'approved').length
+    const rejectionCount = feedback.filter((f) => f.status === 'rejected').length
+
+    let status: 'pending' | 'approved' | 'rejected' = 'pending'
+    if (rejectionCount > 0) status = 'rejected'
+    else if (approverCount > 0) status = 'approved'
+
+    const last = feedback[0] ?? null
+    return {
+      cahierSavedAt,
+      status,
+      approverCount,
+      rejectionCount,
+      lastFeedback: last
+        ? {
+            status: last.status,
+            comment: last.comment,
+            section: last.section,
+            createdAt: last.createdAt.toISOString(),
+            userName: last.user ? `${last.user.firstName} ${last.user.lastName}` : null,
+          }
+        : null,
+    }
+  }
+
   /** Retrieve the previously saved cahier JSON — or null if none. */
   async getPersistedCahier(projectId: string): Promise<{ aiContent: unknown; savedAt: string | null }> {
     const project = await this.prisma.project.findUnique({
@@ -240,6 +298,17 @@ export class CahierDesChargesService {
     comment: string,
     section?: string,
   ): Promise<void> {
+    // Reject self-approval — the project's PM cannot approve their own cahier.
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { projectManagerId: true },
+    })
+    if (project?.projectManagerId === userId) {
+      throw new BadRequestException(
+        'Vous ne pouvez pas valider votre propre cahier des charges. Cette action est réservée à l\'équipe de validation.',
+      )
+    }
+
     const aiModel = this.config.get<string>('CAHIER_AI_MODEL', 'gpt-4o-mini')
     await this.prisma.cahierFeedback.create({
       data: {

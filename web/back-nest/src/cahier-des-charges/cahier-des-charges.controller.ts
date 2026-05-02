@@ -94,6 +94,20 @@ export class CahierDesChargesController {
   }
 
   /**
+   * GET /pm/projects/:projectId/cahier-des-charges/status
+   *
+   * Aggregate validation status: { status: 'none'|'pending'|'approved'|'rejected',
+   * cahierSavedAt, lastFeedback, approverCount, rejectionCount }.
+   * Used to render the status badge + reject banner.
+   */
+  @Get('pm/projects/:projectId/cahier-des-charges/status')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async getStatus(@Param('projectId') projectId: string) {
+    return this.cahierService.getCahierStatus(projectId)
+  }
+
+  /**
    * POST /pm/projects/:projectId/cahier-des-charges/feedback
    *
    * Save user feedback on a generated cahier des charges.

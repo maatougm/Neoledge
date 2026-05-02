@@ -5,10 +5,12 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
   ConflictException,
   NotFoundException,
 } from '@nestjs/common'
@@ -55,9 +57,30 @@ export class ProjectMembersController {
   }
 
   @Delete(':memberId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('memberId') memberId: string) {
-    const result = await this.service.remove(memberId)
-    if (result.isFailure) throw new NotFoundException(result.error)
+  async remove(
+    @Param('memberId') memberId: string,
+    @Query('force') force?: string,
+    @Query('reassignTo') reassignTo?: string,
+  ) {
+    const opts = {
+      force: force === 'true' || force === '1',
+      reassignTo: reassignTo || undefined,
+    }
+    const result = await this.service.remove(memberId, opts)
+    if (result.isFailure) {
+      if (result.error?.startsWith('BLOCKERS:')) {
+        const json = result.error.slice('BLOCKERS:'.length)
+        let blockers: Record<string, number> = {}
+        try { blockers = JSON.parse(json) as Record<string, number> } catch { /* ignore */ }
+        throw new ConflictException({
+          message: 'Ce membre a encore des références actives sur le projet',
+          blockers,
+          code: 'MEMBER_HAS_BLOCKERS',
+        })
+      }
+      if (result.error === 'Membre introuvable') throw new NotFoundException(result.error)
+      throw new BadRequestException(result.error)
+    }
+    return { success: true }
   }
 }

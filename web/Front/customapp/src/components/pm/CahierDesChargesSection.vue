@@ -51,12 +51,31 @@
       <div v-else-if="savedContent" class="cahier-result">
         <div class="cahier-success">
           <i class="pi pi-check-circle cahier-success-icon" />
-          <div>
-            <p class="cahier-success-text">Cahier des charges enregistré.</p>
+          <div class="cahier-success-info">
+            <p class="cahier-success-text">
+              Cahier des charges enregistré.
+              <NeoTag v-if="statusBadge" :value="statusBadge.label" :severity="statusBadge.severity" class="cahier-status-tag" />
+            </p>
             <p class="cahier-success-meta">
               Dernière sauvegarde : {{ savedAtLabel }} — visible par l'équipe de validation.
             </p>
           </div>
+        </div>
+
+        <!-- Rejection banner: prominent red box with reviewer feedback -->
+        <div v-if="cahierStatus?.status === 'rejected' && cahierStatus.lastFeedback" class="cahier-reject-banner">
+          <div class="cahier-reject-banner__header">
+            <i class="pi pi-exclamation-circle" />
+            <strong>Cahier rejeté par {{ cahierStatus.lastFeedback.userName ?? 'l\'équipe de validation' }}</strong>
+            <span class="cahier-reject-banner__date">{{ formatRelative(cahierStatus.lastFeedback.createdAt) }}</span>
+          </div>
+          <p class="cahier-reject-banner__section">
+            Section concernée : <strong>{{ sectionLabel(cahierStatus.lastFeedback.section) }}</strong>
+          </p>
+          <p class="cahier-reject-banner__comment">{{ cahierStatus.lastFeedback.comment }}</p>
+          <p class="cahier-reject-banner__hint">
+            Cliquez sur « Régénérer » pour produire une nouvelle version qui prend en compte ces remarques.
+          </p>
         </div>
 
         <div class="cahier-actions">
@@ -77,7 +96,7 @@
 
         <!-- Inline rendering of the saved cahier -->
         <div class="cahier-doc">
-          <CahierReviewActions :project-id="projectId" @reviewed="loadSaved" />
+          <CahierReviewActions :project-id="projectId" :status="cahierStatus?.status" @reviewed="onReviewed" />
           <CahierDocSection title="1.1 Objectif du document" :markdown="savedContent.objectifDocument" />
           <CahierDocSection title="1.2 Contexte" :markdown="savedContent.contexte" />
           <CahierDocSection title="2.1 Objectif du projet" :markdown="savedContent.objectifProjet" />
@@ -112,66 +131,14 @@
           <CahierDocSection title="3. Conclusion" :markdown="savedContent.conclusion" />
         </div>
 
-        <!-- Feedback section -->
-        <div class="cahier-feedback">
-          <h3 class="cahier-feedback-title">
-            <i class="pi pi-comment" /> Évaluation du document
-          </h3>
-          <p class="cahier-feedback-hint">
-            Si le document ne correspond pas à vos attentes, décrivez les problèmes.
-            L'IA tiendra compte de vos retours lors de la prochaine génération.
-          </p>
-
-          <div class="cahier-feedback-form">
-            <label class="cahier-label">Section concernée (optionnel)</label>
-            <NeoSelect
-              v-model="feedbackSection"
-              :options="sectionOptions"
-              optionLabel="label"
-              optionValue="value"
-              placeholder="Toutes les sections"
-              class="cahier-select"
-            />
-
-            <label class="cahier-label">Commentaire</label>
-            <textarea
-              v-model="feedbackComment"
-              class="cahier-textarea"
-              rows="3"
-              placeholder="Décrivez ce qui ne va pas ou ce qu'il faut améliorer..."
-            />
-
-            <div class="cahier-feedback-buttons">
-              <NeoButton
-                label="Approuver"
-                icon="pi pi-check"
-                severity="success"
-                size="small"
-                :loading="submittingFeedback"
-                :disabled="submittingFeedback"
-                @click="submitFeedback('approved')"
-              />
-              <NeoButton
-                label="Rejeter et améliorer"
-                icon="pi pi-times"
-                severity="danger"
-                size="small"
-                :loading="submittingFeedback"
-                :disabled="!feedbackComment.trim() || submittingFeedback"
-                @click="submitFeedback('rejected')"
-              />
-            </div>
-          </div>
-
-          <!-- Past feedback history -->
-          <div v-if="pastFeedback.length > 0" class="cahier-feedback-history">
-            <h4 class="cahier-feedback-history-title">Retours précédents (pris en compte par l'IA)</h4>
-            <ul class="cahier-feedback-list">
-              <li v-for="(fb, idx) in pastFeedback" :key="idx" class="cahier-feedback-item">
-                {{ fb }}
-              </li>
-            </ul>
-          </div>
+        <!-- Past feedback history (read-only — approve/reject moved to CahierReviewActions for spec team) -->
+        <div v-if="pastFeedback.length > 0" class="cahier-feedback-history">
+          <h4 class="cahier-feedback-history-title">Retours précédents (pris en compte par l'IA)</h4>
+          <ul class="cahier-feedback-list">
+            <li v-for="(fb, idx) in pastFeedback" :key="idx" class="cahier-feedback-item">
+              {{ fb }}
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -190,10 +157,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { NeoButton, NeoTag, NeoSelect } from '@neolibrary/components'
+import { NeoButton, NeoTag } from '@neolibrary/components'
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
+import { formatRelative } from '@/lib/formatDate'
 
 interface CahierSection {
   title: string
@@ -212,6 +180,20 @@ interface CahierAiResult {
   conclusion: string
 }
 
+interface CahierStatus {
+  cahierSavedAt: string | null
+  status: 'none' | 'pending' | 'approved' | 'rejected'
+  approverCount: number
+  rejectionCount: number
+  lastFeedback: {
+    status: string
+    comment: string
+    section: string | null
+    createdAt: string
+    userName: string | null
+  } | null
+}
+
 const props = defineProps<{ projectId: string }>()
 
 const expanded = ref(true)
@@ -220,24 +202,32 @@ const downloading = ref(false)
 const error = ref<string | null>(null)
 const savedContent = ref<CahierAiResult | null>(null)
 const savedAt = ref<string | null>(null)
-const submittingFeedback = ref(false)
-
-const feedbackComment = ref('')
-const feedbackSection = ref<string | null>(null)
 const pastFeedback = ref<string[]>([])
+const cahierStatus = ref<CahierStatus | null>(null)
 
-const sectionOptions = [
-  { label: 'Toutes les sections', value: null },
-  { label: 'Objectif du document', value: 'objectifDocument' },
-  { label: 'Contexte', value: 'contexte' },
-  { label: 'Objectif du projet', value: 'objectifProjet' },
-  { label: 'Périmètre — Éléments inclus', value: 'perimetreInclus' },
-  { label: 'Périmètre — Éléments exclus', value: 'perimetreExclus' },
-  { label: 'Exigences fonctionnelles', value: 'exigencesFonctionnelles' },
-  { label: 'Architecture technique', value: 'architectureTechnique' },
-  { label: 'Livrables', value: 'livrables' },
-  { label: 'Conclusion', value: 'conclusion' },
-]
+const SECTION_LABELS: Record<string, string> = {
+  contexte: 'Contexte',
+  objectifProjet: 'Objectif du projet',
+  perimetreInclus: 'Périmètre inclus',
+  perimetreExclus: 'Périmètre exclu',
+  exigencesFonctionnelles: 'Exigences fonctionnelles',
+  architectureTechnique: 'Architecture technique',
+  livrables: 'Livrables',
+  conclusion: 'Conclusion',
+}
+function sectionLabel(s: string | null | undefined): string {
+  return s ? (SECTION_LABELS[s] ?? s) : 'Général'
+}
+
+const statusBadge = computed<{ label: string; severity: 'info' | 'success' | 'danger' } | null>(() => {
+  if (!cahierStatus.value) return null
+  switch (cahierStatus.value.status) {
+    case 'pending':  return { label: 'En attente de validation', severity: 'info' }
+    case 'approved': return { label: 'Approuvé',                  severity: 'success' }
+    case 'rejected': return { label: 'Rejeté — à régénérer',      severity: 'danger' }
+    default: return null
+  }
+})
 
 const savedAtLabel = computed(() => {
   if (!savedAt.value) return ''
@@ -249,8 +239,21 @@ const savedAtLabel = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([loadSaved(), loadFeedback()])
+  await Promise.all([loadSaved(), loadFeedback(), loadStatus()])
 })
+
+async function onReviewed(): Promise<void> {
+  await Promise.all([loadSaved(), loadFeedback(), loadStatus()])
+}
+
+async function loadStatus(): Promise<void> {
+  try {
+    const { data } = await api.get<CahierStatus>(`/pm/projects/${props.projectId}/cahier-des-charges/status`)
+    cahierStatus.value = data
+  } catch {
+    cahierStatus.value = null
+  }
+}
 
 async function loadSaved() {
   try {
@@ -296,6 +299,7 @@ async function handleGenerate() {
 
     savedContent.value = data.aiContent
     savedAt.value = new Date().toISOString()
+    await loadStatus()
   } catch (e: unknown) {
     const resp = (e as { response?: { data?: { message?: string; missingFields?: string[] } } })?.response?.data
     const missing = resp?.missingFields
@@ -338,31 +342,6 @@ async function handleDownload() {
   }
 }
 
-async function submitFeedback(status: 'approved' | 'rejected') {
-  if (status === 'rejected' && !feedbackComment.value.trim()) return
-
-  submittingFeedback.value = true
-  try {
-    await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/feedback`, {
-      status,
-      comment: status === 'approved' ? (feedbackComment.value || 'Document approuvé') : feedbackComment.value,
-      section: feedbackSection.value,
-    })
-
-    feedbackComment.value = ''
-    feedbackSection.value = null
-    await loadFeedback()
-
-    // If rejected, auto-regenerate with the new feedback
-    if (status === 'rejected') {
-      await handleGenerate()
-    }
-  } catch {
-    // Error toast handled by global interceptor
-  } finally {
-    submittingFeedback.value = false
-  }
-}
 </script>
 
 <style scoped>

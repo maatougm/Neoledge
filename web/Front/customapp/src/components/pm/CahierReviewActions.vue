@@ -1,16 +1,21 @@
 <!-- @file CahierReviewActions.vue — Approve/Reject buttons for SpecificationTeam -->
 <template>
-  <div v-if="canReview" class="cra">
+  <div v-if="canReview && status !== 'approved'" class="cra">
     <div class="cra__banner">
       <i class="pi pi-shield" />
-      <span>Ce cahier des charges est en attente de votre validation.</span>
+      <span v-if="status === 'rejected'">
+        Vous avez rejeté ce cahier — il doit être régénéré par le PM avant nouvelle revue.
+      </span>
+      <span v-else>
+        Ce cahier des charges est en attente de votre validation.
+      </span>
     </div>
-    <div class="cra__actions">
+    <div v-if="status !== 'rejected'" class="cra__actions">
       <NeoButton
         label="Approuver"
         icon="pi pi-check"
         :loading="submitting"
-        @click="onApprove"
+        @click="showApproveModal = true"
       />
       <NeoButton
         label="Rejeter"
@@ -22,6 +27,32 @@
       />
     </div>
   </div>
+
+  <AppModal v-model:visible="showApproveModal" header="Approuver le cahier des charges" width="520px">
+    <div class="cra-form">
+      <p class="cra-hint">
+        En approuvant, vous validez le contenu du cahier. Le PM sera notifié.
+      </p>
+      <div class="cra-field">
+        <label class="cra-field__label">Commentaire (optionnel)</label>
+        <textarea
+          v-model="approveComment"
+          class="cra-textarea"
+          rows="4"
+          placeholder="Remarques optionnelles à transmettre au PM…"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <NeoButton label="Annuler" severity="secondary" outlined @click="showApproveModal = false" />
+      <NeoButton
+        label="Confirmer l'approbation"
+        icon="pi pi-check"
+        :loading="submitting"
+        @click="onApprove"
+      />
+    </template>
+  </AppModal>
 
   <AppModal v-model:visible="showRejectModal" header="Rejeter le cahier des charges" width="560px">
     <div class="cra-form">
@@ -62,17 +93,25 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NeoButton, NeoSelect, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/lib/api'
 
-const props = defineProps<{ projectId: string }>()
+const props = withDefaults(
+  defineProps<{ projectId: string; status?: 'none' | 'pending' | 'approved' | 'rejected' }>(),
+  { status: 'pending' },
+)
 const emit = defineEmits<{ (e: 'reviewed'): void }>()
 
 const auth = useAuthStore()
 const toast = useNeoToast()
+const route = useRoute()
+const router = useRouter()
 
+const showApproveModal = ref(false)
+const approveComment = ref('')
 const showRejectModal = ref(false)
 const rejectComment = ref('')
 const rejectSection = ref('')
@@ -113,12 +152,18 @@ onMounted(async () => {
 async function onApprove(): Promise<void> {
   submitting.value = true
   try {
+    const comment = approveComment.value.trim() || 'Approuvé.'
     await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/feedback`, {
       status: 'approved',
-      comment: 'Approuvé sans réserve.',
+      comment,
     })
     toast.add({ severity: 'success', detail: 'Cahier approuvé. Le PM sera notifié.', life: 4000 })
+    showApproveModal.value = false
+    approveComment.value = ''
     emit('reviewed')
+    if (route.query.from === 'queue') {
+      void router.push({ name: 'team-pending-reviews' })
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Échec de l\'approbation'
     toast.add({ severity: 'error', detail: msg, life: 5000 })
@@ -141,6 +186,9 @@ async function onReject(): Promise<void> {
     rejectComment.value = ''
     rejectSection.value = ''
     emit('reviewed')
+    if (route.query.from === 'queue') {
+      void router.push({ name: 'team-pending-reviews' })
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Échec de l\'envoi'
     toast.add({ severity: 'error', detail: msg, life: 5000 })

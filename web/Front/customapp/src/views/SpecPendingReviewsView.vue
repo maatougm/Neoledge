@@ -34,6 +34,7 @@
           <tr>
             <th>Projet</th>
             <th>Phase</th>
+            <th>Statut</th>
             <th>Cahier généré le</th>
             <th>Chef de projet</th>
             <th>Action</th>
@@ -52,6 +53,16 @@
               <NeoTag :value="phaseLabel(row.phase)" severity="info" />
             </td>
 
+            <!-- Cahier status: pending → "À examiner", rejected → "Rejeté (en attente de regénération)" -->
+            <td>
+              <NeoTag
+                v-if="row.cahierStatus === 'rejected'"
+                value="Rejeté — en attente de regénération"
+                severity="warning"
+              />
+              <NeoTag v-else value="À examiner" severity="info" />
+            </td>
+
             <!-- Date relative, fallback — -->
             <td class="spec-reviews-table__date">
               {{ row.cahierSavedAt ? formatRelative(row.cahierSavedAt) : '—' }}
@@ -62,12 +73,12 @@
               {{ row.managerName ?? '—' }}
             </td>
 
-            <!-- Action: ouvre la fiche projet en lecture + validation -->
+            <!-- Action: ouvre la fiche projet en lecture + validation, en mode "depuis la file" -->
             <td>
               <NeoButton
-                label="Examiner"
+                :label="row.cahierStatus === 'rejected' ? 'Re-examiner' : 'Examiner'"
                 icon="pi pi-eye"
-                @click="router.push({ name: 'team-project-detail', params: { id: row.projectId } })"
+                @click="openProject(row.projectId)"
               />
             </td>
           </tr>
@@ -95,6 +106,19 @@ interface PendingReviewRow {
   phase: string
   cahierSavedAt: string | null
   managerName: string | null
+  cahierStatus: 'pending' | 'rejected'
+  myLastFeedbackAt: string | null
+}
+
+function openProject(projectId: string): void {
+  // Pass `from=queue` so CahierReviewActions navigates back here on success.
+  // Try the team-project-detail route first; fall back to pm-project-detail
+  // for users who only have PM-side routes.
+  const routes = router.getRoutes().map((r) => r.name)
+  const target = routes.includes('team-project-detail')
+    ? 'team-project-detail'
+    : 'pm-project-detail'
+  router.push({ name: target, params: { id: projectId }, query: { from: 'queue' } })
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
