@@ -260,12 +260,6 @@ const router = createRouter({
               props: true,
             },
             {
-              path: 'projects/:id/budget',
-              name: 'pm-budget',
-              component: () => import('@/views/BudgetView.vue'),
-              props: true,
-            },
-            {
               path: 'projects/:id/time',
               name: 'pm-time',
               component: () => import('@/views/TimeTrackingView.vue'),
@@ -275,6 +269,18 @@ const router = createRouter({
               path: 'projects/:id/members',
               name: 'pm-members',
               component: () => import('@/views/MembersView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/backlog-generator',
+              name: 'pm-backlog-generator',
+              component: () => import('@/views/BacklogGeneratorView.vue'),
+              props: true,
+            },
+            {
+              path: 'projects/:id/assign-tasks',
+              name: 'pm-assign-tasks',
+              component: () => import('@/views/AssignTasksView.vue'),
               props: true,
             },
             {

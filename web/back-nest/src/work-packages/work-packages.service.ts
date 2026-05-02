@@ -573,4 +573,78 @@ export class WorkPackagesService {
       return Result.fail<void>('Échec de la mise à jour des valeurs.');
     }
   }
+
+  /** Bulk-assign multiple work packages to users in a single transaction.
+   *  `assigneeId === null` un-assigns the work package. */
+  async bulkAssign(
+    projectId: string,
+    assignments: Array<{ wpId: string; assigneeId: string | null }>,
+    actorId: string,
+  ): Promise<Result<{ updated: number }>> {
+    if (assignments.length === 0) return Result.ok({ updated: 0 });
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true },
+    });
+    if (!project) return Result.fail('Projet introuvable');
+
+    // Validate all non-null assignees are real, active users.
+    const uniqueAssignees = [
+      ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
+    ];
+    if (uniqueAssignees.length > 0) {
+      const users = await this.prisma.appUser.findMany({
+        where: { id: { in: uniqueAssignees }, isActive: true },
+        select: { id: true },
+      });
+      if (users.length !== uniqueAssignees.length) {
+        return Result.fail('Certains utilisateurs sont introuvables ou inactifs.');
+      }
+    }
+
+    let updated = 0;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const a of assignments) {
+          const res = await tx.workPackage.updateMany({
+            where: { id: a.wpId, projectId, isDeleted: false },
+            data: { assigneeId: a.assigneeId, updatedAt: new Date() },
+          });
+          updated += res.count;
+        }
+      });
+    } catch (e) {
+      this.logger.error('bulkAssign transaction failed', e);
+      return Result.fail<{ updated: number }>('Échec de la mise à jour groupée.');
+    }
+
+    // Group by assignee → one consolidated notification per user (skip un-assignments).
+    const byAssignee = new Map<string, number>();
+    for (const a of assignments) {
+      if (!a.assigneeId) continue;
+      byAssignee.set(a.assigneeId, (byAssignee.get(a.assigneeId) ?? 0) + 1);
+    }
+
+    for (const [assigneeId, count] of byAssignee) {
+      try {
+        await this.notifications.notifyEnhanced({
+          userId: assigneeId,
+          actorId,
+          type: 'wp_bulk_assigned',
+          reason: 'Assignee',
+          title: 'Nouvelles tâches assignées',
+          message: `${count} tâche(s) vous ont été assignées sur « ${project.name} ».`,
+          projectId,
+          entityType: 'project',
+          entityId: projectId,
+          link: `/app/pm/projects/${projectId}/workpackages`,
+        });
+      } catch (e) {
+        this.logger.warn(`bulkAssign notify ${assigneeId} failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    return Result.ok({ updated });
+  }
 }

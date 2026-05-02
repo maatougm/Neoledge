@@ -31,13 +31,13 @@ import { WorkPackagesModule } from './work-packages/work-packages.module.js';
 import { GanttModule } from './gantt/gantt.module.js';
 import { AgileModule } from './agile/agile.module.js';
 import { TimeTrackingModule } from './time-tracking/time-tracking.module.js';
-import { BudgetingModule } from './budgeting/budgeting.module.js';
 import { WikiModule } from './wiki/wiki.module.js';
 import { TeamPlannerModule } from './team-planner/team-planner.module.js';
 import { SearchModule } from './search/search.module.js';
 import { HealthModule } from './health/health.module.js';
 import { TeamsModule } from './teams/teams.module.js';
 import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.module.js';
+import { ProjectMembersModule } from './project-members/project-members.module.js';
 
 @Module({
   providers: [],
@@ -153,13 +153,13 @@ import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.
     GanttModule,
     AgileModule,
     TimeTrackingModule,
-    BudgetingModule,
     WikiModule,
     TeamPlannerModule,
     SearchModule,
     HealthModule,
     TeamsModule,
     CahierDesChargesModule,
+    ProjectMembersModule,
   ],
 })
 export class AppModule {}

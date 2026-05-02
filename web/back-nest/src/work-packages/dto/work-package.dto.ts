@@ -64,3 +64,16 @@ export class UpsertCustomValuesDto {
   @Type(() => CustomValueDto)
   values!: CustomValueDto[];
 }
+
+export class AssignmentItemDto {
+  @IsString() wpId!: string;
+  @IsOptional() @IsString() assigneeId!: string | null;
+}
+
+export class BulkAssignDto {
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => AssignmentItemDto)
+  assignments!: AssignmentItemDto[];
+}

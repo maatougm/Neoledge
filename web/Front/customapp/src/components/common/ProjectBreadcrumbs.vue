@@ -49,8 +49,9 @@ const MODULE_LABELS: Record<string, string> = {
   'pm-sprint':            'Sprint',
   'pm-wiki':              'Wiki',
   'pm-wiki-page':         'Wiki',
-  'pm-budget':            'Budget',
-  'pm-time':              'Temps',
+  'pm-backlog-generator': 'Backlog IA',
+  'pm-assign-tasks':      'Assignation',
+'pm-time':              'Temps',
   'pm-members':           'Membres',
   'pm-project-activity':  'Activité',
 }

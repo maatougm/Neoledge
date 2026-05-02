@@ -98,6 +98,7 @@ model AppUser {
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
   roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
   cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
+  projectMemberships ProjectMember[]      @relation("ProjectMemberships")
 
   @@map("AppUsers")
 }
@@ -210,6 +211,7 @@ model Project {
   roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   handovers       Handover[]
   cahierFeedback  CahierFeedback[]
+  projectMembers  ProjectMember[]  @relation("ProjectMembers")
 
   @@index([status])
   @@index([projectManagerId])
@@ -1096,4 +1098,22 @@ model HandoverCriterion {
 
   @@index([handoverId])
   @@map("HandoverCriteria")
+}
+
+// ─── Per-project team membership with custom labels ──────────────────────────
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String   @db.VarChar(36)
+  userId    String   @db.VarChar(36)
+  label     String   @default("") @db.VarChar(150)
+  createdAt DateTime @default(now())
+
+  project Project @relation("ProjectMembers", fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser @relation("ProjectMemberships", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId], name: "project_member_uq")
+  @@index([projectId])
+  @@index([userId])
+  @@map("ProjectMembers")
 }

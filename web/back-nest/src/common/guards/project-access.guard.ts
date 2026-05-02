@@ -42,14 +42,20 @@ export class ProjectAccessGuard implements CanActivate {
     if (cached && cached > Date.now()) return true;
 
     // Allow if the user has ANY role assignment scoped to this project, or a
-    // global assignment (projectId=null). This mirrors the PermissionsService
-    // scope model — fine-grained action permissions are still enforced by the
-    // existing @RequirePermission decorator + PermissionsGuard.
-    const hit = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, OR: [{ projectId }, { projectId: null }] },
-      select: { id: true },
-    });
-    if (!hit) {
+    // global assignment (projectId=null), OR if they are listed as a project
+    // member via ProjectMember (the per-project team table). Fine-grained
+    // action permissions are still enforced by @RequirePermission + PermissionsGuard.
+    const [roleHit, memberHit] = await Promise.all([
+      this.prisma.userRoleAssignment.findFirst({
+        where: { userId, OR: [{ projectId }, { projectId: null }] },
+        select: { id: true },
+      }),
+      this.prisma.projectMember.findFirst({
+        where: { userId, projectId },
+        select: { id: true },
+      }),
+    ]);
+    if (!roleHit && !memberHit) {
       this.logger.debug(`ProjectAccessGuard denied ${userId} -> ${projectId}`);
       throw new NotFoundException(); // use 404 to avoid leaking project existence
     }

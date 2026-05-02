@@ -12,8 +12,7 @@
         <tr><td><kbd>g</kbd> <kbd>b</kbd></td><td>Board (Kanban)</td></tr>
         <tr><td><kbd>g</kbd> <kbd>w</kbd></td><td>Wiki</td></tr>
         <tr><td><kbd>g</kbd> <kbd>t</kbd></td><td>Temps</td></tr>
-        <tr><td><kbd>g</kbd> <kbd>u</kbd></td><td>Budget</td></tr>
-        <tr><td><kbd>g</kbd> <kbd>l</kbd></td><td>Liste des projets</td></tr>
+<tr><td><kbd>g</kbd> <kbd>l</kbd></td><td>Liste des projets</td></tr>
         <tr><td class="kb-help__sep" colspan="2">Actions</td></tr>
         <tr><td><kbd>c</kbd></td><td>Nouveau Work Package (sur /workpackages)</td></tr>
       </tbody>

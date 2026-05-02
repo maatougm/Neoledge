@@ -80,7 +80,6 @@ export function useKeyboardShortcuts(): KeyboardShortcutState {
         case 'w': goTo(`${base}/wiki`); e.preventDefault(); return
         case 't': goTo(`${base}/time`); e.preventDefault(); return
         case 'p': goTo(`${base}`); e.preventDefault(); return
-        case 'u': goTo(`${base}/budget`); e.preventDefault(); return
         case 'l': goTo('/app/pm/projects'); e.preventDefault(); return
       }
       return

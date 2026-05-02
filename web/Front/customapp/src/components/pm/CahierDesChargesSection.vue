@@ -77,6 +77,7 @@
 
         <!-- Inline rendering of the saved cahier -->
         <div class="cahier-doc">
+          <CahierReviewActions :project-id="projectId" @reviewed="loadSaved" />
           <CahierDocSection title="1.1 Objectif du document" :markdown="savedContent.objectifDocument" />
           <CahierDocSection title="1.2 Contexte" :markdown="savedContent.contexte" />
           <CahierDocSection title="2.1 Objectif du projet" :markdown="savedContent.objectifProjet" />
@@ -192,6 +193,7 @@ import { ref, computed, onMounted } from 'vue'
 import { NeoButton, NeoTag, NeoSelect } from '@neolibrary/components'
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
+import CahierReviewActions from './CahierReviewActions.vue'
 
 interface CahierSection {
   title: string

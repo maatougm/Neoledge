@@ -6,7 +6,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
-import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto } from './dto/work-package.dto.js';
+import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto } from './dto/work-package.dto.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -171,6 +171,18 @@ export class WorkPackagesController {
     const r = await this.service.upsertCustomValues(id, dto.values || []);
     if (r.isFailure) throw new BadRequestException(r.error);
     return { success: true };
+  }
+
+  @Post('bulk-assign')
+  @RequirePermission('wp.assign')
+  async bulkAssign(
+    @Param('projectId') projectId: string,
+    @Body() dto: BulkAssignDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId);
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
   }
 }
 

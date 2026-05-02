@@ -175,20 +175,32 @@ export class CahierDesChargesService {
       )
   }
 
-  /** Notify only the SpecificationTeam — they're the sole approvers of the cahier. */
+  /**
+   * Notify ONLY SpecificationTeam users who have been added as members of this
+   * specific project (via ProjectMember). Generic "all spec team users" no
+   * longer fires — the PM controls who reviews each cahier.
+   */
   private async notifyReviewTeams(projectId: string, projectName: string): Promise<void> {
-    const reviewers = await this.prisma.appUser.findMany({
+    const reviewers = await this.prisma.projectMember.findMany({
       where: {
-        role: 'SpecificationTeam',
-        isActive: true,
+        projectId,
+        user: {
+          role: 'SpecificationTeam',
+          isActive: true,
+        },
       },
-      select: { id: true },
+      select: { userId: true },
     })
-    if (reviewers.length === 0) return
+    if (reviewers.length === 0) {
+      this.logger.warn(
+        `notifyReviewTeams: no SpecificationTeam member assigned to project ${projectId} — no notification sent`,
+      )
+      return
+    }
 
-    const rows = reviewers.map((u) => ({
+    const rows = reviewers.map((m) => ({
       id: crypto.randomUUID(),
-      userId: u.id,
+      userId: m.userId,
       type: 'cahier_ready',
       reason: 'cahier_generated',
       title: 'Cahier des charges à valider',
@@ -196,11 +208,13 @@ export class CahierDesChargesService {
       projectId,
       entityType: 'Project',
       entityId: projectId,
-      link: `/app/pm/projects/${projectId}`,
+      link: `/app/pm/projects/${projectId}/cahier`,
       isRead: false,
     }))
     await this.prisma.notification.createMany({ data: rows })
-    this.logger.log(`Notified ${reviewers.length} SpecificationTeam user(s) about cahier for project ${projectId}`)
+    this.logger.log(
+      `Notified ${reviewers.length} SpecificationTeam project member(s) about cahier for project ${projectId}`,
+    )
   }
 
   /** Retrieve the previously saved cahier JSON — or null if none. */
@@ -239,6 +253,46 @@ export class CahierDesChargesService {
       },
     })
     this.logger.log(`Cahier feedback saved: ${status} for project ${projectId}`)
+
+    // Notify the project's PM that the cahier was reviewed.
+    void this.notifyPmAboutFeedback(projectId, status, comment).catch((e) =>
+      this.logger.warn(`notifyPmAboutFeedback failed: ${e instanceof Error ? e.message : String(e)}`),
+    )
+  }
+
+  /** Fire-and-forget notification to the PM after the SpecificationTeam reviews a cahier. */
+  private async notifyPmAboutFeedback(
+    projectId: string,
+    status: 'approved' | 'rejected',
+    comment: string,
+  ): Promise<void> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true, projectManagerId: true },
+    })
+    if (!project?.projectManagerId) return
+
+    const isApproved = status === 'approved'
+    const title = isApproved ? 'Cahier des charges approuvé' : 'Cahier des charges rejeté'
+    const message = isApproved
+      ? `Le cahier des charges de « ${project.name} » a été approuvé.`
+      : `Le cahier des charges de « ${project.name} » a été rejeté. Commentaire : ${comment.slice(0, 200)}`
+
+    await this.prisma.notification.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId: project.projectManagerId,
+        type: isApproved ? 'cahier_approved' : 'cahier_rejected',
+        reason: isApproved ? 'cahier_approved' : 'cahier_rejected',
+        title,
+        message,
+        projectId,
+        entityType: 'Project',
+        entityId: projectId,
+        link: `/app/pm/projects/${projectId}/cahier`,
+        isRead: false,
+      },
+    })
   }
 
   /**

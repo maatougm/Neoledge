@@ -69,11 +69,6 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   { key: 'wiki.edit', resource: 'wiki', description: 'Create/edit wiki pages', projectScoped: true },
   { key: 'wiki.delete', resource: 'wiki', description: 'Delete wiki pages', projectScoped: true },
 
-  // budget
-  { key: 'budget.view', resource: 'budget', description: 'View project budget', projectScoped: true },
-  { key: 'budget.edit', resource: 'budget', description: 'Edit project budget', projectScoped: true },
-  { key: 'budget.view_all', resource: 'budget', description: 'View cross-project budgets' },
-
   // time
   { key: 'time.log', resource: 'time', description: 'Log own time entries' },
   { key: 'time.view_all', resource: 'time', description: 'View all time entries' },
@@ -137,8 +132,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'wiki.view',
     'wiki.edit',
     'wiki.delete',
-    'budget.view',
-    'budget.edit',
     'time.log',
     'time.view_all',
     'team_planner.view',

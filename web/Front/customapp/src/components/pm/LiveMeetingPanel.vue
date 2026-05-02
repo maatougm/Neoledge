@@ -158,7 +158,7 @@ import api from '@/lib/api'
 type ChecklistStatus = 'covered' | 'partial' | 'missing'
 type ChecklistCategory =
   | 'context' | 'users' | 'features' | 'constraints'
-  | 'integrations' | 'security' | 'budget' | 'timeline' | 'other'
+  | 'integrations' | 'security' | 'timeline' | 'other'
 
 interface ChecklistItem {
   id: string
@@ -248,7 +248,6 @@ const CATEGORY_LABELS: Record<ChecklistCategory, string> = {
   constraints: 'Contraintes',
   integrations: 'Intégrations',
   security: 'Sécurité',
-  budget: 'Budget',
   timeline: 'Échéances',
   other: 'Autre',
 }
