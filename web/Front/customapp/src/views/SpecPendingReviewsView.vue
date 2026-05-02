@@ -58,7 +58,7 @@
               <NeoTag
                 v-if="row.cahierStatus === 'rejected'"
                 value="Rejeté — en attente de regénération"
-                severity="warning"
+                severity="warn"
               />
               <NeoTag v-else value="À examiner" severity="info" />
             </td>
