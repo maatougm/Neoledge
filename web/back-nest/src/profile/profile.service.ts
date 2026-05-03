@@ -177,7 +177,13 @@ export class ProfileService {
   async getPreferences(userId: string) {
     const user = await this.prisma.appUser.findUnique({ where: { id: userId }, select: { preferences: true } });
     if (!user) return Result.fail<any>('Utilisateur non trouvé.');
-    return Result.ok(user.preferences ? JSON.parse(user.preferences) : { ...DEFAULT_PREFERENCES });
+    if (!user.preferences) return Result.ok({ ...DEFAULT_PREFERENCES });
+    try {
+      return Result.ok(JSON.parse(user.preferences));
+    } catch {
+      // Corrupted preferences blob — fall back to defaults rather than crashing the endpoint.
+      return Result.ok({ ...DEFAULT_PREFERENCES });
+    }
   }
 
   async updatePreferences(userId: string, prefs: Record<string, unknown>) {

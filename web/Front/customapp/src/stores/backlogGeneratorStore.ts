@@ -8,6 +8,8 @@ export interface ProposedTask {
   type: 'Task' | 'Feature' | 'Bug'
   priority: 'Low' | 'Normal' | 'High' | 'Critical'
   estimatedHours: number
+  /** Stable client-side ID for v-for keys; assigned at fetch/addTask time. */
+  _uid?: string
 }
 
 export interface ProposedEpic {
@@ -16,6 +18,8 @@ export interface ProposedEpic {
   priority: 'Low' | 'Normal' | 'High' | 'Critical'
   estimatedHours: number
   children: ProposedTask[]
+  /** Stable client-side ID for v-for keys; assigned at fetch time. */
+  _uid?: string
 }
 
 export interface ProposedBacklog {
@@ -44,7 +48,16 @@ export const useBacklogGeneratorStore = defineStore('backlogGenerator', () => {
       const { data } = await api.post<ProposedBacklog>(
         `/pm/projects/${projectId}/ai/generate-backlog`,
       )
-      proposed.value = data
+      // Inject a stable client-side `_uid` on every epic and task so v-for keys
+      // remain valid across edits / removes (otherwise array-index keys cause Vue
+      // to rebind inputs to the wrong card after a delete in the middle).
+      proposed.value = {
+        epics: (data.epics ?? []).map((e) => ({
+          ...e,
+          _uid: crypto.randomUUID(),
+          children: (e.children ?? []).map((t) => ({ ...t, _uid: crypto.randomUUID() })),
+        })),
+      }
     } catch (err) {
       error.value = _errMsg(err)
       proposed.value = null
@@ -112,6 +125,7 @@ export const useBacklogGeneratorStore = defineStore('backlogGenerator', () => {
       type: 'Task',
       priority: 'Normal',
       estimatedHours: 4,
+      _uid: crypto.randomUUID(),
     }
     proposed.value = {
       epics: proposed.value.epics.map((e, i) =>

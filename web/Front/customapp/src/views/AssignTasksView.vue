@@ -99,12 +99,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -194,7 +194,7 @@ async function onValidate(): Promise<void> {
       original.value[t.id] = assignments[t.id]
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Échec de l\'assignation'
+    const msg = extractErrorMessage(err) ?? 'Échec de l\'assignation'
     toast.add({ severity: 'error', detail: msg, life: 5000 })
   } finally {
     saving.value = false
@@ -205,12 +205,24 @@ function goToMembers(): void {
   void router.push({ name: 'pm-members', params: { id: props.id } })
 }
 
+// Guard against stale-state leaks: if the user navigates away mid-fetch, don't write
+// the response into refs after unmount. Also clear any prior project's data on mount.
+let isMounted = true
+onBeforeUnmount(() => { isMounted = false })
+
 onMounted(async () => {
+  // Reset all state in case the component is reused across projects.
+  allTasks.value = []
+  members.value = []
+  for (const k of Object.keys(original.value)) delete original.value[k]
+  for (const k of Object.keys(assignments)) delete assignments[k]
+
   try {
     const [tasksRes, membersRes] = await Promise.all([
       api.get<WpRow[] | { items: WpRow[] }>(`/pm/projects/${props.id}/work-packages?limit=500`),
       api.get<MemberRow[]>(`/pm/projects/${props.id}/members`),
     ])
+    if (!isMounted) return
     const rawTasks = Array.isArray(tasksRes.data) ? tasksRes.data : (tasksRes.data.items ?? [])
     allTasks.value = rawTasks.filter((t) => t.type !== 'Epic')
     members.value = membersRes.data
@@ -218,7 +230,8 @@ onMounted(async () => {
       original.value[t.id] = t.assigneeId
       assignments[t.id] = t.assigneeId
     }
-  } catch (err) {
+  } catch {
+    if (!isMounted) return
     toast.add({
       severity: 'error',
       detail: 'Impossible de charger les tâches ou les membres.',

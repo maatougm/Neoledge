@@ -50,11 +50,13 @@ function shouldToast(config: AxiosError['config']): boolean {
   return !meta?.suppressErrorToast
 }
 
-function extractErrorMessage(error: AxiosError): string | null {
-  const data = error.response?.data as { message?: string | string[]; error?: string } | undefined
+export function extractErrorMessage(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  const e = error as AxiosError
+  const data = e.response?.data as { message?: string | string[]; error?: string } | undefined
   if (data?.message) return Array.isArray(data.message) ? data.message.join(', ') : data.message
   if (data?.error) return data.error
-  if (error.message) return error.message
+  if (e.message) return e.message
   return null
 }
 
@@ -76,12 +78,17 @@ api.interceptors.response.use(
       })
     }
 
-    // Auto-toast 4xx/5xx except the 401-redirect case and opted-out requests
-    if (status && status >= 400 && status !== 401 && shouldToast(error.config)) {
+    // Auto-toast ONLY for 5xx (unexpected server errors). 4xx are expected business
+    // responses (validation errors, conflicts, not-found) and the calling component
+    // is responsible for displaying them — this prevents the long-standing
+    // double-toast bug where both the interceptor and the component fired their own.
+    // Components that DO want a generic toast on 4xx can call extractErrorMessage()
+    // and toast it themselves; the helper is exported for that purpose.
+    if (status && status >= 500 && shouldToast(error.config)) {
       const message = extractErrorMessage(error) ?? `Erreur ${status}`
       try {
         const { useNeoToast } = await import('@neolibrary/components')
-        useNeoToast().add({ severity: status >= 500 ? 'error' : 'warn', detail: message, life: 5000 })
+        useNeoToast().add({ severity: 'error', detail: message, life: 5000 })
       } catch {
         // Toast provider may not be mounted yet (e.g. during login bootstrap) — swallow.
       }

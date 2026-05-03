@@ -71,7 +71,7 @@ export class NotificationsService {
     // Scope check: when a projectId is provided, verify the target user is a project member.
     if (projectId) {
       try {
-        const [asPm, asAssignment] = await Promise.all([
+        const [asPm, asAssignment, asProjectMember] = await Promise.all([
           this.prisma.project.findFirst({
             where: { id: projectId, isDeleted: false, projectManagerId: userId },
             select: { id: true },
@@ -80,8 +80,12 @@ export class NotificationsService {
             where: { userId, OR: [{ projectId }, { projectId: null }] },
             select: { id: true },
           }),
+          this.prisma.projectMember.findFirst({
+            where: { projectId, userId },
+            select: { id: true },
+          }),
         ]);
-        if (!asPm && !asAssignment) {
+        if (!asPm && !asAssignment && !asProjectMember) {
           this.logger.warn(`notify: user ${userId} is not a member of project ${projectId} — skipping`);
           return;
         }

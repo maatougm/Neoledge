@@ -45,7 +45,7 @@
       />
       <TaskCard
         v-for="(t, ti) in epic.children"
-        :key="ti"
+        :key="t._uid ?? `task-${ti}`"
         :task="t"
         :task-idx="ti"
         @update="(patch) => emit('update-task', ti, patch)"

@@ -420,19 +420,10 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
   // ── Protected route checks ─────────────────────────────────────────────────
   if (!isPublic && to.meta.requiresAuth) {
     if (!auth.isAuthenticated) {
-      // In development, auto-login for convenience. In production, redirect to login.
-      if (import.meta.env.DEV) {
-        try {
-          await auth.login('admin@neoleadge.com', 'Admin@123')
-        } catch {
-          // fall through to redirect below
-        }
-      }
-      // Still not authenticated → redirect to login with return URL
-      if (!auth.isAuthenticated) {
-        const redirect = to.fullPath !== '/' ? to.fullPath : undefined
-        return { name: 'login', query: redirect ? { redirect } : undefined }
-      }
+      // No silent dev-auto-login — credentials must never be hardcoded in source.
+      // Always redirect to /login with a return URL so devs and prod follow the same path.
+      const redirect = to.fullPath !== '/' ? to.fullPath : undefined
+      return { name: 'login', query: redirect ? { redirect } : undefined }
     }
 
     // Force password change

@@ -110,6 +110,13 @@ interface PendingReviewRow {
   myLastFeedbackAt: string | null
 }
 
+// ─── State ────────────────────────────────────────────────────────────────────
+
+const router = useRouter()
+const toast = useNeoToast()
+
+const rows = ref<PendingReviewRow[]>([])
+
 function openProject(projectId: string): void {
   // Pass `from=queue` so CahierReviewActions navigates back here on success.
   // Try the team-project-detail route first; fall back to pm-project-detail
@@ -120,13 +127,6 @@ function openProject(projectId: string): void {
     : 'pm-project-detail'
   router.push({ name: target, params: { id: projectId }, query: { from: 'queue' } })
 }
-
-// ─── State ────────────────────────────────────────────────────────────────────
-
-const router = useRouter()
-const toast = useNeoToast()
-
-const rows = ref<PendingReviewRow[]>([])
 const loading = ref(false)
 
 // ─── Data fetching ────────────────────────────────────────────────────────────

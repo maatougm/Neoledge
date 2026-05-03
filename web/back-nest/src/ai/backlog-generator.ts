@@ -96,7 +96,13 @@ export async function generateBacklogViaOpenAi(
   };
   const content = data.choices?.[0]?.message?.content ?? '';
   const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
-  const parsed = JSON.parse(cleaned) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    logger.error(`OpenAI backlog response was not valid JSON: ${cleaned.slice(0, 200)}`);
+    throw new Error(`Réponse IA invalide : ${(e as Error).message}`);
+  }
   return sanitizeBacklog(parsed);
 }
 

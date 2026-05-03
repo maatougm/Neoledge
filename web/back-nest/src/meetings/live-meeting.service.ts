@@ -176,7 +176,12 @@ export class LiveMeetingService {
 
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = data.choices?.[0]?.message?.content ?? '{}';
-    return JSON.parse(content);
+    try {
+      return JSON.parse(content);
+    } catch (e) {
+      this.logger.error(`OpenAI checklist response was not valid JSON: ${content.slice(0, 200)}`);
+      throw new Error(`Réponse IA invalide : ${(e as Error).message}`);
+    }
   }
 
   private sanitize(raw: unknown): ChecklistResponse {

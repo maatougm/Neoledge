@@ -41,7 +41,7 @@
       <div v-else class="bg__list">
         <EpicCard
           v-for="(epic, ei) in store.proposed.epics"
-          :key="ei"
+          :key="epic._uid ?? `epic-${ei}`"
           :epic="epic"
           :epic-idx="ei"
           @update="(p) => store.updateEpic(ei, p)"
@@ -77,6 +77,7 @@ import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import EpicCard from '@/components/pm/backlog/EpicCard.vue'
 import { useBacklogGeneratorStore } from '@/stores/backlogGeneratorStore'
+import { extractErrorMessage } from '@/lib/api'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -116,7 +117,7 @@ async function onAccept(): Promise<void> {
     store.reset()
     await router.push({ name: 'pm-assign-tasks', params: { id: props.id } })
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Échec de la création'
+    const msg = extractErrorMessage(err) ?? 'Échec de la création'
     toast.add({ severity: 'error', detail: msg, life: 5000 })
   } finally {
     accepting.value = false

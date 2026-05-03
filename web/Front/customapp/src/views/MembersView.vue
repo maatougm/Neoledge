@@ -446,6 +446,8 @@ function errMessage(err: unknown): string | null {
 }
 
 onMounted(async () => {
+  // Clear stale state from a previously-visited project before fetching this one.
+  store.reset()
   await Promise.all([store.fetchAll(props.id), loadAllUsers()])
 })
 </script>

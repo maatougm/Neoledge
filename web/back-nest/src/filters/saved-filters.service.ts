@@ -74,9 +74,12 @@ export class SavedFiltersService {
       where: { id: userId },
       select: { preferences: true },
     });
-    if (!user) return {};
-    if (!user.preferences) return {};
-    return JSON.parse(user.preferences) as UserPreferences;
+    if (!user || !user.preferences) return {};
+    try {
+      return JSON.parse(user.preferences) as UserPreferences;
+    } catch {
+      return {};
+    }
   }
 
   private async writePreferences(userId: string, prefs: UserPreferences): Promise<void> {

@@ -97,7 +97,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NeoButton, NeoSelect, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
 import { useAuthStore } from '@/stores/authStore'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 
 const props = withDefaults(
   defineProps<{ projectId: string; status?: 'none' | 'pending' | 'approved' | 'rejected' }>(),
@@ -165,7 +165,7 @@ async function onApprove(): Promise<void> {
       void router.push({ name: 'team-pending-reviews' })
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Échec de l\'approbation'
+    const msg = extractErrorMessage(err) ?? 'Échec'
     toast.add({ severity: 'error', detail: msg, life: 5000 })
   } finally {
     submitting.value = false
@@ -190,7 +190,7 @@ async function onReject(): Promise<void> {
       void router.push({ name: 'team-pending-reviews' })
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Échec de l\'envoi'
+    const msg = extractErrorMessage(err) ?? 'Échec'
     toast.add({ severity: 'error', detail: msg, life: 5000 })
   } finally {
     submitting.value = false
