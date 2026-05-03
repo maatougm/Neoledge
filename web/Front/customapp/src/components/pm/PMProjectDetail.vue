@@ -174,10 +174,14 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 ]
 
 // Per-role tab visibility.
-// - SpecificationTeam: approves the cahier → focused on validation flow
-// - Member: not part of the approval flow — read-only observer
+// - Admin: sees everything
+// - ProjectManager: drives the project but does NOT validate the cahier — hide the
+//   "Validation équipes" tab (that action belongs to SpecificationTeam exclusively).
+//   PM keeps the read-only "Historique validations" tab to see what was decided.
+// - SpecificationTeam: focused on validation
+// - Member: read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
-  // Spec team: first sees the validation they own, then cahier context, then comms
+  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity', 'automation'],
   SpecificationTeam: ['validation', 'cahier', 'history', 'comments', 'activity'],
   Member:            ['cahier', 'history', 'comments', 'activity'],
 }
@@ -185,7 +189,7 @@ const TABS_BY_ROLE: Record<string, TabId[]> = {
 const visibleTabs = computed(() => {
   const role = authStore.userRole ?? ''
   const allowed = TABS_BY_ROLE[role]
-  if (!allowed) return tabs // Admin + ProjectManager see everything
+  if (!allowed) return tabs // Admin sees everything
   return tabs.filter((t) => allowed.includes(t.id))
 })
 

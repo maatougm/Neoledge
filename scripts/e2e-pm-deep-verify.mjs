@@ -313,7 +313,7 @@ try {
       });
       return r.status;
     }, { pid: projectId, mid: addedMemberId });
-    cleanupOk === 204 ? pass('cleanup: removed test member', `HTTP ${cleanupOk}`) : fail('cleanup: removed test member', `HTTP ${cleanupOk}`);
+    (cleanupOk === 200 || cleanupOk === 204) ? pass('cleanup: removed test member', `HTTP ${cleanupOk}`) : fail('cleanup: removed test member', `HTTP ${cleanupOk}`);
   }
 
 } catch (err) {

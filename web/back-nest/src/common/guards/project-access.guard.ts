@@ -29,25 +29,39 @@ export class ProjectAccessGuard implements CanActivate {
     if (!param) return true; // guard not applied to this route
 
     const req = ctx.switchToHttp().getRequest<{
-      user?: { userId?: string };
+      user?: { userId?: string; role?: string };
       params?: Record<string, string>;
     }>();
     const userId = req.user?.userId;
+    const userRole = req.user?.role;
     const projectId = req.params?.[param];
     if (!userId) throw new ForbiddenException('Not authenticated');
     if (!projectId) throw new ForbiddenException('Missing project param');
+
+    // Admins have system-wide access by design — fast-path them.
+    if (userRole === 'Admin') return true;
 
     const cacheKey = `${userId}:${projectId}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached > Date.now()) return true;
 
-    // Allow if the user has ANY role assignment scoped to this project, or a
-    // global assignment (projectId=null), OR if they are listed as a project
-    // member via ProjectMember (the per-project team table). Fine-grained
-    // action permissions are still enforced by @RequirePermission + PermissionsGuard.
-    const [roleHit, memberHit] = await Promise.all([
+    // Project access requires ONE of:
+    //   1. A project-scoped UserRoleAssignment (projectId == this project)
+    //   2. Being the assigned ProjectManager of the project
+    //   3. Being listed in ProjectMember (the per-project team table)
+    //
+    // Global UserRoleAssignment rows (projectId == null) are intentionally NOT
+    // accepted here for non-Admin users — they are seeding artifacts for
+    // permission inheritance and must NOT be treated as project access.
+    // Otherwise any Member or SpecificationTeam with a global assignment could
+    // read every project (IDOR).
+    const [scopedRole, asPm, memberHit] = await Promise.all([
       this.prisma.userRoleAssignment.findFirst({
-        where: { userId, OR: [{ projectId }, { projectId: null }] },
+        where: { userId, projectId },
+        select: { id: true },
+      }),
+      this.prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false, projectManagerId: userId },
         select: { id: true },
       }),
       this.prisma.projectMember.findFirst({
@@ -55,8 +69,8 @@ export class ProjectAccessGuard implements CanActivate {
         select: { id: true },
       }),
     ]);
-    if (!roleHit && !memberHit) {
-      this.logger.debug(`ProjectAccessGuard denied ${userId} -> ${projectId}`);
+    if (!scopedRole && !asPm && !memberHit) {
+      this.logger.debug(`ProjectAccessGuard denied ${userId} (${userRole}) -> ${projectId}`);
       throw new NotFoundException(); // use 404 to avoid leaking project existence
     }
 
