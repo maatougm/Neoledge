@@ -157,7 +157,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { NeoButton, NeoTag } from '@neolibrary/components'
+import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
@@ -195,6 +195,7 @@ interface CahierStatus {
 }
 
 const props = defineProps<{ projectId: string }>()
+const toast = useNeoToast()
 
 const expanded = ref(true)
 const generating = ref(false)
@@ -335,8 +336,11 @@ async function handleDownload() {
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
   } catch (e: unknown) {
+    // Toast download failures rather than hijacking the page-level `error.value`,
+    // which is reserved for generation failures and would hide the saved cahier preview.
     const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-    error.value = msg ?? 'Erreur lors du téléchargement du cahier.'
+      ?? (e instanceof Error ? e.message : 'Erreur lors du téléchargement du cahier.')
+    toast.add({ severity: 'error', detail: msg, life: 5000 })
   } finally {
     downloading.value = false
   }

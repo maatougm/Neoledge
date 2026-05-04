@@ -40,6 +40,12 @@ export class CahierDesChargesService {
     formData: CahierFormData
     transcripts: CahierTranscriptInput[]
   }> {
+    // Hard caps to keep the prompt + memory bounded for projects with many
+    // long meetings. The cahier is a summary — we don't need every segment of
+    // every transcript, just the most recent + AI-summarised meetings.
+    const MAX_TRANSCRIPTS = 8
+    const MAX_SEGMENTS_PER_TRANSCRIPT = 250
+
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
       include: {
@@ -48,11 +54,12 @@ export class CahierDesChargesService {
         fieldValues: { include: { field: true } },
         transcripts: {
           include: {
-            segments: { orderBy: { startTime: 'asc' } },
-            actionItems: true,
-            decisions: true,
+            segments: { orderBy: { startTime: 'asc' }, take: MAX_SEGMENTS_PER_TRANSCRIPT },
+            actionItems: { take: 50 },
+            decisions: { take: 50 },
           },
           orderBy: { createdAt: 'desc' },
+          take: MAX_TRANSCRIPTS,
         },
       },
     })

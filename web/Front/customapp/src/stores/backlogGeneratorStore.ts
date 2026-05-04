@@ -68,6 +68,7 @@ export const useBacklogGeneratorStore = defineStore('backlogGenerator', () => {
 
   async function accept(projectId: string): Promise<{ created: number }> {
     if (!proposed.value) throw new Error('Aucun backlog à accepter')
+    if (accepted.value) throw new Error('Ce backlog a déjà été accepté — régénérez avant de réessayer.')
     error.value = null
     try {
       const { data } = await api.post<{ created: number }>(

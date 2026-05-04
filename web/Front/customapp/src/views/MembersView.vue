@@ -105,6 +105,7 @@
     <!-- Add member modal -->
     <AppModal v-model:visible="showAddModal" header="Ajouter un membre au projet" width="520px">
       <div class="mem-form">
+        <NeoMessage v-if="usersLoadError" severity="error" :text="usersLoadError" />
         <div class="mem-field">
           <label class="mem-field__label">Utilisateur</label>
           <NeoSelect
@@ -115,7 +116,7 @@
             placeholder="Choisir un utilisateur…"
             filter
           />
-          <p v-if="!availableUsers.length" class="mem-field__hint">
+          <p v-if="!availableUsers.length && !usersLoadError" class="mem-field__hint">
             Aucun utilisateur éligible. Tous les utilisateurs sont déjà ajoutés ou n'ont pas un rôle compatible.
           </p>
         </div>
@@ -208,7 +209,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { NeoButton, NeoInputText, NeoSelect, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import { NeoButton, NeoInputText, NeoMessage, NeoSelect, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import AppModal from '@/components/common/AppModal.vue'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
@@ -299,13 +300,16 @@ function initials(u: ProjectMember['user']): string {
   return ((u.firstName?.[0] ?? '') + (u.lastName?.[0] ?? '')).toUpperCase() || '?'
 }
 
+const usersLoadError = ref<string | null>(null)
 async function loadAllUsers(): Promise<void> {
+  usersLoadError.value = null
   try {
     const { data } = await api.get<SystemUser[] | { items: SystemUser[] }>('/pm/users')
     const list = Array.isArray(data) ? data : (data.items ?? [])
     allUsers.value = list.map((u) => ({ ...u, fullName: `${u.firstName} ${u.lastName} (${u.email})` }))
-  } catch {
+  } catch (err: unknown) {
     allUsers.value = []
+    usersLoadError.value = errMessage(err) ?? 'Impossible de charger la liste des utilisateurs.'
   }
 }
 

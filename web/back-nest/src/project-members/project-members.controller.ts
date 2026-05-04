@@ -41,7 +41,9 @@ export class ProjectMembersController {
     const result = await this.service.add(projectId, dto.userId, dto.label)
     if (result.isFailure) {
       if (result.error?.includes('déjà')) throw new ConflictException(result.error)
-      throw new NotFoundException(result.error)
+      // Distinguish business-rule rejections (400) from "not found" (404).
+      if (result.error?.includes('introuvable')) throw new NotFoundException(result.error)
+      throw new BadRequestException(result.error)
     }
     return result.value
   }

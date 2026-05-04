@@ -18,6 +18,7 @@ import { getJwtSecret } from './jwt-secret.js';
         secret: getJwtSecret(configService),
         signOptions: {
           expiresIn: (configService.get<string>('JWT_EXPIRES_IN', '8h') as `${number}${'s' | 'm' | 'h' | 'd'}`),
+          algorithm: 'HS256',
         },
       }),
     }),

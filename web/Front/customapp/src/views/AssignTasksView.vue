@@ -218,13 +218,29 @@ onMounted(async () => {
   for (const k of Object.keys(assignments)) delete assignments[k]
 
   try {
-    const [tasksRes, membersRes] = await Promise.all([
-      api.get<WpRow[] | { items: WpRow[] }>(`/pm/projects/${props.id}/work-packages?limit=500`),
-      api.get<MemberRow[]>(`/pm/projects/${props.id}/members`),
-    ])
+    // Page through up to PAGE_LIMIT pages so projects with >500 WPs aren't silently truncated.
+    const PAGE_SIZE = 200
+    const PAGE_LIMIT = 25 // hard ceiling = 5,000 tasks. Beyond that, the assign-board is the wrong UI.
+    const aggregated: WpRow[] = []
+    let pageIdx = 1
+    while (pageIdx <= PAGE_LIMIT) {
+      const r = await api.get<WpRow[] | { items: WpRow[] }>(`/pm/projects/${props.id}/work-packages?page=${pageIdx}&limit=${PAGE_SIZE}`)
+      const page = Array.isArray(r.data) ? r.data : (r.data.items ?? [])
+      aggregated.push(...page)
+      if (page.length < PAGE_SIZE) break
+      pageIdx += 1
+    }
+    if (pageIdx > PAGE_LIMIT) {
+      toast.add({
+        severity: 'warn',
+        detail: `Plus de ${PAGE_LIMIT * PAGE_SIZE} tâches trouvées — affichage limité. Utilisez Work Packages pour la liste complète.`,
+        life: 6000,
+      })
+    }
+
+    const membersRes = await api.get<MemberRow[]>(`/pm/projects/${props.id}/members`)
     if (!isMounted) return
-    const rawTasks = Array.isArray(tasksRes.data) ? tasksRes.data : (tasksRes.data.items ?? [])
-    allTasks.value = rawTasks.filter((t) => t.type !== 'Epic')
+    allTasks.value = aggregated.filter((t) => t.type !== 'Epic')
     members.value = membersRes.data
     for (const t of allTasks.value) {
       original.value[t.id] = t.assigneeId

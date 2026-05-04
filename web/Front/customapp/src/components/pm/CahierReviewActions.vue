@@ -162,7 +162,10 @@ async function onApprove(): Promise<void> {
     approveComment.value = ''
     emit('reviewed')
     if (route.query.from === 'queue') {
-      void router.push({ name: 'team-pending-reviews' })
+      // Pick the queue route the current user can actually reach.
+      const names = router.getRoutes().map((r) => r.name)
+      const target = names.includes('team-pending-reviews') ? 'team-pending-reviews' : null
+      if (target) void router.push({ name: target })
     }
   } catch (err: unknown) {
     const msg = extractErrorMessage(err) ?? 'Échec'
@@ -187,7 +190,10 @@ async function onReject(): Promise<void> {
     rejectSection.value = ''
     emit('reviewed')
     if (route.query.from === 'queue') {
-      void router.push({ name: 'team-pending-reviews' })
+      // Pick the queue route the current user can actually reach.
+      const names = router.getRoutes().map((r) => r.name)
+      const target = names.includes('team-pending-reviews') ? 'team-pending-reviews' : null
+      if (target) void router.push({ name: target })
     }
   } catch (err: unknown) {
     const msg = extractErrorMessage(err) ?? 'Échec'

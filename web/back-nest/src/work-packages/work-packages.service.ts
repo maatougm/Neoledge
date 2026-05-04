@@ -603,13 +603,23 @@ export class WorkPackagesService {
       }
     }
 
+    // Group by target assigneeId so we can issue ONE updateMany per target
+    // instead of N individual round-trips inside the transaction.
+    const buckets = new Map<string | null, string[]>();
+    for (const a of assignments) {
+      const key = a.assigneeId ?? null;
+      const list = buckets.get(key) ?? [];
+      list.push(a.wpId);
+      buckets.set(key, list);
+    }
+
     let updated = 0;
     try {
       await this.prisma.$transaction(async (tx) => {
-        for (const a of assignments) {
+        for (const [assigneeId, wpIds] of buckets) {
           const res = await tx.workPackage.updateMany({
-            where: { id: a.wpId, projectId, isDeleted: false },
-            data: { assigneeId: a.assigneeId, updatedAt: new Date() },
+            where: { id: { in: wpIds }, projectId, isDeleted: false },
+            data: { assigneeId, updatedAt: new Date() },
           });
           updated += res.count;
         }

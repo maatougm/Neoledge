@@ -103,12 +103,20 @@ const pmNav: NavSection[] = [
 
 // Project-module nav — OpenProject-style contextual menu when viewing a project.
 // Cache per role+projectId so admins and PMs get the correct back-link.
+// LRU-bounded at 50 entries so a long session visiting many projects doesn't
+// leak memory.
+const PROJECT_NAV_CACHE_MAX = 50
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
   const role = authStore.userRole ?? 'ProjectManager'
   const cacheKey = `${role}:${projectId}`
   const cached = projectNavCache.get(cacheKey)
-  if (cached) return cached
+  if (cached) {
+    // Refresh recency: delete + re-set moves the entry to the tail of the Map iteration order.
+    projectNavCache.delete(cacheKey)
+    projectNavCache.set(cacheKey, cached)
+    return cached
+  }
   const base = `/app/pm/projects/${projectId}`
   const isAdmin = role === 'Admin'
   const sections: NavSection[] = [
@@ -138,6 +146,11 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
     ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
   ]
+  // Evict oldest entry if at capacity (Map iteration order is insertion order).
+  if (projectNavCache.size >= PROJECT_NAV_CACHE_MAX) {
+    const firstKey = projectNavCache.keys().next().value
+    if (firstKey !== undefined) projectNavCache.delete(firstKey)
+  }
   projectNavCache.set(cacheKey, sections)
   return sections
 }

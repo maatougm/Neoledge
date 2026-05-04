@@ -51,6 +51,27 @@ export class ProjectMembersService {
   }
 
   async add(projectId: string, userId: string, label: string): Promise<Result<{ id: string }>> {
+    // Project-coherence checks before the insert:
+    //  - Refuse to add the project's PM (they already have full access — adding
+    //    them as a member is meaningless and confusing in the UI).
+    //  - Refuse to add inactive users.
+    //  - Refuse to add Admins (they're system-wide; per-project label is meaningless).
+    const [project, target] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, projectManagerId: true, isDeleted: true },
+      }),
+      this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { id: true, isActive: true, role: true },
+      }),
+    ])
+    if (!project || project.isDeleted) return Result.fail('Projet introuvable')
+    if (!target) return Result.fail('Utilisateur introuvable')
+    if (!target.isActive) return Result.fail('Cet utilisateur est désactivé')
+    if (target.role === 'Admin') return Result.fail('Les administrateurs n\'ont pas besoin d\'être ajoutés à un projet')
+    if (project.projectManagerId === userId) return Result.fail('Le chef de projet n\'a pas besoin d\'être ajouté comme membre')
+
     try {
       const row = await this.prisma.projectMember.create({
         data: {
@@ -95,15 +116,25 @@ export class ProjectMembersService {
     })
     if (!member) return Result.fail('Membre introuvable')
 
-    const blockers = await this.countBlockers(member.projectId, member.userId)
-    const total = blockers.workPackages + blockers.timeEntries + blockers.watchers + blockers.attendees
-
-    if (total > 0 && !opts.force && !opts.reassignTo) {
-      return Result.fail(`BLOCKERS:${JSON.stringify(blockers)}`)
-    }
+    // Run blocker check + delete inside a single transaction so a concurrent
+    // assignment can't slip in between the count and the delete.
+    let blockersForReply: { workPackages: number; timeEntries: number; watchers: number; attendees: number } | null = null
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const [workPackages, timeEntries, watchers, attendees] = await Promise.all([
+          tx.workPackage.count({ where: { projectId: member.projectId, assigneeId: member.userId, isDeleted: false } }),
+          tx.timeEntry.count({ where: { projectId: member.projectId, userId: member.userId } }),
+          tx.workPackageWatcher.count({ where: { workPackage: { projectId: member.projectId }, userId: member.userId } }),
+          tx.meetingAttendee.count({ where: { meeting: { projectId: member.projectId }, userId: member.userId } }),
+        ])
+        const total = workPackages + timeEntries + watchers + attendees
+        if (total > 0 && !opts.force && !opts.reassignTo) {
+          blockersForReply = { workPackages, timeEntries, watchers, attendees }
+          // Throw a sentinel so the transaction rolls back; we'll convert it below.
+          throw new Error('__BLOCKERS__')
+        }
+
         if (opts.reassignTo) {
           // Verify reassignTo is a member of the project
           const newMember = await tx.projectMember.findUnique({
@@ -130,18 +161,11 @@ export class ProjectMembersService {
       return Result.ok()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
+      if (msg === '__BLOCKERS__' && blockersForReply) {
+        return Result.fail(`BLOCKERS:${JSON.stringify(blockersForReply)}`)
+      }
       this.logger.error(`remove member failed: ${msg}`)
       return Result.fail(msg.includes('remplacement') ? msg : 'Erreur lors de la suppression')
     }
-  }
-
-  private async countBlockers(projectId: string, userId: string) {
-    const [workPackages, timeEntries, watchers, attendees] = await Promise.all([
-      this.prisma.workPackage.count({ where: { projectId, assigneeId: userId, isDeleted: false } }),
-      this.prisma.timeEntry.count({ where: { projectId, userId } }),
-      this.prisma.workPackageWatcher.count({ where: { workPackage: { projectId }, userId } }),
-      this.prisma.meetingAttendee.count({ where: { meeting: { projectId }, userId } }),
-    ])
-    return { workPackages, timeEntries, watchers, attendees }
   }
 }
