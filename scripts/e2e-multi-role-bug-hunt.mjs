@@ -123,9 +123,12 @@ try {
   const usersRes = await api('/pm/users');
   if (usersRes.status !== 200) FAIL('CRITICAL', `/pm/users returned ${usersRes.status}`);
   const userList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.items ?? []);
-  specUserId   = userList.find((u) => u.role === 'SpecificationTeam')?.id ?? null;
-  realizUserId = userList.find((u) => u.role === 'RealizationTeam' || u.role === 'Member')?.id ?? null;
-  pmUserId     = userList.find((u) => u.role === 'ProjectManager')?.id ?? null;
+  // Prefer the canonical seeded test accounts by email so we don't accidentally
+  // pick a leftover QA user (which may be inactive or have a stale role).
+  const findActive = (predicate) => userList.find((u) => predicate(u) && u.isActive !== false);
+  specUserId   = findActive((u) => u.email === SPEC.email)?.id ?? findActive((u) => u.role === 'SpecificationTeam')?.id ?? null;
+  realizUserId = findActive((u) => u.email === REALIZ.email)?.id ?? findActive((u) => u.role === 'Member' || u.role === 'RealizationTeam')?.id ?? null;
+  pmUserId     = findActive((u) => u.email === PM.email)?.id ?? findActive((u) => u.role === 'ProjectManager')?.id ?? null;
   if (!specUserId)   FAIL('HIGH', 'No SpecificationTeam user available — cahier validation flow cannot be tested');
   if (!realizUserId) FAIL('MEDIUM', 'No RealizationTeam/Member user available');
   PASS('user roster captured', `spec=${specUserId?.slice(0,8)}, realiz=${realizUserId?.slice(0,8)}, pm=${pmUserId?.slice(0,8)}`);
