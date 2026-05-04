@@ -130,12 +130,6 @@ const router = createRouter({
                 import('@/components/admin/sections/ActivitySection.vue'),
             },
             {
-              path: 'templates',
-              name: 'admin-templates',
-              component: () =>
-                import('@/components/admin/sections/TemplatesSection.vue'),
-            },
-            {
               path: 'system',
               name: 'admin-system',
               component: () =>
@@ -212,12 +206,6 @@ const router = createRouter({
               props: (route) => ({ id: route.params.id }),
             },
             {
-              path: 'projects/:id/automation',
-              name: 'pm-project-automation',
-              component: () => import('@/views/PMProjectFullView.vue'),
-              props: (route) => ({ id: route.params.id }),
-            },
-            {
               path: 'projects/:id/workpackages',
               name: 'pm-workpackages',
               component: () => import('@/views/WorkPackagesView.vue'),
@@ -245,18 +233,6 @@ const router = createRouter({
               path: 'projects/:id/sprint',
               name: 'pm-sprint',
               component: () => import('@/views/SprintBoardView.vue'),
-              props: true,
-            },
-            {
-              path: 'projects/:id/wiki',
-              name: 'pm-wiki',
-              component: () => import('@/views/WikiView.vue'),
-              props: true,
-            },
-            {
-              path: 'projects/:id/wiki/:slug',
-              name: 'pm-wiki-page',
-              component: () => import('@/views/WikiView.vue'),
               props: true,
             },
             {
@@ -298,6 +274,12 @@ const router = createRouter({
               path: 'team-planner',
               name: 'pm-team-planner',
               component: () => import('@/views/TeamPlannerView.vue'),
+            },
+            {
+              path: 'templates',
+              name: 'pm-templates',
+              component: () =>
+                import('@/components/admin/sections/TemplatesSection.vue'),
             },
             {
               path: 'my-tasks',

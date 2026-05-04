@@ -50,30 +50,7 @@ async function main() {
 
   console.log(`   Projects: ${projects.length}, PMs: ${pms.length}, team: ${team.length}`);
 
-  // ── 1. Hourly rates (global, one per user) ───────────────────────────────
-  console.log('1. Hourly rates…');
-  const rateByRole: Record<string, number> = {
-    Admin: 120,
-    ProjectManager: 95,
-    SpecificationTeam: 75,
-    Member: 70,
-  };
-  for (const u of users) {
-    const exists = await prisma.hourlyRate.findFirst({
-      where: { userId: u.id, projectId: null },
-    });
-    if (!exists) {
-      await prisma.hourlyRate.create({
-        data: {
-          userId: u.id,
-          projectId: null,
-          rate: new Prisma.Decimal(rateByRole[u.role] ?? 60),
-          currency: 'EUR',
-          validFrom: isoDate(-365),
-        },
-      });
-    }
-  }
+  // ── 1. Hourly rates seed removed — HourlyRate model retired. ─────────────
 
   // ── 2. Per-project seeding loop ──────────────────────────────────────────
   for (const project of projects) {
@@ -311,29 +288,7 @@ async function main() {
       });
     }
 
-    // 2g. Budget + line items ────────────────────────────────────────────
-    const budget = await prisma.projectBudget.upsert({
-      where: { projectId: project.id },
-      create: {
-        projectId: project.id,
-        laborBudget: new Prisma.Decimal(50000),
-        materialBudget: new Prisma.Decimal(15000),
-        currency: 'EUR',
-        notes: 'Budget initial — susceptible d\'évoluer selon avancement.',
-      },
-      update: {},
-    });
-    const liCount = await prisma.budgetLineItem.count({ where: { budgetId: budget.id } });
-    if (liCount === 0) {
-      await prisma.budgetLineItem.createMany({
-        data: [
-          { budgetId: budget.id, description: 'Licences logicielles',    type: 'material', unitCost: new Prisma.Decimal(2500),  units: new Prisma.Decimal(2),  total: new Prisma.Decimal(5000),  position: 0 },
-          { budgetId: budget.id, description: 'Serveurs cloud',           type: 'material', unitCost: new Prisma.Decimal(300),   units: new Prisma.Decimal(12), total: new Prisma.Decimal(3600),  position: 1 },
-          { budgetId: budget.id, description: 'Matériel réseau',          type: 'material', unitCost: new Prisma.Decimal(1200),  units: new Prisma.Decimal(1),  total: new Prisma.Decimal(1200),  position: 2 },
-          { budgetId: budget.id, description: 'Sous-traitance design',    type: 'service',  unitCost: new Prisma.Decimal(800),   units: new Prisma.Decimal(5),  total: new Prisma.Decimal(4000),  position: 3 },
-        ],
-      });
-    }
+    // 2g. Budget seed removed — budgeting module was retired.
 
     // 2h. Time entries (last 14 days, various users on various WPs) ──────
     const existingTe = await prisma.timeEntry.count({ where: { projectId: project.id } });

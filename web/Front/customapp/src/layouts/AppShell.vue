@@ -72,7 +72,6 @@ const adminNav: NavSection[] = [
       { key: 'admin-projects',   label: 'Projets',       icon: 'pi-briefcase',  to: '/app/admin/projects'   },
       { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
       { key: 'admin-roles',      label: 'Rôles',         icon: 'pi-key',        to: '/app/admin/roles'      },
-      { key: 'admin-templates',  label: 'Modèles',       icon: 'pi-copy',       to: '/app/admin/templates'  },
   ]},
   { heading: 'Rapports', items: [
       { key: 'admin-activity',      label: 'Activité',     icon: 'pi-history',    to: '/app/admin/activity'  },
@@ -92,6 +91,7 @@ const pmNav: NavSection[] = [
   { heading: 'Travail', items: [
       { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
       { key: 'pm-team-planner', label: 'Planif. équipe', icon: 'pi-calendar', to: '/app/pm/team-planner' },
+      { key: 'pm-templates',    label: 'Modèles',       icon: 'pi-copy',     to: '/app/pm/templates' },
   ]},
   { heading: 'Rapports', items: [
       { key: 'pm-analytics', label: 'Analytiques', icon: 'pi-chart-bar', to: '/app/pm/analytics' },
@@ -127,7 +127,6 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
         { key: 'proj-meetings',     label: 'Réunions',       icon: 'pi-microphone',  to: `${base}/meetings` },
         { key: 'proj-cahier',       label: 'Cahier des charges', icon: 'pi-file-word', to: `${base}/cahier` },
         { key: 'proj-validations',  label: 'Validations',    icon: 'pi-shield',      to: `${base}/validations` },
-        { key: 'proj-automation',   label: 'Automatisations', icon: 'pi-bolt',       to: `${base}/automation` },
     ]},
     { heading: 'Exécution', items: [
         { key: 'proj-backlog-gen',  label: 'Backlog IA',     icon: 'pi-sparkles',    to: `${base}/backlog-generator` },
@@ -137,7 +136,6 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
         { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
         { key: 'proj-backlogs',     label: 'Backlog Sprint', icon: 'pi-inbox',       to: `${base}/backlogs` },
         { key: 'proj-sprint',       label: 'Sprint',         icon: 'pi-forward',     to: `${base}/sprint` },
-        { key: 'proj-wiki',         label: 'Wiki',           icon: 'pi-book',        to: `${base}/wiki` },
     ]},
     { heading: 'Suivi', items: [
 { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },

@@ -9,8 +9,6 @@ import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
 import { CreateTimeEntryDto } from './dto/create-time-entry.dto.js';
 import { UpdateTimeEntryDto } from './dto/update-time-entry.dto.js';
 import { LockPeriodDto } from './dto/lock-period.dto.js';
-import { CreateHourlyRateDto } from './dto/create-hourly-rate.dto.js';
-import { UpdateHourlyRateDto } from './dto/update-hourly-rate.dto.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -114,38 +112,3 @@ export class ProjectTimeEntriesController {
   }
 }
 
-@Controller('admin/hourly-rates')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Admin')
-export class HourlyRatesController {
-  constructor(private readonly service: TimeTrackingService) {}
-
-  @Get()
-  async list() {
-    const r = await this.service.listRates();
-    if (r.isFailure) throw new BadRequestException(r.error);
-    return r.value;
-  }
-
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Body() dto: CreateHourlyRateDto) {
-    const r = await this.service.createRate(dto);
-    if (r.isFailure) throw new BadRequestException(r.error);
-    return r.value;
-  }
-
-  @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateHourlyRateDto) {
-    const r = await this.service.updateRate(id, dto);
-    if (r.isFailure) throw new BadRequestException(r.error);
-    return r.value;
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string) {
-    const r = await this.service.deleteRate(id);
-    if (r.isFailure) throw new BadRequestException(r.error);
-  }
-}
