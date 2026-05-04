@@ -1,0 +1,191 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { Result } from '../common/result.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'node:crypto';
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'attachments');
+
+// Re-validate content-type at download time — defence against a tampered DB
+// row or a future code path that bypasses the DTO allow-list at upload time.
+// Serving an attacker-controlled Content-Type of "text/html" on a download
+// endpoint would enable stored XSS in browsers that render inline responses.
+const ALLOWED_CONTENT_TYPES_SET = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/x-zip-compressed',
+]);
+const ALLOWED_EXT = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.csv',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.zip',
+]);
+
+@Injectable()
+export class AttachmentsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getProjectAttachments(projectId: string) {
+    const attachments = await this.prisma.projectAttachment.findMany({
+      where: { projectId, isDeleted: false },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { uploadedAt: 'desc' },
+    });
+    return Result.ok(attachments.map((a) => this.toDto(a)));
+  }
+
+  async getById(attachmentId: string) {
+    const a = await this.prisma.projectAttachment.findFirst({
+      where: { id: attachmentId, isDeleted: false },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+    });
+    if (!a) return Result.fail<any>('Pièce jointe non trouvée.');
+    return Result.ok(this.toDto(a));
+  }
+
+  async upload(projectId: string, userId: string, dto: any) {
+    const buffer = Buffer.from(dto.base64Content, 'base64');
+    if (buffer.length > MAX_FILE_SIZE) return Result.fail<any>('Fichier trop volumineux (max 10 Mo).');
+
+    const ext = path.extname(dto.fileName ?? '').toLowerCase();
+    if (!ALLOWED_EXT.has(ext)) {
+      return Result.fail<any>('Extension de fichier non autorisée.');
+    }
+
+    const dir = path.join(UPLOAD_DIR, projectId);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const storageName = `${randomUUID()}${ext}`;
+    const storagePath = path.join(dir, storageName);
+
+    // Path-traversal containment: reject anything resolving outside UPLOAD_DIR.
+    const resolved = path.resolve(storagePath);
+    const uploadRoot = path.resolve(UPLOAD_DIR);
+    if (
+      !resolved.startsWith(uploadRoot + path.sep) &&
+      resolved !== uploadRoot
+    ) {
+      return Result.fail<any>('Invalid path');
+    }
+
+    fs.writeFileSync(storagePath, buffer);
+
+    const attachment = await this.prisma.projectAttachment.create({
+      data: {
+        projectId,
+        uploadedByUserId: userId,
+        fileName: dto.fileName,
+        fileExtension: ext,
+        contentType: dto.contentType,
+        fileSize: BigInt(buffer.length),
+        storagePath,
+        description: dto.description ?? null,
+        category: dto.category ?? 'Document',
+      },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+    });
+
+    return Result.ok(this.toDto(attachment));
+  }
+
+  async updateMetadata(attachmentId: string, dto: any) {
+    const a = await this.prisma.projectAttachment.findFirst({ where: { id: attachmentId, isDeleted: false } });
+    if (!a) return Result.fail<any>('Pièce jointe non trouvée.');
+
+    const updated = await this.prisma.projectAttachment.update({
+      where: { id: attachmentId },
+      data: {
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.category !== undefined && { category: dto.category }),
+      },
+      include: { uploadedBy: { select: { firstName: true, lastName: true } } },
+    });
+    return Result.ok(this.toDto(updated));
+  }
+
+  async deleteAttachment(attachmentId: string) {
+    const a = await this.prisma.projectAttachment.findFirst({ where: { id: attachmentId, isDeleted: false } });
+    if (!a) return Result.fail('Pièce jointe non trouvée.');
+    await this.prisma.projectAttachment.update({ where: { id: attachmentId }, data: { isDeleted: true } });
+    return Result.ok();
+  }
+
+  async download(attachmentId: string) {
+    const a = await this.prisma.projectAttachment.findFirst({ where: { id: attachmentId, isDeleted: false } });
+    if (!a) return Result.fail<any>('Pièce jointe non trouvée.');
+    if (!fs.existsSync(a.storagePath)) return Result.fail<any>('Fichier introuvable sur le disque.');
+
+    // Sanitise the stored content-type against the allow-list before setting it
+    // as a response header. A tampered DB value of "text/html" would allow stored
+    // XSS if the browser renders the response inline.
+    const safeContentType = ALLOWED_CONTENT_TYPES_SET.has(a.contentType)
+      ? a.contentType
+      : 'application/octet-stream';
+
+    return Result.ok({
+      content: fs.readFileSync(a.storagePath),
+      fileName: a.fileName,
+      contentType: safeContentType,
+    });
+  }
+
+  async getTotalStorage() {
+    const result = await this.prisma.projectAttachment.aggregate({
+      where: { isDeleted: false },
+      _sum: { fileSize: true },
+    });
+    const bytes = Number(result._sum.fileSize ?? 0);
+    return Result.ok({ bytes, formatted: this.formatBytes(bytes) });
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+  }
+
+  private toDto(a: any) {
+    return {
+      id: a.id,
+      projectId: a.projectId,
+      uploadedByUserId: a.uploadedByUserId,
+      uploadedByUserName: a.uploadedBy ? `${a.uploadedBy.firstName} ${a.uploadedBy.lastName}` : '',
+      fileName: a.fileName,
+      fileExtension: a.fileExtension,
+      contentType: a.contentType,
+      fileSize: Number(a.fileSize),
+      fileSizeFormatted: this.formatBytes(Number(a.fileSize)),
+      description: a.description,
+      category: a.category,
+      uploadedAt: a.uploadedAt,
+      downloadUrl: `/api/projects/${a.projectId}/attachments/${a.id}/download`,
+    };
+  }
+}

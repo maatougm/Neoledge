@@ -26,7 +26,7 @@
       <p>{{ error }}</p>
     </div>
 
-    <div v-else class="log-box" ref="logBox">
+    <div v-else ref="logBox" class="log-box">
       <p v-if="lines.length === 0" class="log-empty">Aucune entrée de log.</p>
       <div v-for="(line, i) in lines" :key="i" :class="['log-line', levelClass(line)]">
         {{ line }}
@@ -37,30 +37,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
-import axios from 'axios'
 import { NeoButton } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 
-const app        = useApp()
 const lines      = ref<string[]>([])
 const loading    = ref(false)
 const error      = ref<string | null>(null)
 const logBox     = ref<HTMLElement | null>(null)
 const linesParam = 200
 
-const authHeader = () => {
-  const jwt = app.jwt
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-}
-
 const load = async () => {
   loading.value = true
   error.value   = null
   try {
-    const { data } = await axios.get<string[]>(
-      `${app.apiUrl}/admin/Log?lines=${linesParam}`,
-      { headers: authHeader() },
-    )
+    const { data } = await api.get<string[]>(`/admin/Log?lines=${linesParam}`)
     lines.value = data
     await nextTick()
     if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight
@@ -93,8 +83,8 @@ onMounted(load)
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .header-actions { display: flex; gap: 0.5rem; }
 
@@ -105,14 +95,14 @@ onMounted(load)
   align-items: center;
   gap: 0.75rem;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
-.error-state { color: #ef4444; }
+.error-state { color: var(--nl-danger); }
 .error-state i { font-size: 2rem; }
 
 .log-box {
   background: #0f172a;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   padding: 1rem;
   max-height: 560px;
   overflow-y: auto;

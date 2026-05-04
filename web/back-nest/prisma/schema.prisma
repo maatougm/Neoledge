@@ -1,0 +1,1007 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums (stored as VARCHAR — enum-as-string pattern) ──────────────────────
+//
+// All enum-like columns use @db.VarChar and String type in Prisma. This avoids
+// MySQL enum-column ALTER TABLE rewrites on every value addition. Application
+// code validates values at the DTO / service layer.
+//
+// UserRole:           Admin | ProjectManager | SpecificationTeam | Member
+//
+// ProjectStatus — 8 canonical RACI phases + 2 technical states:
+//   Technical:  Draft | Archived
+//   Phases:     Kickoff | CadrageTechnique | Environnement | Parametrage |
+//               Integration | Recette | MEP | Cloture
+//
+// TeamCode:           Cloud | PS | Integration | Delivery
+// ProjectPriority:    Low | Medium | High | Critical
+// FieldType:          Text | Number | Date | Select | Checkbox
+// FieldCategory:      Static | Dynamic | Custom
+// AttachmentCategory: Document | Specification | Contract | Screenshot | Image | Report | Other
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+// ─── Sprint 1: RACI Teams ─────────────────────────────────────────────────────
+
+model Team {
+  id            String    @id @default(uuid())
+  code          String    @unique @db.VarChar(50)
+  name          String    @db.VarChar(200)
+  managerUserId String?   @db.VarChar(36)
+  createdAt     DateTime  @default(now())
+
+  members AppUser[] @relation("TeamMembers")
+
+  @@map("Teams")
+}
+
+model AppUser {
+  id                  String    @id @default(uuid())
+  firstName           String    @db.VarChar(100)
+  lastName            String    @db.VarChar(100)
+  email               String    @unique @db.VarChar(256)
+  passwordHash        String
+  role                String    @default("Member") @db.VarChar(50)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  lastLoginAt         DateTime?
+  mustChangePassword  Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  avatarPath          String?   @db.VarChar(500)
+  jobTitle            String?   @db.VarChar(100)
+  phoneNumber         String?   @db.VarChar(50)
+  department          String?   @db.VarChar(100)
+  preferences         String?   @db.Text
+  totpSecret          String?   @db.VarChar(100)
+  totpEnabled         Boolean   @default(false)
+  totpVerifiedAt      DateTime?
+  tokenVersion              Int       @default(0)
+  teamId                    String?   @db.VarChar(36)
+  passwordResetToken        String?   @db.VarChar(255)
+  passwordResetTokenExpiry  DateTime?
+
+  // Relations
+  team             Team?              @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  managedProjects  Project[]          @relation("ProjectManager")
+  createdProjects  Project[]          @relation("ProjectCreator")
+  deletedProjects  Project[]          @relation("ProjectDeleter")
+  comments         ProjectComment[]
+  attachments      ProjectAttachment[]
+  activities       ProjectActivity[]
+  validations      ProjectValidation[]
+  templates        ProjectTemplate[]
+  notifications    Notification[]
+  checkedItems     PhaseChecklist[]
+
+  auditLogs    AuditLog[]
+  // Sprint 0+ back-relations (work packages, time, wiki, etc.)
+  wpAssignments      WorkPackage[]        @relation("WpAssignee")
+  wpAuthored         WorkPackage[]        @relation("WpAuthor")
+  wpWatches          WorkPackageWatcher[] @relation("WpWatchers")
+  ganttBaselines     GanttBaseline[]      @relation("GanttBaselineCreator")
+  timeEntries        TimeEntry[]          @relation("TimeEntryUser")
+  wikiPages          WikiPage[]           @relation("WikiPageAuthor")
+  wikiRevisions      WikiRevision[]       @relation("WikiRevisionAuthor")
+  agendaItems        MeetingAgendaItem[]  @relation("AgendaResponsible")
+  meetingAttendances MeetingAttendee[]    @relation("MeetingAttendeeUser")
+  meetingOutcomes    MeetingOutcome[]     @relation("OutcomeOwner")
+  actedNotifications Notification[]       @relation("NotificationActor")
+  wpComments         WorkPackageComment[] @relation("WpCommentAuthor")
+  wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
+  roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
+  cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
+  projectMemberships ProjectMember[]      @relation("ProjectMemberships")
+
+  @@map("AppUsers")
+}
+
+// ─── Permissions (Phase 1 — OpenProject-style data-driven roles) ─────────────
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique @db.VarChar(100)
+  resource    String   @db.VarChar(50)
+  description String   @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+
+  @@index([resource])
+  @@map("Permissions")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  isPreset    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  assignments UserRoleAssignment[]
+
+  @@map("Roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("RolePermissions")
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  projectId String?
+  createdAt DateTime @default(now())
+
+  user    AppUser  @relation("UserRoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  project Project? @relation("ProjectRoleAssignments", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, projectId], name: "user_role_project_uq")
+  @@index([roleId])
+  @@index([projectId])
+  @@map("UserRoleAssignments")
+}
+
+model Project {
+  id                       String   @id @default(uuid())
+  name                     String   @db.VarChar(200)
+  clientName               String   @db.VarChar(200)
+  startDate                DateTime
+  endDate                  DateTime
+  projectManagerId         String
+  status                   String   @default("Draft") @db.VarChar(50)
+  priority                 String   @default("Medium") @db.VarChar(50)
+  allowManagerCustomFields Boolean  @default(false)
+  createdByAdminId         String
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  aiOutput                 String?  @db.Text
+  isDeleted                Boolean  @default(false)
+  deletedAt                DateTime?
+  deletedByUserId          String?
+  tags                     String?  @db.VarChar(500)
+  budget                   Decimal?
+  currentPhaseEnteredAt    DateTime?
+
+  // Relations
+  projectManager AppUser          @relation("ProjectManager", fields: [projectManagerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdByAdmin AppUser          @relation("ProjectCreator", fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deletedByUser  AppUser?         @relation("ProjectDeleter", fields: [deletedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fields         ProjectField[]
+  fieldValues    ProjectFieldValue[]
+  validations    ProjectValidation[]
+  activities     ProjectActivity[]
+  comments       ProjectComment[]
+  attachments    ProjectAttachment[]
+  transcripts    MeetingTranscript[]
+  notifications  Notification[]
+  checklists      PhaseChecklist[]
+  automationRules AutomationRule[]
+
+  // Sprint 0+ back-relations
+  boards         Board[]
+  versions       Version[]
+  workPackages   WorkPackage[]
+  wpCustomFields WorkPackageCustomField[]
+  timeEntries    TimeEntry[]
+  milestones     Milestone[]
+  ganttBaselines GanttBaseline[]
+  wikiPages       WikiPage[]
+  roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
+  cahierFeedback  CahierFeedback[]
+  projectMembers  ProjectMember[]  @relation("ProjectMembers")
+
+  @@index([status])
+  @@index([projectManagerId])
+  @@index([isDeleted])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([isDeleted, status])
+  @@map("Projects")
+}
+
+model ProjectField {
+  id              String  @id @default(uuid())
+  projectId       String
+  label           String  @db.VarChar(200)
+  fieldType       String  @default("Text") @db.VarChar(50)
+  isRequired      Boolean @default(false)
+  defaultValue    String? @db.VarChar(500)
+  orderIndex      Int     @default(0)
+  fieldCategory   String  @default("Dynamic") @db.VarChar(50)
+  options         String? @db.Text
+  isBacklogDriver Boolean @default(false)
+  backlogHint     String? @db.VarChar(500)
+
+  // Relations
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values  ProjectFieldValue[]
+
+  @@index([projectId])
+  @@map("ProjectFields")
+}
+
+model ProjectFieldValue {
+  id             String    @id @default(uuid())
+  projectId      String
+  projectFieldId String
+  value          String?   @db.Text
+  updatedAt      DateTime? @updatedAt
+  updatedBy      String?   @db.VarChar(36)
+
+  // Relations
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  field   ProjectField @relation(fields: [projectFieldId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, projectFieldId])
+  @@index([projectFieldId])
+  @@map("ProjectFieldValues")
+}
+
+model ProjectValidation {
+  id                String   @id @default(uuid())
+  projectId         String
+  validatedByUserId String
+  validatedByRole   String   @db.VarChar(50)
+  phase             String   @db.VarChar(50)
+  isApproved        Boolean
+  comment           String?  @db.Text
+  validatedAt       DateTime
+
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  validatedBy AppUser @relation(fields: [validatedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, validatedByUserId, phase])
+  @@index([projectId, phase])
+  @@map("ProjectValidations")
+}
+
+model ProjectActivity {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String?
+  action    String   @db.VarChar(100)
+  detail    String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  // Relations
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("ProjectActivities")
+}
+
+model ProjectTemplate {
+  id               String   @id @default(uuid())
+  name             String   @db.VarChar(200)
+  description      String?  @db.Text
+  createdByAdminId String
+  createdAt        DateTime @default(now())
+
+  // Relations
+  createdByAdmin AppUser                @relation(fields: [createdByAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fields         ProjectTemplateField[]
+
+  @@index([createdByAdminId])
+  @@map("ProjectTemplates")
+}
+
+model ProjectTemplateField {
+  id           String  @id @default(uuid())
+  templateId   String
+  label        String  @db.VarChar(200)
+  type         String  @db.VarChar(50)
+  category     String  @default("Custom") @db.VarChar(50)
+  isRequired   Boolean @default(false)
+  displayOrder Int     @default(0)
+  options      String? @db.Text
+
+  // Relations
+  template ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+  @@map("ProjectTemplateFields")
+}
+
+model ProjectComment {
+  id              String    @id @default(uuid())
+  projectId       String
+  userId          String
+  content         String    @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime?
+  isDeleted       Boolean   @default(false)
+  parentCommentId String?
+  mentions        String?   @db.VarChar(500)
+
+  // Relations
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          AppUser          @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parentComment ProjectComment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies       ProjectComment[] @relation("CommentReplies")
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ProjectComments")
+}
+
+model ProjectAttachment {
+  id               String   @id @default(uuid())
+  projectId        String
+  uploadedByUserId String
+  fileName         String   @db.VarChar(255)
+  fileExtension    String   @db.VarChar(20)
+  contentType      String   @db.VarChar(100)
+  fileSize         BigInt
+  storagePath      String   @db.VarChar(500)
+  description      String?  @db.VarChar(500)
+  category         String   @default("Document") @db.VarChar(50)
+  uploadedAt       DateTime @default(now())
+  isDeleted        Boolean  @default(false)
+
+  // Relations
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy AppUser @relation(fields: [uploadedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId])
+  @@index([uploadedByUserId])
+  @@index([uploadedAt])
+  @@index([category])
+  @@map("ProjectAttachments")
+}
+
+model MeetingTranscript {
+  id                String    @id @default(uuid())
+  projectId         String
+  title             String    @db.VarChar(200)
+  originalFileName  String?   @db.VarChar(500)
+  durationSeconds   Int       @default(0)
+  detectedLanguages String    @default("") @db.VarChar(50)
+  recordedAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  aiSummary         String?   @db.Text
+  aiStatus          String    @default("none") @db.VarChar(20)
+  aiStartedAt       DateTime?
+  aiProcessedAt     DateTime?
+  aiModel           String?   @db.VarChar(50)
+  aiError           String?   @db.VarChar(500)
+
+  // Relations
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments    TranscriptSegment[]
+  actionItems MeetingActionItem[]
+  decisions   MeetingDecision[]
+  agendaItems MeetingAgendaItem[]
+  attendees   MeetingAttendee[]
+  outcomes    MeetingOutcome[]
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@index([aiStatus])
+  @@map("MeetingTranscripts")
+}
+
+model MeetingActionItem {
+  id           String    @id @default(uuid())
+  transcriptId String
+  description  String    @db.Text
+  assigneeName String?   @db.VarChar(200)
+  dueDate      DateTime?
+  isCompleted  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+  @@map("MeetingActionItems")
+}
+
+model MeetingDecision {
+  id           String   @id @default(uuid())
+  transcriptId String
+  description  String   @db.Text
+  category     String   @default("decision") @db.VarChar(50)
+  createdAt    DateTime @default(now())
+
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+  @@map("MeetingDecisions")
+}
+
+model TranscriptSegment {
+  id           String @id @default(uuid())
+  transcriptId String
+  speaker      String @default("Unknown") @db.VarChar(100)
+  text         String @default("") @db.Text
+  startTime    Float
+  endTime      Float
+  language     String @default("") @db.VarChar(10)
+  confidence   Float  @default(0)
+
+  // Relations
+  transcript MeetingTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+  @@map("TranscriptSegments")
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String
+  type       String   @db.VarChar(50)
+  title      String   @db.VarChar(200)
+  message    String   @db.VarChar(500)
+  projectId  String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  reason     String   @default("system") @db.VarChar(40)
+  entityType String?  @db.VarChar(40)
+  entityId   String?
+  actorId    String?
+  link       String?  @db.VarChar(500)
+
+  // Relations
+  // Cascade on user delete is intentional: notifications are personal —
+  // when a user is removed from the system their inbox is removed with them.
+  // (Audit logs use NoAction for traceability; notifications do not.)
+  user    AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actor   AppUser? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId, reason])
+  @@map("Notifications")
+}
+
+model PhaseChecklist {
+  id         String    @id @default(uuid())
+  projectId  String
+  phase      String    @db.VarChar(50)
+  label      String    @db.VarChar(300)
+  isChecked  Boolean   @default(false)
+  checkedBy  String?
+  checkedAt  DateTime?
+  orderIndex Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  checker AppUser? @relation(fields: [checkedBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId, phase])
+  @@map("PhaseChecklists")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String   @db.VarChar(50)
+  entityId   String   @db.VarChar(36)
+  action     String   @db.VarChar(50)
+  userId     String?
+  changes    String?  @db.Text
+  metadata   String?  @db.VarChar(1000)
+  createdAt  DateTime @default(now())
+
+  user AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("AuditLogs")
+}
+
+model AnalyticsCache {
+  id         String   @id @default(uuid())
+  cacheKey   String   @unique @db.VarChar(100)
+  data       String   @db.Text
+  computedAt DateTime @default(now())
+
+  @@map("AnalyticsCache")
+}
+
+model AutomationRule {
+  id               String    @id @default(uuid())
+  projectId        String
+  name             String    @db.VarChar(200)
+  triggerEvent     String    @db.VarChar(100)
+  triggerCondition String?   @db.Text
+  actionType       String    @db.VarChar(100)
+  actionConfig     String    @db.Text
+  isActive         Boolean   @default(true)
+  executionCount   Int       @default(0)
+  lastExecutedAt   DateTime?
+  createdAt        DateTime  @default(now())
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  logs    AutomationLog[]
+
+  @@index([projectId])
+  @@index([triggerEvent])
+  @@map("AutomationRules")
+}
+
+model AutomationLog {
+  id         String   @id @default(uuid())
+  ruleId     String
+  projectId  String
+  status     String   @db.VarChar(20)
+  detail     String?  @db.VarChar(500)
+  executedAt DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([projectId])
+  @@index([executedAt])
+  @@map("AutomationLog")
+}
+
+// ─── Sprint 0+ new models (OpenProject parity) ───────────────────────────────
+
+model Board {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String   @db.VarChar(120)
+  type      String   @default("Kanban") @db.VarChar(20)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  columns BoardColumn[]
+  sprints Sprint[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+  @@map("Boards")
+}
+
+model BoardColumn {
+  id        String   @id @default(uuid())
+  boardId   String
+  name      String   @db.VarChar(80)
+  position  Int      @default(0)
+  wipLimit  Int?
+  mapStatus String?  @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  board        Board         @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  workPackages WorkPackage[]
+
+  @@index([boardId, position])
+  @@map("BoardColumns")
+}
+
+model Sprint {
+  id        String   @id @default(uuid())
+  boardId   String
+  name      String   @db.VarChar(120)
+  goal      String?  @db.Text
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  status    String   @default("Planning") @db.VarChar(20)
+  capacity  Decimal? @db.Decimal(8, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board        Board         @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  workPackages WorkPackage[]
+
+  @@index([boardId, status])
+  @@map("Sprints")
+}
+
+model Version {
+  id          String    @id @default(uuid())
+  projectId   String
+  name        String    @db.VarChar(120)
+  description String?   @db.Text
+  startDate   DateTime? @db.Date
+  endDate     DateTime? @db.Date
+  status      String    @default("Open") @db.VarChar(20)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workPackages WorkPackage[]
+
+  @@unique([projectId, name])
+  @@index([projectId, status])
+  @@map("Versions")
+}
+
+model WorkPackage {
+  id             String    @id @default(uuid())
+  projectId      String
+  title          String    @db.VarChar(255)
+  description    String?   @db.Text
+  type           String    @default("Task") @db.VarChar(20)
+  status         String    @default("New") @db.VarChar(20)
+  priority       String    @default("Normal") @db.VarChar(20)
+  assigneeId     String?
+  authorId       String
+  parentId       String?
+  sprintId       String?
+  versionId      String?
+  boardColumnId  String?
+  startDate      DateTime? @db.Date
+  dueDate        DateTime? @db.Date
+  estimatedHours Decimal?  @db.Decimal(8, 2)
+  spentHours     Decimal   @default(0) @db.Decimal(8, 2)
+  percentDone    Int       @default(0)
+  position       Int       @default(0)
+  isDeleted      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // ─── Sprint 4: SLA fields ────────────────────────────────────────────────────
+  ackedAt           DateTime?
+  ackedByUserId     String?
+  escalatedAt       DateTime?
+  escalatedToUserId String?
+  slaDeadline       DateTime?
+  slaKind           String?   @db.VarChar(20)   // ack|blocker|post_recette|post_prod
+  slaBreached       Boolean   @default(false)
+
+  // ─── Sprint Transformation 5: IA backlog provenance ─────────────────────────
+  aiGeneratedFrom   String?   @db.VarChar(100)
+
+  project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  author          AppUser                  @relation("WpAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parent          WorkPackage?             @relation("WpHierarchy", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  children        WorkPackage[]            @relation("WpHierarchy")
+  sprint          Sprint?                  @relation(fields: [sprintId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  version         Version?                 @relation(fields: [versionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  boardColumn     BoardColumn?             @relation(fields: [boardColumnId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  watchers        WorkPackageWatcher[]
+  dependenciesOut WorkPackageDependency[]  @relation("DepFrom")
+  dependenciesIn  WorkPackageDependency[]  @relation("DepTo")
+  customValues    WorkPackageCustomValue[]
+  timeEntries     TimeEntry[]
+  milestones      Milestone[]
+  outcomes        MeetingOutcome[]
+  baselines       GanttBaseline[]
+  comments        WorkPackageComment[]
+  attachments     WorkPackageAttachment[]
+
+  @@index([projectId, isDeleted, status])
+  @@index([projectId, status])
+  @@index([assigneeId, isDeleted])
+  @@index([assigneeId])
+  @@index([parentId])
+  @@index([sprintId])
+  @@index([versionId])
+  @@index([boardColumnId])
+  @@index([slaDeadline, slaBreached])
+  @@map("WorkPackages")
+}
+
+model WorkPackageDependency {
+  id        String   @id @default(uuid())
+  fromWpId  String
+  toWpId    String
+  type      String   @default("relates") @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  fromWp WorkPackage @relation("DepFrom", fields: [fromWpId], references: [id], onDelete: Cascade)
+  toWp   WorkPackage @relation("DepTo", fields: [toWpId], references: [id], onDelete: Cascade)
+
+  @@unique([fromWpId, toWpId, type])
+  @@index([toWpId])
+  @@map("WorkPackageDependencies")
+}
+
+model WorkPackageWatcher {
+  id            String   @id @default(uuid())
+  workPackageId String
+  userId        String
+  createdAt     DateTime @default(now())
+
+  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  user        AppUser     @relation("WpWatchers", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workPackageId, userId])
+  @@index([userId])
+  @@map("WorkPackageWatchers")
+}
+
+model WorkPackageCustomField {
+  id         String   @id @default(uuid())
+  projectId  String
+  name       String   @db.VarChar(120)
+  fieldType  String   @default("text") @db.VarChar(32)
+  options    String?  @db.Text
+  isRequired Boolean  @default(false)
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  project Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values  WorkPackageCustomValue[]
+
+  @@index([projectId])
+  @@map("WorkPackageCustomFields")
+}
+
+model WorkPackageCustomValue {
+  id            String   @id @default(uuid())
+  workPackageId String
+  customFieldId String
+  value         String?  @db.Text
+  updatedAt     DateTime @updatedAt
+
+  workPackage WorkPackage            @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  customField WorkPackageCustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([workPackageId, customFieldId])
+  @@index([customFieldId])
+  @@map("WorkPackageCustomValues")
+}
+
+model Milestone {
+  id            String    @id @default(uuid())
+  projectId     String
+  workPackageId String?
+  title         String    @db.VarChar(255)
+  description   String?   @db.Text
+  date          DateTime  @db.Date
+  isReached     Boolean   @default(false)
+  color         String?   @db.VarChar(16)
+  position      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workPackage WorkPackage? @relation(fields: [workPackageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([projectId, date])
+  @@map("Milestones")
+}
+
+model GanttBaseline {
+  id             String    @id @default(uuid())
+  projectId      String
+  workPackageId  String
+  snapshotDate   DateTime  @default(now())
+  snapshotName   String    @db.VarChar(120)
+  startDate      DateTime? @db.Date
+  dueDate        DateTime? @db.Date
+  estimatedHours Decimal?  @db.Decimal(8, 2)
+  percentDone    Int       @default(0)
+  createdById    String
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  createdBy   AppUser     @relation("GanttBaselineCreator", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, snapshotName, workPackageId])
+  @@index([projectId, snapshotName])
+  @@index([workPackageId])
+  @@map("GanttBaselines")
+}
+
+model TimeEntry {
+  id            String    @id @default(uuid())
+  userId        String
+  projectId     String
+  workPackageId String?
+  hours         Decimal   @db.Decimal(6, 2)
+  spentOn       DateTime  @db.Date
+  activity      String    @default("development") @db.VarChar(32)
+  comment       String?   @db.Text
+  isBillable    Boolean   @default(true)
+  lockedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user        AppUser      @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workPackage WorkPackage? @relation(fields: [workPackageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId, spentOn])
+  @@index([projectId, spentOn])
+  @@index([workPackageId])
+  @@map("TimeEntries")
+}
+
+model WikiPage {
+  id        String   @id @default(uuid())
+  projectId String
+  title     String   @db.VarChar(255)
+  slug      String   @db.VarChar(255)
+  content   String   @db.Text
+  authorId  String
+  parentId  String?
+  version   Int      @default(1)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author    AppUser        @relation("WikiPageAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  parent    WikiPage?      @relation("WikiHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children  WikiPage[]     @relation("WikiHierarchy")
+  revisions WikiRevision[]
+
+  @@unique([projectId, slug])
+  @@index([parentId])
+  @@index([projectId, title])
+  @@map("WikiPages")
+}
+
+model WikiRevision {
+  id         String   @id @default(uuid())
+  wikiPageId String
+  version    Int
+  title      String   @db.VarChar(255)
+  content    String   @db.Text
+  authorId   String
+  comment    String?  @db.VarChar(500)
+  createdAt  DateTime @default(now())
+
+  wikiPage WikiPage @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
+  author   AppUser  @relation("WikiRevisionAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([wikiPageId, version])
+  @@index([wikiPageId])
+  @@map("WikiRevisions")
+}
+
+
+model MeetingAgendaItem {
+  id            String   @id @default(uuid())
+  meetingId     String
+  title         String   @db.VarChar(255)
+  duration      Int?
+  responsibleId String?
+  position      Int      @default(0)
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  meeting     MeetingTranscript @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  responsible AppUser?          @relation("AgendaResponsible", fields: [responsibleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([meetingId, position])
+  @@map("MeetingAgendaItems")
+}
+
+model MeetingAttendee {
+  id            String   @id @default(uuid())
+  meetingId     String
+  userId        String?
+  externalName  String?  @db.VarChar(200)
+  externalEmail String?  @db.VarChar(200)
+  isPresent     Boolean  @default(false)
+  role          String?  @db.VarChar(80)
+  createdAt     DateTime @default(now())
+
+  meeting MeetingTranscript @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    AppUser?          @relation("MeetingAttendeeUser", fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([meetingId])
+  @@index([userId])
+  @@map("MeetingAttendees")
+}
+
+model MeetingOutcome {
+  id            String    @id @default(uuid())
+  meetingId     String
+  type          String    @default("Note") @db.VarChar(20)
+  description   String    @db.Text
+  ownerId       String?
+  dueDate       DateTime? @db.Date
+  workPackageId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  meeting     MeetingTranscript @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  owner       AppUser?          @relation("OutcomeOwner", fields: [ownerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  workPackage WorkPackage?      @relation(fields: [workPackageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([meetingId, type])
+  @@map("MeetingOutcomes")
+}
+
+model WorkPackageComment {
+  id            String   @id @default(uuid())
+  workPackageId String
+  userId        String
+  content       String   @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime?
+  isDeleted     Boolean  @default(false)
+
+  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  user        AppUser     @relation("WpCommentAuthor", fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([workPackageId])
+  @@index([userId])
+  @@map("WorkPackageComments")
+}
+
+model WorkPackageAttachment {
+  id               String   @id @default(uuid())
+  workPackageId    String
+  uploadedByUserId String
+  fileName         String   @db.VarChar(255)
+  contentType      String   @db.VarChar(100)
+  fileSize         BigInt
+  storagePath      String   @db.VarChar(500)
+  uploadedAt       DateTime @default(now())
+  isDeleted        Boolean  @default(false)
+
+  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
+  uploadedBy  AppUser     @relation("WpAttachmentUploader", fields: [uploadedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([workPackageId])
+  @@index([uploadedByUserId])
+  @@map("WorkPackageAttachments")
+}
+
+
+// ─── Sprint 2: RACI + Handover ────────────────────────────────────────────────
+
+// ─── Cahier des Charges Feedback (AI learning from rejected documents) ───────
+
+model CahierFeedback {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String?
+  status    String   @default("rejected") @db.VarChar(20)  // 'approved' | 'rejected'
+  comment   String   @db.Text                                // User explanation
+  section   String?  @db.VarChar(100)                        // Which section was problematic
+  aiModel   String?  @db.VarChar(50)                         // Model that generated the doc
+  createdAt DateTime @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser? @relation("CahierFeedbackUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@map("CahierFeedback")
+}
+
+// ─── Per-project team membership with custom labels ──────────────────────────
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String   @db.VarChar(36)
+  userId    String   @db.VarChar(36)
+  label     String   @default("") @db.VarChar(150)
+  createdAt DateTime @default(now())
+
+  project Project @relation("ProjectMembers", fields: [projectId], references: [id], onDelete: Cascade)
+  user    AppUser @relation("ProjectMemberships", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId], name: "project_member_uq")
+  @@index([projectId])
+  @@index([userId])
+  @@map("ProjectMembers")
+}

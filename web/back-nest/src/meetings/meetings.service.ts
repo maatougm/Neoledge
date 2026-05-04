@@ -1,0 +1,419 @@
+import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import { PrismaService } from '../prisma/prisma.service.js'
+import { Result } from '../common/result.js'
+import { AiService } from '../ai/ai.service.js'
+
+interface TranscriptionSegment {
+  speaker: string
+  text: string
+  start_time: number
+  end_time: number
+  language: string
+  confidence: number
+}
+
+interface TranscriptionResponse {
+  segments: TranscriptionSegment[]
+  duration_seconds: number
+  detected_languages: string[]
+}
+
+/**
+ * Validate the JSON shape returned by the transcription service.
+ * Throws a descriptive Error if the response is malformed.
+ */
+function validateTranscriptionResponse(raw: unknown): TranscriptionResponse {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('Transcription response must be a JSON object')
+  }
+  const obj = raw as Record<string, unknown>
+
+  if (!Array.isArray(obj['segments'])) {
+    throw new Error('Transcription response missing "segments" array')
+  }
+  if (obj['segments'].length > 10_000) {
+    throw new Error(`Transcription response has too many segments: ${obj['segments'].length}`)
+  }
+
+  const segments: TranscriptionSegment[] = (obj['segments'] as unknown[]).map((s, i) => {
+    if (typeof s !== 'object' || s === null) throw new Error(`Segment[${i}] is not an object`)
+    const seg = s as Record<string, unknown>
+    return {
+      speaker: typeof seg['speaker'] === 'string' ? seg['speaker'].slice(0, 200) : 'Unknown',
+      text: typeof seg['text'] === 'string' ? seg['text'].slice(0, 10_000) : '',
+      start_time: typeof seg['start_time'] === 'number' && isFinite(seg['start_time']) ? seg['start_time'] : 0,
+      end_time: typeof seg['end_time'] === 'number' && isFinite(seg['end_time']) ? seg['end_time'] : 0,
+      language: typeof seg['language'] === 'string' ? seg['language'].slice(0, 10) : '',
+      confidence: typeof seg['confidence'] === 'number' && isFinite(seg['confidence']) ? seg['confidence'] : 0,
+    }
+  })
+
+  const duration = typeof obj['duration_seconds'] === 'number' && isFinite(obj['duration_seconds'])
+    ? obj['duration_seconds']
+    : 0
+
+  const langs = Array.isArray(obj['detected_languages'])
+    ? (obj['detected_languages'] as unknown[])
+        .filter((l): l is string => typeof l === 'string')
+        .map((l) => l.slice(0, 10))
+    : []
+
+  return { segments, duration_seconds: duration, detected_languages: langs }
+}
+
+@Injectable()
+export class MeetingsService {
+  private readonly logger = new Logger(MeetingsService.name)
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly aiService: AiService,
+  ) {}
+
+  async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
+    // No default fallback URL — TRANSCRIPTION_URL is validated as required at startup.
+    const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+
+    // SSRF guard: only allow http(s) schemes pointing to the configured host.
+    try {
+      const parsed = new URL(serviceUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        this.logger.error(`TRANSCRIPTION_URL has forbidden protocol: ${parsed.protocol}`)
+        return Result.fail<any>('Configuration de transcription invalide.')
+      }
+    } catch {
+      this.logger.error(`TRANSCRIPTION_URL is not a valid URL: ${serviceUrl}`)
+      return Result.fail<any>('Configuration de transcription invalide.')
+    }
+
+    // Try the local model first; if the local service is unreachable or errors out,
+    // fall back to OpenAI's Whisper API (when OPENAI_API_KEY is set).
+    let data: TranscriptionResponse
+    let usedFallback = false
+    try {
+      data = await this.callLocalTranscription(serviceUrl, audioBuffer, fileName)
+    } catch (localErr: unknown) {
+      const msg = localErr instanceof Error ? localErr.message : String(localErr)
+      this.logger.warn(`Local transcription failed: ${msg} — attempting Whisper API fallback`)
+      try {
+        data = await this.callWhisperApiFallback(audioBuffer, fileName)
+        usedFallback = true
+        this.logger.log('Whisper API fallback succeeded')
+      } catch (fallbackErr: unknown) {
+        const fmsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+        this.logger.error(`Whisper API fallback also failed: ${fmsg}`)
+        return Result.fail<any>('Service de transcription indisponible. Veuillez réessayer ultérieurement.')
+      }
+    }
+
+    try {
+      const transcript = await this.prisma.meetingTranscript.create({
+        data: {
+          projectId,
+          title,
+          originalFileName: fileName,
+          durationSeconds: Math.round(data.duration_seconds),
+          detectedLanguages: data.detected_languages.join(','),
+          recordedAt: new Date(),
+        },
+      })
+
+      const segments = data.segments.map((s) => ({
+        transcriptId: transcript.id,
+        speaker: s.speaker,
+        text: s.text,
+        startTime: s.start_time,
+        endTime: s.end_time,
+        language: s.language,
+        confidence: s.confidence,
+      }))
+
+      if (segments.length > 0) {
+        await this.prisma.transcriptSegment.createMany({ data: segments })
+      }
+
+      if (usedFallback) {
+        this.logger.log(`Transcript ${transcript.id} created via Whisper API fallback`)
+      }
+
+      // Fire-and-forget AI analysis if enabled
+      const aiEnabled = this.config.get<string>('AI_ENABLED', 'false')
+      if (aiEnabled === 'true' || aiEnabled === '1') {
+        void this.aiService.analyzeTranscript(transcript.id).catch((e: unknown) =>
+          this.logger.error(`Unhandled AI error for transcript ${transcript.id}: ${e instanceof Error ? e.message : String(e)}`)
+        )
+      }
+
+      return this.getById(transcript.id)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erreur inconnue'
+      this.logger.error(`Transcript persistence failed: ${message}`)
+      return Result.fail<any>('Erreur lors de la sauvegarde de la transcription.')
+    }
+  }
+
+  /**
+   * POST audio to the local Python transcription service. Throws on any non-2xx
+   * response or invalid JSON shape so the caller can fall back to the API path.
+   */
+  private async callLocalTranscription(
+    serviceUrl: string,
+    audioBuffer: Buffer,
+    fileName: string,
+  ): Promise<TranscriptionResponse> {
+    const formData = new FormData()
+    formData.append('audio', new Blob([audioBuffer as unknown as BlobPart]), fileName)
+
+    const transcriptionSecret = this.config.get<string>('TRANSCRIPTION_SECRET', '')
+    const headers: Record<string, string> = {}
+    if (transcriptionSecret) {
+      headers['x-transcription-secret'] = transcriptionSecret
+    }
+
+    // 5-minute hard timeout — long enough for a 30-min audio file on CPU,
+    // short enough that a hung container can't pile up requests indefinitely.
+    const response = await fetch(`${serviceUrl}/transcribe`, {
+      method: 'POST',
+      body: formData,
+      headers,
+      signal: AbortSignal.timeout(300_000),
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`local service returned ${response.status}: ${text.slice(0, 200)}`)
+    }
+
+    const rawJson: unknown = await response.json()
+    return validateTranscriptionResponse(rawJson)
+  }
+
+  /**
+   * Fallback path: Z.AI speech-to-text (glm-asr) — OpenAI-compatible
+   * `/audio/transcriptions` endpoint. Reuses AI_FALLBACK_API_KEY (the same
+   * key already used by ZaiFallbackProvider for chat completions).
+   *
+   * Returns a `TranscriptionResponse` with a single "Speaker 1" since
+   * Z.AI's ASR doesn't diarize. Throws if no API key is configured or the
+   * call fails.
+   *
+   * Operators can override:
+   *   - WHISPER_FALLBACK_BASE_URL  (default: https://api.z.ai/api/paas/v4)
+   *   - WHISPER_FALLBACK_MODEL     (default: glm-asr)
+   *   - WHISPER_FALLBACK_API_KEY   (default: AI_FALLBACK_API_KEY)
+   */
+  private async callWhisperApiFallback(
+    audioBuffer: Buffer,
+    fileName: string,
+  ): Promise<TranscriptionResponse> {
+    const apiKey =
+      this.config.get<string>('WHISPER_FALLBACK_API_KEY', '') ||
+      this.config.get<string>('AI_FALLBACK_API_KEY', '')
+    if (!apiKey) {
+      throw new Error('AI_FALLBACK_API_KEY (Z.AI) not configured — fallback unavailable')
+    }
+    const baseUrl = (
+      this.config.get<string>('WHISPER_FALLBACK_BASE_URL', '') ||
+      'https://api.z.ai/api/paas/v4'
+    ).replace(/\/+$/, '')
+    const model = this.config.get<string>('WHISPER_FALLBACK_MODEL', 'glm-asr')
+
+    const form = new FormData()
+    form.append('file', new Blob([audioBuffer as unknown as BlobPart]), fileName)
+    form.append('model', model)
+    form.append('response_format', 'verbose_json')
+    form.append('timestamp_granularities[]', 'segment')
+
+    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      body: form,
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(300_000),
+    })
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`Whisper API returned ${response.status}: ${text.slice(0, 300)}`)
+    }
+
+    const raw = (await response.json()) as {
+      task?: string
+      language?: string
+      duration?: number
+      text?: string
+      segments?: Array<{
+        id: number
+        start: number
+        end: number
+        text: string
+        avg_logprob?: number
+        no_speech_prob?: number
+      }>
+    }
+
+    const language = (raw.language ?? '').slice(0, 10) || 'auto'
+    const duration = typeof raw.duration === 'number' && isFinite(raw.duration) ? raw.duration : 0
+
+    const apiSegments = Array.isArray(raw.segments) ? raw.segments : []
+    const segments: TranscriptionSegment[] = apiSegments.length > 0
+      ? apiSegments.map((s) => ({
+          speaker: 'Speaker 1',
+          text: typeof s.text === 'string' ? s.text.trim().slice(0, 10_000) : '',
+          start_time: typeof s.start === 'number' && isFinite(s.start) ? s.start : 0,
+          end_time: typeof s.end === 'number' && isFinite(s.end) ? s.end : 0,
+          language,
+          // OpenAI's avg_logprob is in [-inf, 0]; map to a [0,1] confidence.
+          confidence: typeof s.avg_logprob === 'number' && isFinite(s.avg_logprob)
+            ? Math.max(0, Math.min(1, Math.exp(s.avg_logprob)))
+            : 0.85,
+        }))
+      // No segment-level data — synthesize one segment from the flat text.
+      : raw.text && raw.text.trim()
+      ? [{
+          speaker: 'Speaker 1',
+          text: raw.text.trim().slice(0, 10_000),
+          start_time: 0,
+          end_time: duration,
+          language,
+          confidence: 0.85,
+        }]
+      : []
+
+    return {
+      segments,
+      duration_seconds: duration,
+      detected_languages: language && language !== 'auto' ? [language] : [],
+    }
+  }
+
+  async getByProject(projectId: string) {
+    const transcripts = await this.prisma.meetingTranscript.findMany({
+      where: { projectId },
+      include: { _count: { select: { segments: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    return Result.ok(
+      transcripts.map((t) => ({
+        id: t.id,
+        title: t.title,
+        durationSeconds: t.durationSeconds,
+        detectedLanguages: t.detectedLanguages,
+        segmentCount: t._count.segments,
+        recordedAt: t.recordedAt,
+        createdAt: t.createdAt,
+        aiStatus: t.aiStatus,
+      })),
+    )
+  }
+
+  async getById(id: string) {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id },
+      include: { segments: { orderBy: { startTime: 'asc' } } },
+    })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+
+    return Result.ok({
+      id: t.id,
+      projectId: t.projectId,
+      title: t.title,
+      durationSeconds: t.durationSeconds,
+      detectedLanguages: t.detectedLanguages,
+      recordedAt: t.recordedAt,
+      createdAt: t.createdAt,
+      aiStatus: t.aiStatus,
+      segments: t.segments.map((s) => ({
+        id: s.id,
+        speaker: s.speaker,
+        text: s.text,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        language: s.language,
+        confidence: s.confidence,
+      })),
+    })
+  }
+
+  async deleteTranscript(id: string) {
+    const t = await this.prisma.meetingTranscript.findUnique({ where: { id } })
+    if (!t) return Result.fail('Transcription non trouvée.')
+    await this.prisma.meetingTranscript.delete({ where: { id } })
+    return Result.ok()
+  }
+
+  async renameSpeaker(id: string, oldName: string, newName: string, userId: string) {
+    const t = await this.prisma.meetingTranscript.findUnique({ where: { id } })
+    if (!t) return Result.fail('Transcription non trouvée.')
+
+    await this.prisma.transcriptSegment.updateMany({
+      where: { transcriptId: id, speaker: oldName },
+      data: { speaker: newName },
+    })
+
+    // Audit trail
+    await this.prisma.auditLog.create({
+      data: {
+        entityType: 'TranscriptSegment',
+        entityId: id,
+        action: 'rename_speaker',
+        userId,
+        changes: JSON.stringify({ oldName, newName }),
+      },
+    }).catch((e: unknown) =>
+      this.logger.error(`Failed to write audit log for rename_speaker: ${e instanceof Error ? e.message : String(e)}`)
+    )
+
+    return Result.ok()
+  }
+
+  async triggerAiAnalysis(transcriptId: string) {
+    const t = await this.prisma.meetingTranscript.findUnique({ where: { id: transcriptId } })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+
+    if (t.aiStatus === 'processing') {
+      return Result.fail<any>('Une analyse est déjà en cours pour cette transcription.')
+    }
+
+    // Fire and forget
+    void this.aiService.analyzeTranscript(transcriptId).catch((e: unknown) =>
+      this.logger.error(`Unhandled AI error for transcript ${transcriptId}: ${e instanceof Error ? e.message : String(e)}`)
+    )
+
+    return Result.ok({ aiStatus: 'processing' })
+  }
+
+  async getAiResults(transcriptId: string) {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      include: {
+        actionItems: { orderBy: { createdAt: 'asc' } },
+        decisions: { orderBy: { createdAt: 'asc' } },
+      },
+    })
+
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+
+    return Result.ok({
+      aiStatus: t.aiStatus,
+      aiSummary: t.aiSummary,
+      aiError: t.aiError,
+      aiModel: t.aiModel,
+      aiProcessedAt: t.aiProcessedAt,
+      actionItems: t.actionItems.map((a) => ({
+        id: a.id,
+        description: a.description,
+        assigneeName: a.assigneeName,
+        dueDate: a.dueDate,
+        isCompleted: a.isCompleted,
+      })),
+      decisions: t.decisions.map((d) => ({
+        id: d.id,
+        description: d.description,
+        category: d.category,
+      })),
+    })
+  }
+}

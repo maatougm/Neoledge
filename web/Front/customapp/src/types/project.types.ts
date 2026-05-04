@@ -10,30 +10,39 @@ import type { UserResponse } from './user.types'
 
 export type ProjectStatus =
   | 'Draft'
-  | 'InProgress'
-  | 'SpecificationValidation'
-  | 'Realization'
-  | 'DeploymentValidation'
-  | 'Completed'
+  | 'Kickoff'
+  | 'CadrageTechnique'
+  | 'Environnement'
+  | 'Parametrage'
+  | 'Integration'
+  | 'Recette'
+  | 'MEP'
+  | 'Cloture'
   | 'Archived'
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   Draft: 'Brouillon',
-  InProgress: 'En cours',
-  SpecificationValidation: 'Validation spécification',
-  Realization: 'Réalisation',
-  DeploymentValidation: 'Validation déploiement',
-  Completed: 'Terminé',
+  Kickoff: 'Lancement',
+  CadrageTechnique: 'Cadrage technique',
+  Environnement: 'Environnement',
+  Parametrage: 'Paramétrage',
+  Integration: 'Intégration',
+  Recette: 'Recette',
+  MEP: 'Mise en production',
+  Cloture: 'Clôture',
   Archived: 'Archivé',
 }
 
 export const PROJECT_STATUS_SEVERITY: Record<ProjectStatus, string> = {
   Draft: 'secondary',
-  InProgress: 'info',
-  SpecificationValidation: 'warn',
-  Realization: 'info',
-  DeploymentValidation: 'warn',
-  Completed: 'success',
+  Kickoff: 'info',
+  CadrageTechnique: 'info',
+  Environnement: 'info',
+  Parametrage: 'warning',
+  Integration: 'warning',
+  Recette: 'warning',
+  MEP: 'success',
+  Cloture: 'success',
   Archived: 'secondary',
 }
 
@@ -69,6 +78,10 @@ export interface ProjectSummary {
   startDate: string
   endDate: string
   createdAt: string
+  /** Backend-computed: % of WPs in a terminal status (Resolved + Closed). */
+  progressPct?: number
+  wpClosed?: number
+  wpTotal?: number
 }
 
 export interface ProjectDetail {
@@ -92,6 +105,8 @@ export interface AddFieldPayload {
   fieldType: FieldType
   isRequired: boolean
   options: string | null
+  isBacklogDriver?: boolean
+  backlogHint?: string | null
 }
 
 // ─── Requests ─────────────────────────────────────────────────────────────────
@@ -101,7 +116,7 @@ export interface CreateProjectPayload {
   clientName: string
   startDate: string
   endDate: string
-  projectManagerId?: string
+  projectManagerId: string
 }
 
 export interface UpdateProjectPayload {
@@ -120,9 +135,22 @@ export interface AssignManagerPayload {
 export interface ProjectActivity {
   id: string
   userName: string | null
+  userId: string | null
+  userRole: string | null
   action: string
   detail: string | null
-  createdAt: string
+  timestamp: string
+  projectId: string | null
+  projectName: string | null
+  projectClientName: string | null
+  /** @deprecated use timestamp */
+  createdAt?: string
+}
+
+export interface ActivityStats {
+  totalToday: number
+  totalThisWeek: number
+  mostActiveProject: { id: string; name: string; count: number } | null
 }
 
 export const ACTIVITY_ACTION_LABELS: Record<string, string> = {
@@ -149,6 +177,18 @@ export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {
   Custom: 'Personnalisé',
 }
 
+// ─── Trash ────────────────────────────────────────────────────────────────────
+
+export interface DeletedProjectSummary {
+  id: string
+  name: string
+  clientName: string
+  projectManagerName: string | null
+  status: ProjectStatus
+  deletedAt: string
+  deletedByName: string | null
+}
+
 // ─── Project Templates ─────────────────────────────────────────────────────────
 
 export interface ProjectTemplateSummary {
@@ -170,4 +210,27 @@ export interface CreateTemplatePayload {
     displayOrder: number
     options: string | null
   }>
+}
+
+export interface TemplateField {
+  id: string
+  label: string
+  type: string
+  category: string
+  isRequired: boolean
+  displayOrder: number
+  options: string | null
+}
+
+export interface ProjectTemplate {
+  id: string
+  name: string
+  description: string | null
+  createdAt: string
+  fields: TemplateField[]
+}
+
+export interface CreateFromProjectPayload {
+  name: string
+  description?: string
 }

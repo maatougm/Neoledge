@@ -1,15 +1,319 @@
 @import './base.css';
 
+/* ── Stacking order fix ─────────────────────────────────────────────────────
+   Teleported overlays (NeoSelect / NeoDatePicker / PrimeVue Select dropdown
+   panels) MUST render above the PrimeVue Dialog mask (default 1101) and our
+   custom AppModal scrim (9600). Without this fix, opening a Select inside a
+   Dialog renders the option panel behind the modal — see
+   /app/admin/templates "Nouveau modèle" report.
+   The PrimeVue 4 theme system ignores the legacy
+   `usePrimeVue().config.zIndex` API, so we override at the CSS level. */
+.p-overlay,
+.p-select-overlay,
+.p-dropdown-panel,
+.p-multiselect-panel,
+.p-datepicker-panel,
+.p-autocomplete-panel,
+.p-cascadeselect-panel,
+.p-treeselect-panel,
+[data-pc-section="overlay"] {
+  z-index: 11000 !important;
+}
+/* NeoSelect emits its overlay with these tailwind classes inline-styled to
+   z-index:1001. Boost it above the dialog mask. */
+.p-dialog-mask + .p-dialog *[class*="bg-white"][class*="z-50"],
+.p-dialog *[class*="bg-white"][class*="z-50"],
+.modal-scrim *[class*="bg-white"][class*="z-50"] {
+  z-index: 11000 !important;
+}
+
+/* ── PM Workspace utilities (new v3 design) ────────────────────────────────── */
+.nl-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  background: var(--nl-kbd-bg); border: 1px solid var(--nl-kbd-border);
+  border-bottom-width: 2px; border-radius: 4px;
+  font-family: var(--nl-font-mono); font-size: 10px; font-weight: 600;
+  color: var(--nl-kbd-text); line-height: 1;
+}
+
+.nl-row { transition: background 0.1s ease; cursor: pointer; }
+.nl-row:hover { background: var(--nl-row-hover); }
+.nl-row--selected { background: var(--nl-row-selected); }
+
+.nl-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: var(--nl-radius-pill);
+  font-size: var(--nl-fs-xs); font-weight: 500; line-height: 1.5;
+  background: var(--nl-surface-2); color: var(--nl-text-2);
+  border: 1px solid var(--nl-border);
+}
+.nl-pill--active {
+  background: var(--nl-accent-light); color: var(--nl-accent);
+  border-color: var(--nl-accent);
+}
+.nl-pill--danger  { background: var(--nl-danger-light);  color: var(--nl-danger);  border-color: color-mix(in srgb, var(--nl-danger) 35%, transparent); }
+.nl-pill--warning { background: var(--nl-warning-light); color: var(--nl-warning); border-color: color-mix(in srgb, var(--nl-warning) 35%, transparent); }
+.nl-pill--success { background: var(--nl-success-light); color: var(--nl-success); border-color: color-mix(in srgb, var(--nl-success) 35%, transparent); }
+
+.nl-prio-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.nl-prio-dot--urgent  { background: var(--nl-prio-urgent); }
+.nl-prio-dot--high    { background: var(--nl-prio-high); }
+.nl-prio-dot--normal  { background: var(--nl-prio-normal); }
+.nl-prio-dot--low     { background: var(--nl-prio-low); }
+
+.nl-card {
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
+  padding: var(--nl-sp-4);
+}
+.nl-card__title {
+  font-size: var(--nl-fs-sm); font-weight: 600;
+  color: var(--nl-text-3); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: var(--nl-sp-3);
+}
+
+.nl-section-title {
+  font-size: var(--nl-fs-xs); font-weight: 600;
+  color: var(--nl-text-3); text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nl-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--nl-sp-2); padding: var(--nl-sp-8);
+  color: var(--nl-text-3); text-align: center;
+}
+.nl-empty__icon {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--nl-surface-2); display: flex;
+  align-items: center; justify-content: center;
+  color: var(--nl-text-3); font-size: 18px;
+}
+
+/* ── Teleported context menus (row overflow ⋯ etc.) ──────────────────────── */
+/* Must live at the root so teleported nodes inherit the styles. */
+.ptr__overflow-menu {
+  position: fixed; min-width: 200px;
+  background: var(--nl-surface); border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius); box-shadow: var(--nl-shadow-lg);
+  padding: 4px; z-index: 9500;
+  display: flex; flex-direction: column; gap: 1px;
+  font-family: var(--nl-font);
+}
+.ptr__overflow-menu button {
+  display: flex; align-items: center; gap: var(--nl-sp-2);
+  padding: 6px 10px; background: transparent; border: none;
+  border-radius: var(--nl-radius-sm); cursor: pointer;
+  font-family: inherit; font-size: var(--nl-fs-sm);
+  color: var(--nl-text-1); text-align: left;
+  width: 100%;
+}
+.ptr__overflow-menu button:hover { background: var(--nl-row-hover); }
+.ptr__overflow-menu button .pi { color: var(--nl-text-3); font-size: 12px; width: 14px; }
+.ptr__overflow-danger { color: var(--nl-danger) !important; }
+.ptr__overflow-danger:hover { background: var(--nl-danger-light) !important; }
+.ptr__overflow-danger .pi { color: var(--nl-danger) !important; }
+.ptr__overflow-sep { height: 1px; background: var(--nl-separator); margin: 4px 0; }
+.ptr__overflow-menu button:disabled { opacity: 0.5; cursor: not-allowed; }
+.ptr__overflow-menu button:disabled:hover { background: transparent; }
+.ptr__overflow-group {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nl-text-3);
+  user-select: none;
+}
+
+
+/* ── Overlay stacking — keep PrimeVue/NeoLibrary dropdowns above AppModal ─────
+   AppModal scrim: z-index 9600. PrimeVue's dynamic z-index manager is configured
+   to start overlays at 10000 (App.vue → usePrimeVue().config.zIndex). These CSS
+   rules are a belt-and-suspenders fallback covering all known class variants. */
+.p-select-overlay,
+.p-datepicker-panel,
+.p-datepicker:not(.p-datepicker-inline),
+.p-autocomplete-overlay,
+.p-multiselect-overlay,
+.p-cascadeselect-overlay,
+.p-dropdown-panel,
+.p-overlaypanel,
+.p-menu,
+.p-tieredmenu,
+.p-contextmenu,
+.p-popover,
+.p-tooltip,
+/* PrimeVue 4 data-attribute overlay roots */
+[data-pc-section="panel"],
+[data-pc-name="select"] [data-pc-section="overlay"],
+[data-pc-name="datepicker"] [data-pc-section="panel"],
+[data-pc-name="multiselect"] [data-pc-section="overlay"],
+[data-pc-name="autocomplete"] [data-pc-section="overlay"] {
+  z-index: 10000 !important;
+}
+
 #app {
   font-family: var(--nl-font);
+  min-height: 100vh;
+  /* Ambient Multi-Stop Gradient Mesh */
+  background: radial-gradient(circle at 15% 50%, rgba(15, 98, 254, 0.04), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(15, 98, 254, 0.03), transparent 25%);
+}
+
+.dark #app {
+  background: radial-gradient(circle at 15% 50%, rgba(15, 98, 254, 0.08), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(15, 98, 254, 0.05), transparent 25%);
 }
 
 a {
   text-decoration: none;
   color: var(--nl-accent);
-  transition: color 0.15s;
+  transition: var(--nl-transition);
 }
-
 a:hover {
   color: var(--nl-accent-hover);
+}
+
+/* ── Premium Utilities ───────────────────────────────────────────────────────── */
+.glass-panel {
+  background: var(--nl-glass-bg);
+  backdrop-filter: var(--nl-glass-blur);
+  -webkit-backdrop-filter: var(--nl-glass-blur);
+  border: 1px solid var(--nl-glass-border);
+  box-shadow: var(--nl-glass-shadow);
+}
+
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--nl-shadow-lg);
+}
+
+.glow-accent {
+  box-shadow: var(--nl-shadow-glow);
+}
+
+/* ── Vue Transitions ─────────────────────────────────────────────────────────── */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-up-enter-from, .slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* ── Global Dark Mode Overrides ──────────────────────────────────────────────── */
+/* Covers components that use hardcoded light backgrounds / text colors.         */
+/* Using high specificity so these win over scoped styles in edge cases.          */
+
+/* PrimeVue Dialog / Overlay */
+.dark .p-dialog,
+.dark .p-dialog-header,
+.dark .p-dialog-content,
+.dark .p-dialog-footer {
+  background: var(--nl-surface) !important;
+  color: var(--nl-text-1) !important;
+  border-color: var(--nl-border) !important;
+}
+.dark .p-dialog-header { border-bottom: 1px solid var(--nl-border) !important; }
+.dark .p-dialog-footer { border-top: 1px solid var(--nl-border) !important; }
+
+/* PrimeVue Select / Dropdown */
+.dark .p-select,
+.dark .p-select-overlay,
+.dark .p-listbox,
+.dark .p-select-list {
+  background: var(--nl-surface) !important;
+  border-color: var(--nl-border) !important;
+  color: var(--nl-text-1) !important;
+}
+.dark .p-select-option:hover,
+.dark .p-listbox-option:hover {
+  background: var(--nl-surface-2) !important;
+}
+.dark .p-select-option.p-selected,
+.dark .p-listbox-option.p-selected {
+  background: var(--nl-accent-light) !important;
+  color: var(--nl-accent) !important;
+}
+
+/* PrimeVue InputText */
+.dark .p-inputtext,
+.dark input[data-pc-name="pcinputtext"] {
+  background: var(--nl-surface-2) !important;
+  border-color: var(--nl-border) !important;
+  color: var(--nl-text-1) !important;
+}
+.dark .p-inputtext::placeholder { color: var(--nl-text-3) !important; }
+
+/* PrimeVue DataTable */
+.dark .p-datatable-table { background: var(--nl-surface) !important; }
+.dark .p-datatable-thead > tr > th {
+  background: var(--nl-surface-2) !important;
+  color: var(--nl-text-2) !important;
+  border-color: var(--nl-border) !important;
+}
+.dark .p-datatable-tbody > tr > td {
+  background: var(--nl-surface) !important;
+  color: var(--nl-text-2) !important;
+  border-color: var(--nl-surface-2) !important;
+}
+.dark .p-datatable-tbody > tr:hover > td {
+  background: var(--nl-surface-2) !important;
+}
+
+/* PrimeVue Tabs */
+.dark .p-tablist,
+.dark .p-tabs {
+  background: var(--nl-surface) !important;
+  border-color: var(--nl-border) !important;
+}
+.dark .p-tab {
+  color: var(--nl-text-3) !important;
+}
+.dark .p-tab.p-tab-active {
+  color: var(--nl-accent) !important;
+  border-color: var(--nl-accent) !important;
+}
+
+/* PrimeVue ToggleSwitch */
+.dark .p-toggleswitch-slider {
+  background: var(--nl-surface-2) !important;
+  border-color: var(--nl-border) !important;
+}
+.dark .p-toggleswitch.p-toggleswitch-checked .p-toggleswitch-slider {
+  background: var(--nl-accent) !important;
+}
+
+/* PrimeVue Toast */
+.dark .p-toast-message {
+  background: var(--nl-surface) !important;
+  border-color: var(--nl-border) !important;
+  color: var(--nl-text-1) !important;
+}
+
+/* Card / surface patterns used across many components */
+.dark .data-table th { background: var(--nl-surface-2) !important; color: var(--nl-text-2) !important; border-color: var(--nl-border) !important; }
+.dark .data-table td { border-color: var(--nl-surface-2) !important; }
+.dark .data-table tr:hover td { background: var(--nl-surface-2) !important; }
+
+/* TranscriptViewer speaker backgrounds */
+.dark .speaker-block { background: var(--nl-surface-2) !important; }
+
+/* Transition for all color/bg changes */
+body, .app-root, main, aside, section, article, header, footer, nav, div {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
 }

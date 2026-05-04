@@ -1,0 +1,140 @@
+# ============================================================================
+# NeoLeadge — Production Docker Compose
+# Lives entirely inside its own Docker network `neoleadge-net`.
+# Web container binds to 127.0.0.1:8002 only — public traffic arrives through
+# the host-level Caddy reverse proxy (separate file Caddyfile).
+# ============================================================================
+
+services:
+
+  # ── PostgreSQL (isolated from School Hub's postgres) ───────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: neoleadge_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-neoleadge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-neoleadge}
+    volumes:
+      - neoleadge_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-neoleadge} -d ${DB_NAME:-neoleadge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    mem_limit: 384m
+    mem_reservation: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [ neoleadge-net ]
+
+  # ── NestJS backend ─────────────────────────────────────────────────────────
+  server:
+    build:
+      context: ../../web/back-nest
+      dockerfile: Dockerfile
+    container_name: neoleadge_server
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: "--max-old-space-size=512"
+      PORT: 3000
+      DATABASE_URL: postgresql://${DB_USER:-neoleadge}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-neoleadge}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      CAHIER_AI_MODEL: ${CAHIER_AI_MODEL:-}
+      CAHIER_GEMINI_MODEL: ${CAHIER_GEMINI_MODEL:-}
+      AI_FALLBACK_API_KEY: ${AI_FALLBACK_API_KEY:-}
+      AI_FALLBACK_BASE_URL: ${AI_FALLBACK_BASE_URL:-}
+      AI_FALLBACK_MODEL: ${AI_FALLBACK_MODEL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Pinned to the docker-internal service name — overriding via .env.prod
+      # would break the compose-network resolution.
+      TRANSCRIPTION_URL: http://transcription:8000
+      TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      THROTTLER_WHITELIST: ${THROTTLER_WHITELIST:-}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - neoleadge_uploads:/app/uploads
+      - neoleadge_logs:/app/logs
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 192m
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    networks: [ neoleadge-net ]
+
+  # ── Python transcription microservice ──────────────────────────────────────
+  # Uses faster-whisper + speechbrain ECAPA. Bound to the internal
+  # neoleadge-net only; no host port published (per its Dockerfile lockdown).
+  # Models cache to /home/nonroot/.cache so they persist across restarts.
+  transcription:
+    build:
+      context: ../../web/Transcription
+      dockerfile: Dockerfile
+    container_name: neoleadge_transcription
+    environment:
+      TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
+      ALLOWED_ORIGIN: http://server:3000
+      # Default to "base" (~140 MB) to fit the test box's RAM. Override to
+      # "small" / "medium" / "large-v3" via .env.prod for higher quality.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      DEVICE: ${TRANSCRIPTION_DEVICE:-cpu}
+      COMPUTE_TYPE: ${TRANSCRIPTION_COMPUTE_TYPE:-int8}
+      # The Dockerfile creates `nonroot` as a system user with no HOME, so
+      # huggingface_hub (default cache: $HOME/.cache) lands at /nonexistent
+      # and can't write. Pin caches under /app (owned by nonroot per Dockerfile).
+      HOME: /app
+      HF_HOME: /app/.cache/huggingface
+      XDG_CACHE_HOME: /app/.cache
+    volumes:
+      - neoleadge_models:/app/.cache
+    restart: unless-stopped
+    mem_limit: 3g
+    mem_reservation: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    networks: [ neoleadge-net ]
+
+  # ── Frontend (Vite build served by nginx) ──────────────────────────────────
+  web:
+    build:
+      context: ../../web/Front/customapp
+      dockerfile: Dockerfile
+    container_name: neoleadge_web
+    ports:
+      - "127.0.0.1:8002:80"   # only accessible to Caddy on the host
+    depends_on: [ server ]
+    restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 32m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [ neoleadge-net ]
+
+volumes:
+  neoleadge_db:
+  neoleadge_uploads:
+  neoleadge_logs:
+  neoleadge_models:
+
+networks:
+  neoleadge-net:
+    driver: bridge

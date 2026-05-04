@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [master, nest-back, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  backend:
+    name: Backend (NestJS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/back-nest
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: NeoLeadgeDeployment
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/NeoLeadgeDeployment
+      JWT_SECRET: ci-secret
+      JWT_EXPIRES_IN: 7d
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/back-nest/package-lock.json
+
+      - run: npm ci
+
+      - name: Apply schema + migrations
+        run: |
+          npx prisma db push --skip-generate
+          npx prisma generate
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint --if-present
+        continue-on-error: true
+
+      - name: Tests
+        run: npm test --if-present -- --passWithNoTests
+
+  frontend:
+    name: Frontend (Vue 3)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/Front/customapp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/Front/customapp/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check + build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint --if-present
+        continue-on-error: true
+
+  smoke:
+    name: Zero-error smoke test (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: NeoLeadgeDeployment
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/NeoLeadgeDeployment
+      JWT_SECRET: ci-secret
+      JWT_EXPIRES_IN: 7d
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      # Backend setup + start
+      - name: Backend install + seed
+        working-directory: web/back-nest
+        run: |
+          npm ci
+          npx prisma db push --skip-generate
+          npx prisma generate
+          npx tsx prisma/seed-openproject.ts || true
+
+      - name: Backend start (background)
+        working-directory: web/back-nest
+        run: |
+          nohup npm run start > /tmp/backend.log 2>&1 &
+          # Wait for it to become healthy
+          for i in {1..30}; do
+            if curl -s http://localhost:5122/health | grep -q '"status":"ok"'; then exit 0; fi
+            sleep 2
+          done
+          echo "Backend did not become healthy"; cat /tmp/backend.log; exit 1
+
+      # Frontend setup + build + static serve
+      - name: Frontend install + build
+        working-directory: web/Front/customapp
+        run: |
+          npm ci
+          npm run build
+
+      - name: Frontend serve (background)
+        working-directory: web/Front/customapp
+        run: |
+          npx --yes serve -l 5174 dist &
+          for i in {1..20}; do
+            if curl -sf http://localhost:5174/Sample/Front/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "Frontend serve did not start"; exit 1
+
+      # Run the smoke harness
+      - name: Install Playwright + browsers + axe
+        working-directory: web/Front/customapp
+        run: |
+          npm install --no-save playwright @axe-core/playwright axe-core
+          npx playwright install --with-deps chromium
+
+      - name: Smoke — navigation + interactive flows
+        working-directory: web/Front/customapp
+        run: node smoke-test.mjs
+
+      - name: Smoke — mutations (real CRUD in browser)
+        working-directory: web/Front/customapp
+        run: node smoke-mutations.mjs
+
+      - name: Smoke — accessibility (axe-core, fails on critical)
+        working-directory: web/Front/customapp
+        run: node smoke-a11y.mjs
+
+      - name: Smoke — dark mode
+        working-directory: web/Front/customapp
+        run: node smoke-darkmode.mjs
+
+      - name: Smoke — mobile (iPhone SE viewport)
+        working-directory: web/Front/customapp
+        run: node smoke-mobile.mjs
+
+      - name: Smoke — RBAC matrix (6 roles × API + UI)
+        working-directory: web/Front/customapp
+        run: node smoke-rbac.mjs
+
+      - name: Smoke — public + auth transitions (lockout, portal)
+        working-directory: web/Front/customapp
+        run: node smoke-public.mjs
+
+      - name: Smoke — every clickable button (bounded)
+        working-directory: web/Front/customapp
+        run: node smoke-every-button.mjs
+
+      - name: Smoke — multi-user real-time collaboration
+        working-directory: web/Front/customapp
+        run: node smoke-collab.mjs
+
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-reports
+          path: |
+            /tmp/smoke-report.json
+            /tmp/smoke-mutations.json
+            /tmp/smoke-a11y.json
+            /tmp/smoke-darkmode.json
+            /tmp/smoke-mobile.json
+            /tmp/smoke-rbac.json
+            /tmp/smoke-public.json
+            /tmp/smoke-every-button.json
+            /tmp/smoke-collab.json

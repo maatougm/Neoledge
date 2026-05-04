@@ -74,9 +74,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
 import { NeoButton, NeoTag } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus } from '@/types/project.types'
 
@@ -88,22 +87,13 @@ interface SystemStatus {
   projectByStatus: Record<string, number>
 }
 
-const app     = useApp()
 const status  = ref<SystemStatus | null>(null)
 const loading = ref(false)
-
-const authHeader = () => {
-  const jwt = app.jwt
-  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
-}
 
 const load = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get<SystemStatus>(
-      `${app.apiUrl}/admin/SystemStatus`,
-      { headers: authHeader() },
-    )
+    const { data } = await api.get<SystemStatus>('/admin/SystemStatus')
     status.value = data
   } finally {
     loading.value = false
@@ -130,8 +120,8 @@ onMounted(load)
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .loading-state {
   display: flex;
@@ -147,8 +137,8 @@ onMounted(load)
 }
 
 .kpi-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
   padding: 1.25rem 1.5rem;
   display: flex;
@@ -160,17 +150,17 @@ onMounted(load)
 
 .kpi-icon {
   font-size: 1.75rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   flex-shrink: 0;
 }
 
-.kpi-label { font-size: 0.8rem; color: #6b7280; margin: 0; }
-.kpi-value { font-size: 1.5rem; font-weight: 700; color: #111827; margin: 0; }
-.kpi-total { font-size: 0.9rem; font-weight: 400; color: #9ca3af; }
+.kpi-label { font-size: 0.8rem; color: var(--nl-text-3); margin: 0; }
+.kpi-value { font-size: 1.5rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.kpi-total { font-size: 0.9rem; font-weight: 400; color: var(--nl-text-3); }
 
 .status-breakdown {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
   padding: 1.25rem 1.5rem;
 }
@@ -178,7 +168,7 @@ onMounted(load)
 .breakdown-title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--nl-text-2);
   margin: 0 0 1rem;
 }
 
@@ -192,7 +182,7 @@ onMounted(load)
 
 .breakdown-bar-wrap {
   flex: 1;
-  background: #f3f4f6;
+  background: var(--nl-surface-2);
   border-radius: 4px;
   height: 8px;
   overflow: hidden;
@@ -200,7 +190,7 @@ onMounted(load)
 
 .breakdown-bar {
   height: 100%;
-  background: #0d9488;
+  background: var(--nl-accent);
   border-radius: 4px;
   transition: width 0.4s ease;
   min-width: 4px;
@@ -209,7 +199,7 @@ onMounted(load)
 .breakdown-count {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--nl-text-2);
   min-width: 24px;
   text-align: right;
 }

@@ -6,21 +6,20 @@ import router from '@/router'
 import type { SampleRequest, SampleResponse } from '@/types'
 
 axios.interceptors.response.use(null, (error) => {
-  console.error(error)
-  if (error.response.status == 401) {
-    router.push({ name: 'unauthorized' })
+  const url: string = error.config?.url ?? ''
+  const isAuthEndpoint = url.includes('/auth/login') || url.includes('/hook/auth')
+  if (error.response?.status === 401 && !isAuthEndpoint) {
+    router.push({ name: 'login' })
   }
   return Promise.reject(error)
 })
 
 axios.interceptors.request.use(
   (config) => {
-    // Do something before request is sent
-    if (import.meta.env.DEV) config.withCredentials = true
     return config
   },
   (error) => {
-    console.error(error)
+    return Promise.reject(error)
   }
 )
 
@@ -33,7 +32,7 @@ export const useApp = defineStore('App', () => {
 
   const fetchApiUrl = async () => {
     const { data } = await axios.get(import.meta.env.BASE_URL + 'config.json?_=' + Date.now())
-    apiUrl.value = data.GLB_API_URL
+    apiUrl.value = (data.GLB_API_URL as string).replace(/\/+$/, '')
     eliseUrl.value = data.GLB_ELISE_URL
   }
   const fetchJwt = async (guid: string) => {
@@ -41,18 +40,39 @@ export const useApp = defineStore('App', () => {
       const response = await axios.get(apiUrl.value + '/hook/auth', { params: { guid } })
       jwt.value = response.data.jwt
     } catch (error) {
-      console.error('Error fetching JWT:', error)
       throw error
     }
   }
-  const login = async (email: string, password: string) => {
+  /**
+   * Login step 1.
+   * Returns { jwt, mustChangePassword } on success without TOTP,
+   * or { requiresTotp: true, tempToken } when 2FA is required.
+   */
+  const login = async (
+    email: string,
+    password: string,
+  ): Promise<{ requiresTotp?: boolean; tempToken?: string }> => {
     const response = await axios.post(apiUrl.value + '/auth/login', { email, password })
+    if (response.data.requiresTotp) {
+      return { requiresTotp: true, tempToken: response.data.tempToken }
+    }
+    jwt.value = response.data.jwt
+    mustChangePassword.value = response.data.mustChangePassword ?? false
+    return {}
+  }
+
+  /**
+   * Login step 2 — complete TOTP challenge.
+   */
+  const loginTotp = async (tempToken: string, code: string): Promise<void> => {
+    const response = await axios.post(apiUrl.value + '/auth/login/totp', { tempToken, code })
     jwt.value = response.data.jwt
     mustChangePassword.value = response.data.mustChangePassword ?? false
   }
 
   const logout = async () => {
     jwt.value = ''
+    mustChangePassword.value = false
     try {
       await axios.get(apiUrl.value + '/hook/logout')
     } catch {
@@ -74,7 +94,6 @@ export const useApp = defineStore('App', () => {
         }
       })
     } catch (error) {
-      console.error('Error fetching JWT:', error)
       throw error
     }
   }
@@ -112,7 +131,6 @@ export const useApp = defineStore('App', () => {
       )
       return data
     } catch (error) {
-      console.error('Error :', error)
       throw error
     }
   }
@@ -125,7 +143,6 @@ export const useApp = defineStore('App', () => {
       )
       return data
     } catch (error) {
-      console.error('Error :', error)
       throw error
     }
   }
@@ -139,6 +156,7 @@ export const useApp = defineStore('App', () => {
     fetchApiUrl,
     fetchJwt,
     login,
+    loginTotp,
     storeGuidDevMode,
     logout,
     setLoading,

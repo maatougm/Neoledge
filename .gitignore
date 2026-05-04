@@ -15,6 +15,40 @@ Thumbs.db
 *.suo
 *.user
 
+# Legacy .NET backend (standby, not in active development)
+web/Back/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# Build artifacts
+*.log
+.vite/
+
+# Smoke test output
+/tmp/smoke-*.json
+testsprite_tests/
+
 # Temp / backup
 *.bak
 *.tmp
+
+# UX audit screenshots (large binaries, not source)
+ux-audit/
+
+# One-off prod smoke scripts (kept locally, not shipped)
+web/Front/customapp/prod-*.mjs
+web/Front/customapp/smoke-form-audit.mjs
+web/Front/customapp/smoke-issues.mjs
+web/Front/customapp/smoke-zindex.mjs
+
+# UX audit capture scripts
+web/Front/customapp/ux-capture*.mjs

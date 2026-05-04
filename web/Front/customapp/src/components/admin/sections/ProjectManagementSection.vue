@@ -47,8 +47,36 @@
         <p>Aucun projet. Créez-en un pour commencer.</p>
       </div>
       <div v-else class="project-table-wrap">
-        <!-- Search & filter bar -->
-        <div class="filter-bar">
+        <!-- Saved filters panel -->
+        <div class="saved-filters-row">
+          <SavedFiltersPanel
+            :current-criteria="currentFilterCriteria"
+            @apply="onSavedFilterApply"
+          />
+        </div>
+
+        <!-- Advanced filter builder (collapsible) -->
+        <div class="filter-builder-row">
+          <NeoButton
+            :label="showFilterBuilder ? 'Masquer les filtres' : 'Filtres avancés'"
+            icon="pi pi-filter"
+            text
+            severity="secondary"
+            size="small"
+            @click="showFilterBuilder = !showFilterBuilder"
+          />
+          <span v-if="activeFilterCount > 0" class="filter-active-badge">{{ activeFilterCount }} actif(s)</span>
+        </div>
+        <FilterBuilder
+          v-if="showFilterBuilder"
+          ref="filterBuilderRef"
+          :model-value="currentFilterCriteria"
+          class="filter-builder-panel"
+          @change="onFilterChange"
+        />
+
+        <!-- Simple search bar (quick filter when builder is closed) -->
+        <div v-if="!showFilterBuilder" class="filter-bar">
           <NeoInputText
             v-model="searchText"
             placeholder="Rechercher par nom ou client…"
@@ -88,11 +116,14 @@
             <tr>
               <th class="col-check">
                 <input
+                  id="project-select-all"
+                  name="project-select-all"
                   type="checkbox"
                   :checked="allSelected"
                   :indeterminate="someSelected"
-                  @change="toggleSelectAll"
                   class="row-checkbox"
+                  aria-label="Tout sélectionner"
+                  @change="toggleSelectAll"
                 />
               </th>
               <th>Nom</th>
@@ -111,10 +142,13 @@
             >
               <td class="col-check">
                 <input
+                  :id="`project-select-${p.id}`"
+                  :name="`project-select-${p.id}`"
                   type="checkbox"
                   :checked="selectedIds.has(p.id)"
-                  @change="toggleRow(p.id)"
                   class="row-checkbox"
+                  :aria-label="`Sélectionner ${p.name}`"
+                  @change="toggleRow(p.id)"
                 />
               </td>
               <td class="cell-name">
@@ -137,44 +171,29 @@
               </td>
               <td class="cell-date">{{ formatDate(p.createdAt) }}</td>
               <td>
-                <div class="action-row">
+                <div class="action-row" @click.stop>
                   <NeoButton
                     icon="pi pi-eye"
                     size="small"
                     outlined
-                    title="Gérer le questionnaire"
+                    title="Gérer le questionnaire (panneau)"
                     @click="selectedProjectId = p.id"
                   />
                   <NeoButton
-                    icon="pi pi-user-edit"
+                    icon="pi pi-external-link"
                     size="small"
                     outlined
-                    title="Assigner chef de projet"
-                    @click="openAssign(p.id, p.name)"
+                    title="Ouvrir le projet (modules)"
+                    @click="openProjectModules(p.id)"
                   />
                   <NeoButton
-                    icon="pi pi-copy"
+                    icon="pi pi-ellipsis-v"
                     size="small"
                     outlined
-                    title="Dupliquer"
-                    @click="openDuplicate(p.id, p.name)"
-                  />
-                  <NeoButton
-                    icon="pi pi-inbox"
-                    size="small"
-                    outlined
-                    severity="warn"
-                    :disabled="p.status === 'Archived'"
-                    title="Archiver"
-                    @click="handleArchive(p.id, p.name)"
-                  />
-                  <NeoButton
-                    icon="pi pi-trash"
-                    size="small"
-                    outlined
-                    severity="danger"
-                    title="Supprimer"
-                    @click="handleDelete(p.id, p.name)"
+                    severity="secondary"
+                    :title="`Plus d'actions pour ${p.name}`"
+                    :aria-label="`Menu d'actions pour ${p.name}`"
+                    @click="toggleMenu($event, p)"
                   />
                 </div>
               </td>
@@ -183,6 +202,56 @@
         </table>
       </div>
     </template>
+
+    <!-- Row overflow menu — single shared instance, positioned per row click -->
+    <Teleport to="body">
+      <div
+        v-if="menuOpenProject"
+        class="ptr__overflow-menu"
+        role="menu"
+        :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+        @click="closeMenu"
+      >
+        <div class="ptr__overflow-group">Modules</div>
+        <button role="menuitem" @click="goToModule('pm-project-questionnaire')">
+          <i class="pi pi-list-check" /> Questionnaire
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-cahier')">
+          <i class="pi pi-file-word" /> Cahier des charges
+        </button>
+        <button role="menuitem" @click="goToModule('pm-workpackages')">
+          <i class="pi pi-list" /> Backlog (Work Packages)
+        </button>
+        <button role="menuitem" @click="goToModule('pm-gantt')">
+          <i class="pi pi-calendar" /> Gantt
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-validations')">
+          <i class="pi pi-shield" /> Validations
+        </button>
+        <button role="menuitem" @click="goToModule('pm-project-meetings')">
+          <i class="pi pi-microphone" /> Réunions
+        </button>
+        <div class="ptr__overflow-sep" />
+        <div class="ptr__overflow-group">Gestion</div>
+        <button role="menuitem" @click="onAssignFromMenu">
+          <i class="pi pi-user-edit" /> Changer le chef de projet
+        </button>
+        <button role="menuitem" @click="onDuplicateFromMenu">
+          <i class="pi pi-copy" /> Dupliquer
+        </button>
+        <button
+          role="menuitem"
+          :disabled="menuOpenProject.status === 'Archived'"
+          @click="onArchiveFromMenu"
+        >
+          <i class="pi pi-inbox" /> Archiver
+        </button>
+        <div class="ptr__overflow-sep" />
+        <button class="ptr__overflow-danger" role="menuitem" @click="onDeleteFromMenu">
+          <i class="pi pi-trash" /> Supprimer
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Assign manager dialog -->
     <AssignManagerDialog
@@ -227,28 +296,124 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Dialog from 'primevue/dialog'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
 import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
 import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'
+import SavedFiltersPanel from '@/components/filters/SavedFiltersPanel.vue'
+import FilterBuilder from '@/components/filters/FilterBuilder.vue'
 import { useProjectStore } from '@/stores/projectStore'
-import { useApp } from '@/stores/useApp'
+import { useSavedFiltersStore } from '@/stores/savedFiltersStore'
+import api from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+import type { FilterCriteria, SavedFilter } from '@/types/filter.types'
 
-const store   = useProjectStore()
-const app     = useApp()
-const toast   = useNeoToast()
-const confirm = useNeoConfirm()
+const store        = useProjectStore()
+const filtersStore = useSavedFiltersStore()
+const toast        = useNeoToast()
+const confirm      = useNeoConfirm()
+const router       = useRouter()
+
+function openProjectModules(id: string) {
+  router.push(`/app/pm/projects/${id}`)
+}
+
+// ─── Row overflow menu (single shared instance) ──────────────────────────────
+const menuOpenProject = ref<ProjectSummary | null>(null)
+const menuPos         = ref<{ top: number; left: number }>({ top: 0, left: 0 })
+
+function toggleMenu(event: MouseEvent, project: ProjectSummary): void {
+  if (menuOpenProject.value?.id === project.id) {
+    menuOpenProject.value = null
+    return
+  }
+  const btn = (event.currentTarget as HTMLElement | null) ?? (event.target as HTMLElement | null)
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    const MENU_WIDTH = 220
+    menuPos.value = {
+      top: rect.bottom + 4,
+      left: Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
+    }
+  }
+  menuOpenProject.value = project
+}
+
+function closeMenu(): void {
+  menuOpenProject.value = null
+}
+
+function goToModule(routeName: string): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  router.push({ name: routeName, params: { id: project.id } })
+}
+
+function onAssignFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  openAssign(project.id, project.name)
+}
+
+function onDuplicateFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  openDuplicate(project.id, project.name)
+}
+
+function onArchiveFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project || project.status === 'Archived') return
+  closeMenu()
+  handleArchive(project.id, project.name)
+}
+
+function onDeleteFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  handleDelete(project.id, project.name)
+}
+
+onMounted(() => document.addEventListener('click', closeMenu))
+onUnmounted(() => document.removeEventListener('click', closeMenu))
 
 const showForm          = ref(false)
 const selectedProjectId = ref<string | null>(null)
 const showAssign        = ref(false)
 const assignId          = ref('')
 const assignName        = ref('')
+
+// ─── Advanced filter state ────────────────────────────────────────────────────
+const showFilterBuilder       = ref(false)
+const filterBuilderRef        = ref<InstanceType<typeof FilterBuilder> | null>(null)
+const currentFilterCriteria   = ref<FilterCriteria>({})
+const activeFilterCount       = computed(() => {
+  const c = currentFilterCriteria.value
+  let n = 0
+  if (c.search) n++
+  if (c.status?.length) n++
+  if (c.priority?.length) n++
+  if (c.assignedToMe) n++
+  if (c.dateRange?.from || c.dateRange?.to) n++
+  return n
+})
+
+const onFilterChange = (criteria: FilterCriteria): void => {
+  currentFilterCriteria.value = { ...criteria }
+}
+
+const onSavedFilterApply = (filter: SavedFilter): void => {
+  currentFilterCriteria.value = { ...filter.filters }
+  showFilterBuilder.value = true
+}
 
 // ─── Search & filter ──────────────────────────────────────────────────────────
 const searchText   = ref('')
@@ -260,8 +425,25 @@ const statusFilterOptions = [
 ]
 
 const filteredProjects = computed(() => {
-  const q   = searchText.value.trim().toLowerCase()
-  const s   = statusFilter.value
+  const c = currentFilterCriteria.value
+
+  // When advanced filter builder is open, use its criteria
+  if (showFilterBuilder.value) {
+    return store.projects.filter((p) => {
+      if (c.search) {
+        const q = c.search.toLowerCase()
+        if (!p.name.toLowerCase().includes(q) && !p.clientName.toLowerCase().includes(q)) return false
+      }
+      if (c.status && c.status.length > 0 && !c.status.includes(p.status)) return false
+      if (c.dateRange?.from && p.startDate && new Date(p.startDate) < new Date(c.dateRange.from)) return false
+      if (c.dateRange?.to && p.endDate && new Date(p.endDate) > new Date(c.dateRange.to)) return false
+      return true
+    })
+  }
+
+  // Simple bar fallback
+  const q = searchText.value.trim().toLowerCase()
+  const s = statusFilter.value
   return store.projects.filter((p) => {
     const matchText = !q || p.name.toLowerCase().includes(q) || p.clientName.toLowerCase().includes(q)
     const matchStatus = !s || p.status === s
@@ -295,7 +477,7 @@ const exportCsv = () => {
 
 // ─── Deadline badge helper ─────────────────────────────────────────────────────
 const isNearDeadline = (p: ProjectSummary): boolean => {
-  if (!p.endDate || p.status === 'Completed' || p.status === 'Archived') return false
+  if (!p.endDate || p.status === 'Cloture' || p.status === 'Archived') return false
   const diff = new Date(p.endDate).getTime() - Date.now()
   return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000
 }
@@ -358,10 +540,9 @@ const confirmDuplicate = async () => {
   duplicateLoading.value = true
   duplicateError.value   = ''
   try {
-    await axios.post(
-      `${app.apiUrl}/admin/project/${duplicateSrcId.value}/duplicate`,
+    await api.post(
+      `/admin/project/${duplicateSrcId.value}/duplicate`,
       { name: duplicateName.value.trim() },
-      { headers: app.authHeader() },
     )
     toast.add({ severity: 'success', detail: `Projet dupliqué : « ${duplicateName.value.trim()} ».`, life: 3000 })
     closeDuplicate()
@@ -428,11 +609,7 @@ const handleBulkArchive = () => {
     rejectLabel: 'Annuler',
     accept: async () => {
       try {
-        await axios.post(
-          `${app.apiUrl}/admin/project/bulk-archive`,
-          { projectIds: [...selectedIds.value] },
-          { headers: app.authHeader() },
-        )
+        await api.post('/admin/project/bulk-archive', { projectIds: [...selectedIds.value] })
         toast.add({ severity: 'success', detail: `${selectedIds.value.size} projet(s) archivé(s).`, life: 3000 })
         selectedIds.value = new Set()
         await store.fetchAll()
@@ -455,8 +632,8 @@ const handleBulkArchive = () => {
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .loading-state,
 .empty-state {
@@ -465,7 +642,7 @@ const handleBulkArchive = () => {
   align-items: center;
   gap: 0.75rem;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
 .empty-state i { font-size: 2.5rem; }
 
@@ -504,7 +681,7 @@ const handleBulkArchive = () => {
   gap: 0.75rem;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   padding: 0.6rem 1rem;
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
@@ -515,6 +692,8 @@ const handleBulkArchive = () => {
   color: #1d4ed8;
   flex: 1;
 }
+:global(.dark) .bulk-bar { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.25); }
+:global(.dark) .bulk-count { color: #93c5fd; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 .data-table {
@@ -523,36 +702,62 @@ const handleBulkArchive = () => {
   font-size: 0.875rem;
 }
 .data-table th {
-  background: #f9fafb;
+  background: var(--nl-surface-2);
   padding: 0.65rem 1rem;
   text-align: left;
   font-weight: 600;
-  color: #374151;
-  border-bottom: 2px solid #e5e7eb;
+  color: var(--nl-text-2);
+  border-bottom: 2px solid var(--nl-border);
   white-space: nowrap;
 }
 .data-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f3f4f6;
-  color: #374151;
+  border-bottom: 1px solid var(--nl-surface-2);
+  color: var(--nl-text-2);
   vertical-align: middle;
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #f9fafb; }
+.data-table tr:hover td { background: var(--nl-surface-2); }
 
 .col-check { width: 2.5rem; text-align: center; }
-.row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: #0d9488; }
+.row-checkbox { cursor: pointer; width: 1rem; height: 1rem; accent-color: var(--nl-accent); }
 
 .row--selected td { background: #f0fdfa !important; }
+:global(.dark) .row--selected td { background: rgba(13,148,136,0.12) !important; }
 
-.cell-name { font-weight: 600; color: #111827; }
-.cell-date { white-space: nowrap; color: #6b7280; font-size: 0.8rem; }
+.cell-name { font-weight: 600; color: var(--nl-text-1); }
+.cell-date { white-space: nowrap; color: var(--nl-text-3); font-size: 0.8rem; }
 
 .action-row { display: flex; gap: 0.4rem; }
 
 /* ── Duplicate dialog ────────────────────────────────────────────────────────── */
 .dialog-body { display: flex; flex-direction: column; gap: 1rem; padding: 0.25rem 0; }
-.dialog-hint { margin: 0; font-size: 0.85rem; color: #6b7280; }
+.dialog-hint { margin: 0; font-size: 0.85rem; color: var(--nl-text-3); }
 .field-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
-.field-label { font-size: 0.82rem; color: #6b7280; font-weight: 500; }
+.field-label { font-size: 0.82rem; color: var(--nl-text-3); font-weight: 500; }
+
+/* ── Saved filters & builder ─────────────────────────────────────────────────── */
+.saved-filters-row {
+  margin-bottom: 0.75rem;
+}
+
+.filter-builder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.filter-active-badge {
+  background: var(--nl-accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.filter-builder-panel {
+  margin-bottom: 0.75rem;
+}
 </style>

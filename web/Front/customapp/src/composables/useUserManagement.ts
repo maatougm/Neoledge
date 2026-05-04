@@ -59,6 +59,13 @@ export function useUserManagement() {
     if (password) {
       tempPassword.value = password
       showTempPasswordDialog.value = true
+      // Auto-hide the temp password after 30 s (#3)
+      setTimeout(() => {
+        if (showTempPasswordDialog.value) {
+          showTempPasswordDialog.value = false
+          tempPassword.value = null
+        }
+      }, 30_000)
     } else {
       toast.add({ severity: 'error', detail: store.error ?? 'Erreur lors de la réinitialisation.', life: 5000 })
     }

@@ -1,7 +1,7 @@
 <template>
   <div class="section">
     <!-- Modal de création -->
-    <Dialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
+    <AppModal v-model:visible="showCreateDialog" header="Nouveau modèle" width="600px">
       <div class="create-form">
         <NeoInputText
           v-model="form.name"
@@ -18,7 +18,7 @@
 
         <div class="fields-section">
           <h4>Champs du modèle</h4>
-          <div v-for="(f, i) in form.fields" :key="i" class="field-row">
+          <div v-for="(f, i) in form.fields" :key="f.uid" class="field-row">
             <NeoInputText v-model="f.label" placeholder="Libellé" class="flex-1" />
             <NeoSelect
               v-model="f.fieldType"
@@ -27,7 +27,7 @@
               optionValue="value"
               style="min-width: 120px"
             />
-            <NeoCheckbox :modelValue="(f.isRequired as unknown as any[])" @update:modelValue="v => f.isRequired = (v as unknown as boolean)" binary />
+            <Checkbox v-model="f.isRequired" :binary="true" />
             <NeoButton icon="pi pi-times" severity="danger" size="small" outlined @click="removeField(i)" />
           </div>
           <NeoButton
@@ -43,7 +43,7 @@
         <NeoButton label="Annuler" severity="secondary" outlined @click="showCreateDialog = false" />
         <NeoButton label="Créer" :loading="saving" :disabled="!form.name.trim()" @click="handleCreate" />
       </template>
-    </Dialog>
+    </AppModal>
 
     <!-- Header -->
     <div class="section-header">
@@ -117,10 +117,11 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import Dialog from 'primevue/dialog'
-import { NeoButton, NeoInputText, NeoSelect, NeoCheckbox, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import { useProjectStore } from '@/stores/projectStore'
-import { FIELD_TYPE_LABELS, type FieldType } from '@/types/project.types'
+import AppModal from '@/components/common/AppModal.vue'
+import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
+import Checkbox from 'primevue/checkbox'
+import { useTemplateStore } from '@/stores/templateStore'
+import { type FieldType } from '@/types/project.types'
 
 const fieldTypes = [
   { label: 'Texte', value: 'Text' },
@@ -130,14 +131,14 @@ const fieldTypes = [
   { label: 'Case à cocher', value: 'Checkbox' },
 ]
 
-const store   = useProjectStore()
+const store   = useTemplateStore()
 const toast   = useNeoToast()
 const confirm = useNeoConfirm()
 
 const showCreateDialog = ref(false)
 const saving           = ref(false)
 
-interface FieldRow { label: string; fieldType: FieldType; isRequired: boolean }
+interface FieldRow { uid: string; label: string; fieldType: FieldType; isRequired: boolean }
 const form = reactive<{ name: string; description: string; fields: FieldRow[] }>({
   name: '',
   description: '',
@@ -153,7 +154,7 @@ function openCreateDialog() {
 }
 
 function addFieldRow() {
-  form.fields.push({ label: '', fieldType: 'Text', isRequired: false })
+  form.fields.push({ uid: crypto.randomUUID(), label: '', fieldType: 'Text', isRequired: false })
 }
 
 function removeField(index: number) {
@@ -164,7 +165,7 @@ async function handleCreate() {
   if (!form.name.trim()) return
   saving.value = true
   try {
-    await store.createTemplate({
+    const result = await store.createTemplate({
       name: form.name.trim(),
       description: form.description.trim() || null,
       fields: form.fields.filter(f => f.label.trim()).map((f, idx) => ({
@@ -176,6 +177,7 @@ async function handleCreate() {
         options: null,
       })),
     })
+    if (!result) throw new Error(store.error ?? 'Erreur inconnue')
     toast.add({ severity: 'success', detail: 'Modèle créé.', life: 3000 })
     showCreateDialog.value = false
   } catch {
@@ -208,7 +210,7 @@ function formatDate(d: string) {
 }
 
 onMounted(() => {
-  if (!store.templates.length) store.fetchTemplates()
+  if (!store.templates.length) void store.fetchTemplates()
 })
 </script>
 
@@ -223,15 +225,15 @@ onMounted(() => {
   gap: 1rem;
 }
 
-.section-title  { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-subtitle { font-size: 0.875rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title  { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-subtitle { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .loading-state { display: flex; justify-content: center; padding: 2rem; }
 
 .create-form { display: flex; flex-direction: column; gap: 1rem; }
 
 .fields-section { margin-top: 0.5rem; }
-.fields-section h4 { font-size: 0.95rem; margin: 0 0 0.75rem; color: #374151; }
+.fields-section h4 { font-size: 0.95rem; margin: 0 0 0.75rem; color: var(--nl-text-2); }
 
 .field-row {
   display: flex;
@@ -252,8 +254,8 @@ onMounted(() => {
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
   border-radius: 10px;
 }
 
@@ -270,8 +272,8 @@ onMounted(() => {
   gap: 1rem;
 }
 
-.template-name { font-size: 1.1rem; font-weight: 700; color: #111827; margin: 0; }
-.template-desc { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.template-name { font-size: 1.1rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.template-desc { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 .template-stats {
   display: flex;
@@ -284,9 +286,9 @@ onMounted(() => {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
 }
-.stat-icon { color: #0d9488; font-size: 0.9rem; }
+.stat-icon { color: var(--nl-accent); font-size: 0.9rem; }
 
 .field-list {
   display: flex;
@@ -299,11 +301,11 @@ onMounted(() => {
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 0.7rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
   border-radius: 6px;
   font-size: 0.82rem;
-  color: #374151;
+  color: var(--nl-text-2);
 }
 .field-name { font-weight: 500; }
 
@@ -315,6 +317,6 @@ onMounted(() => {
   padding: 3rem;
 }
 .empty-icon { font-size: 2.5rem; color: #cbd5e1; margin-bottom: 1rem; }
-.empty-text { font-size: 1.1rem; font-weight: 600; color: #374151; margin: 0 0 0.25rem; }
-.empty-hint { font-size: 0.875rem; color: #6b7280; max-width: 400px; margin: 0 0 1.25rem; }
+.empty-text { font-size: 1.1rem; font-weight: 600; color: var(--nl-text-2); margin: 0 0 0.25rem; }
+.empty-hint { font-size: 0.875rem; color: var(--nl-text-3); max-width: 400px; margin: 0 0 1.25rem; }
 </style>

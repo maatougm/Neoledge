@@ -17,7 +17,37 @@
     <div class="profile-grid">
       <!-- ── Left column: identity card ───────────────────── -->
       <aside class="identity-card" aria-label="Identité">
-        <div class="avatar" aria-hidden="true">{{ initials }}</div>
+        <!-- Avatar with upload -->
+        <div class="avatar-wrap">
+          <img
+            v-if="avatarUrl"
+            :src="avatarUrl"
+            class="avatar avatar--img"
+            alt="Photo de profil"
+            @error="avatarUrl = null"
+          />
+          <div v-else class="avatar" aria-hidden="true">{{ initials }}</div>
+          <button
+            class="avatar-change-btn"
+            :disabled="uploadingAvatar"
+            title="Changer la photo"
+            aria-label="Changer la photo de profil"
+            @click="triggerFileInput"
+          >
+            <i v-if="!uploadingAvatar" class="pi pi-camera" aria-hidden="true" />
+            <i v-else class="pi pi-spin pi-spinner" aria-hidden="true" />
+          </button>
+          <input
+            id="avatar-file-input"
+            ref="fileInputRef"
+            name="avatar-file-input"
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            class="avatar-file-input"
+            aria-label="Sélectionner une photo"
+            @change="onFileSelected"
+          />
+        </div>
         <div class="identity-name">{{ fullName || 'Utilisateur' }}</div>
         <NeoTag :value="roleLabel" severity="info" class="role-tag" />
         <div class="identity-email">
@@ -25,9 +55,25 @@
           <span>{{ email }}</span>
         </div>
         <div class="identity-meta">
-          <div class="meta-row">
-            <i class="pi pi-shield" aria-hidden="true" />
-            <span>Compte actif</span>
+          <div v-if="jobTitle" class="meta-row">
+            <i class="pi pi-briefcase" aria-hidden="true" />
+            <span>{{ jobTitle }}</span>
+          </div>
+          <div v-if="department" class="meta-row">
+            <i class="pi pi-building" aria-hidden="true" />
+            <span>{{ department }}</span>
+          </div>
+          <div v-if="phoneNumber" class="meta-row">
+            <i class="pi pi-phone" aria-hidden="true" />
+            <span>{{ phoneNumber }}</span>
+          </div>
+          <div v-if="lastLoginAt" class="meta-row">
+            <i class="pi pi-clock" aria-hidden="true" />
+            <span>Dernière connexion : {{ formatRelative(lastLoginAt) }}</span>
+          </div>
+          <div v-if="createdAt" class="meta-row">
+            <i class="pi pi-calendar" aria-hidden="true" />
+            <span>Membre depuis {{ formatDate(createdAt) }}</span>
           </div>
         </div>
       </aside>
@@ -73,6 +119,41 @@
                 <span>{{ email }}</span>
               </div>
               <p class="field-hint">L'adresse e-mail ne peut pas être modifiée ici.</p>
+            </div>
+
+            <div class="fields-row">
+              <div class="field-group">
+                <label for="jobTitle" class="field-label">Fonction</label>
+                <NeoInputText
+                  id="jobTitle"
+                  v-model="jobTitle"
+                  placeholder="Ex. Chef de projet"
+                  :disabled="savingInfo"
+                  class="field-input"
+                />
+              </div>
+              <div class="field-group">
+                <label for="department" class="field-label">Département</label>
+                <NeoInputText
+                  id="department"
+                  v-model="department"
+                  placeholder="Ex. Direction IT"
+                  :disabled="savingInfo"
+                  class="field-input"
+                />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="phoneNumber" class="field-label">Numéro de téléphone</label>
+              <NeoInputText
+                id="phoneNumber"
+                v-model="phoneNumber"
+                placeholder="+33 6 12 34 56 78"
+                :disabled="savingInfo"
+                autocomplete="tel"
+                class="field-input"
+              />
             </div>
 
             <NeoMessage v-if="infoError" severity="error" :text="infoError" class="panel-msg" />
@@ -156,38 +237,58 @@
           </div>
         </section>
 
+        <!-- Panel 3: Two-factor authentication -->
+        <SecuritySection />
+
       </div>
     </div>
 
-    <NeoToast />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 import {
   NeoButton, NeoInputText, NeoPassword,
-  NeoTag, NeoMessage, NeoToast, useNeoToast,
+  NeoTag, NeoMessage, useNeoToast,
 } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { useConfigStore } from '@/stores/configStore'
 import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
+import SecuritySection from '@/components/admin/sections/SecuritySection.vue'
+import { formatDate, formatRelative } from '@/lib/formatDate'
+
+interface ProfilePayload {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  role: UserRole
+  avatarPath: string | null
+  jobTitle: string | null
+  phoneNumber: string | null
+  department: string | null
+  createdAt: string | null
+  lastLoginAt: string | null
+}
 
 interface JwtPayload {
   sub?: string
-  given_name?: string
-  family_name?: string
   email?: string
-  'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'?: string
+  role?: string
+  firstName?: string
+  lastName?: string
 }
 
-const router = useRouter()
-const app    = useApp()
-const toast  = useNeoToast()
+const router      = useRouter()
+const authStore   = useAuthStore()
+const configStore = useConfigStore()
+const toast       = useNeoToast()
 
-// ── JWT-decoded identity ───────────────────────────────────────────────────────
+// ── Identity (hydrated from backend; JWT is only a fallback) ───────────────────
 const userId = ref('')
 const email  = ref('')
 const role   = ref<UserRole | ''>('')
@@ -195,13 +296,24 @@ const role   = ref<UserRole | ''>('')
 // ── Editable fields ────────────────────────────────────────────────────────────
 const firstName = ref('')
 const lastName  = ref('')
-const origFirst = ref('')
-const origLast  = ref('')
+const jobTitle  = ref('')
+const phoneNumber = ref('')
+const department  = ref('')
+const origSnapshot = ref<Record<string, string>>({})
+
+// ── Read-only meta ─────────────────────────────────────────────────────────────
+const createdAt   = ref<string | null>(null)
+const lastLoginAt = ref<string | null>(null)
 
 // ── Password fields ────────────────────────────────────────────────────────────
 const currentPassword = ref('')
 const newPassword     = ref('')
 const confirmPassword = ref('')
+
+// ── Avatar ─────────────────────────────────────────────────────────────────────
+const avatarUrl       = ref<string | null>(null)
+const uploadingAvatar = ref(false)
+const fileInputRef    = ref<HTMLInputElement | null>(null)
 
 // ── Loading / error state ──────────────────────────────────────────────────────
 const savingInfo = ref(false)
@@ -226,32 +338,119 @@ const roleLabel = computed(() =>
 )
 
 const infoChanged = computed(() =>
-  firstName.value !== origFirst.value || lastName.value !== origLast.value
+  firstName.value   !== (origSnapshot.value.firstName   ?? '') ||
+  lastName.value    !== (origSnapshot.value.lastName    ?? '') ||
+  jobTitle.value    !== (origSnapshot.value.jobTitle    ?? '') ||
+  phoneNumber.value !== (origSnapshot.value.phoneNumber ?? '') ||
+  department.value  !== (origSnapshot.value.department  ?? ''),
 )
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-onMounted(() => {
-  if (!app.jwt) return
+function hydrateFromJwt(): void {
+  if (!authStore.jwt) return
   try {
-    const payload = JSON.parse(atob(app.jwt.split('.')[1])) as JwtPayload
+    const payload = JSON.parse(atob(authStore.jwt.split('.')[1])) as JwtPayload
     userId.value    = payload.sub ?? ''
-    firstName.value = payload.given_name ?? ''
-    lastName.value  = payload.family_name ?? ''
-    origFirst.value = payload.given_name ?? ''
-    origLast.value  = payload.family_name ?? ''
     email.value     = payload.email ?? ''
-    role.value      = (
-      payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? ''
-    ) as UserRole | ''
+    role.value      = (payload.role ?? '') as UserRole | ''
+    firstName.value = payload.firstName ?? ''
+    lastName.value  = payload.lastName  ?? ''
   } catch { /* JWT decode failed — ignore */ }
+}
+
+function applyProfile(p: ProfilePayload): void {
+  userId.value      = p.id
+  firstName.value   = p.firstName ?? ''
+  lastName.value    = p.lastName  ?? ''
+  email.value       = p.email     ?? ''
+  role.value        = p.role
+  jobTitle.value    = p.jobTitle    ?? ''
+  phoneNumber.value = p.phoneNumber ?? ''
+  department.value  = p.department  ?? ''
+  createdAt.value   = p.createdAt
+  lastLoginAt.value = p.lastLoginAt
+  origSnapshot.value = {
+    firstName: firstName.value,
+    lastName: lastName.value,
+    jobTitle: jobTitle.value,
+    phoneNumber: phoneNumber.value,
+    department: department.value,
+  }
+  // Only load avatar if backend says the user actually has one.
+  avatarUrl.value = p.avatarPath
+    ? `${configStore.apiUrl}/api/userprofile/avatar/${p.id}?t=${Date.now()}`
+    : null
+}
+
+onMounted(async () => {
+  hydrateFromJwt() // fast path for role/email while the HTTP fetch is in-flight
+  try {
+    const { data } = await api.get<ProfilePayload>('/api/userprofile', {
+      suppressErrorToast: true,
+    } as never)
+    applyProfile(data)
+  } catch {
+    // Seeded test users (testpm@neoleadge.test etc.) have no AppUser row — the
+    // JWT hydrate above already populated what we know. Fall back silently.
+  }
 })
+
+// ── Avatar upload ──────────────────────────────────────────────────────────────
+const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_BYTES = 2 * 1024 * 1024
+
+function triggerFileInput(): void {
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file  = input.files?.[0]
+  input.value = '' // reset so same file can be re-selected
+
+  if (!file) return
+
+  if (!ALLOWED_TYPES.has(file.type)) {
+    toast.add({ severity: 'error', detail: 'Format non supporté. Utilisez JPG, PNG ou WebP.', life: 4000 })
+    return
+  }
+  if (file.size > MAX_BYTES) {
+    toast.add({ severity: 'error', detail: 'L\'image dépasse 2 Mo.', life: 4000 })
+    return
+  }
+
+  uploadingAvatar.value = true
+  try {
+    const base64 = await toBase64(file)
+    const ext    = `.${file.name.split('.').pop()?.toLowerCase() ?? 'jpg'}`
+    const { data } = await api.post<string>(
+      '/api/userprofile/avatar',
+      { base64Image: base64, fileExtension: ext },
+    )
+    // Force browser to reload the image by appending a cache-bust
+    avatarUrl.value = `${configStore.apiUrl}/api/userprofile/avatar/${userId.value}?t=${Date.now()}`
+    void nextTick() // let Vue re-render before showing the toast
+    void data // satisfies TS — path returned from backend, not used directly
+    toast.add({ severity: 'success', detail: 'Photo de profil mise à jour.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Erreur lors du téléchargement de la photo.', life: 4000 })
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
+
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve((reader.result as string).split(',')[1])
+    reader.onerror = () => reject(new Error('Lecture du fichier échouée'))
+    reader.readAsDataURL(file)
+  })
+}
 
 // ── Back navigation ────────────────────────────────────────────────────────────
 function goBack(): void {
-  const r = app.userRole
-  if (r === 'Admin') router.push({ name: 'admin' })
-  else if (r === 'ProjectManager') router.push({ name: 'pm' })
-  else router.push({ name: 'team' })
+  router.push({ name: 'app-home' })
 }
 
 // ── Save personal info ─────────────────────────────────────────────────────────
@@ -263,13 +462,14 @@ async function saveInfo(): Promise<void> {
   }
   savingInfo.value = true
   try {
-    await axios.put(
-      `${app.apiUrl}/admin/AppUser/${userId.value}`,
-      { firstName: firstName.value.trim(), lastName: lastName.value.trim() },
-      { headers: app.authHeader() },
-    )
-    origFirst.value = firstName.value
-    origLast.value  = lastName.value
+    const { data } = await api.put<ProfilePayload>('/api/userprofile', {
+      firstName:   firstName.value.trim(),
+      lastName:    lastName.value.trim(),
+      jobTitle:    jobTitle.value.trim() || null,
+      phoneNumber: phoneNumber.value.trim() || null,
+      department:  department.value.trim() || null,
+    })
+    applyProfile(data)
     toast.add({ severity: 'success', detail: 'Profil mis à jour avec succès.', life: 3000 })
   } catch {
     infoError.value = 'Erreur lors de la mise à jour. Veuillez réessayer.'
@@ -294,14 +494,10 @@ async function savePassword(): Promise<void> {
 
   savingPw.value = true
   try {
-    await axios.post(
-      `${app.apiUrl}/auth/change-password`,
-      {
-        currentPassword: currentPassword.value,
-        newPassword:     newPassword.value,
-      },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/change-password', {
+      currentPassword: currentPassword.value,
+      newPassword:     newPassword.value,
+    })
     currentPassword.value = ''
     newPassword.value     = ''
     confirmPassword.value = ''
@@ -322,7 +518,7 @@ async function savePassword(): Promise<void> {
 /* ── Page layout ──────────────────────────────────────────────────────────────── */
 .profile-page {
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--nl-bg);
   padding: 2rem;
 }
 
@@ -339,25 +535,25 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   background: none;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+  border: 1px solid var(--nl-border);
+  color: var(--nl-text-2);
   font-size: 0.875rem;
   font-weight: 500;
   padding: 0.45rem 0.875rem;
-  border-radius: 8px;
+  border-radius: var(--nl-radius);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   flex-shrink: 0;
 }
 
 .back-btn:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #1e293b;
+  background: color-mix(in srgb, var(--nl-text-1) 5%, transparent);
+  border-color: var(--nl-text-3);
+  color: var(--nl-text-1);
 }
 
 .back-btn:focus-visible {
-  outline: 2px solid #0d9488;
+  outline: 2px solid var(--nl-accent);
   outline-offset: 2px;
 }
 
@@ -365,7 +561,7 @@ async function savePassword(): Promise<void> {
   margin: 0;
   font-size: 1.375rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--nl-text-1);
 }
 
 /* ── Two-column grid ──────────────────────────────────────────────────────────── */
@@ -380,9 +576,9 @@ async function savePassword(): Promise<void> {
 
 /* ── Identity card (left column) ──────────────────────────────────────────────── */
 .identity-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   padding: 2rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -392,12 +588,19 @@ async function savePassword(): Promise<void> {
   top: 2rem;
 }
 
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .avatar {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
-  color: #fff;
+  background: linear-gradient(135deg, var(--nl-accent), color-mix(in srgb, var(--nl-accent) 70%, #000));
+  color: var(--nl-color-white, #fff);
   font-size: 1.75rem;
   font-weight: 700;
   display: flex;
@@ -407,10 +610,49 @@ async function savePassword(): Promise<void> {
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
 }
 
+.avatar--img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
+}
+
+.avatar-change-btn {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--nl-accent);
+  color: var(--nl-color-white, #fff);
+  border: 2px solid var(--nl-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.avatar-change-btn:hover { background: color-mix(in srgb, var(--nl-accent) 80%, #000); }
+.avatar-change-btn:focus-visible { outline: 2px solid var(--nl-accent); outline-offset: 2px; }
+.avatar-change-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.avatar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+}
+
 .identity-name {
   font-size: 1rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--nl-text-1);
   text-align: center;
   line-height: 1.3;
 }
@@ -422,7 +664,7 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--nl-text-3);
   text-align: center;
   word-break: break-all;
 }
@@ -430,7 +672,7 @@ async function savePassword(): Promise<void> {
 .identity-meta {
   width: 100%;
   padding-top: 0.75rem;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid var(--nl-border);
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -441,10 +683,10 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--nl-text-3);
 }
 
-.meta-row .pi { color: #0d9488; }
+.meta-row .pi { color: var(--nl-accent); }
 
 /* ── Settings panels (right column) ───────────────────────────────────────────── */
 .settings-panels {
@@ -454,9 +696,9 @@ async function savePassword(): Promise<void> {
 }
 
 .settings-panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
   overflow: hidden;
 }
 
@@ -465,20 +707,20 @@ async function savePassword(): Promise<void> {
   align-items: center;
   gap: 0.65rem;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #f1f5f9;
-  background: #fafafa;
+  border-bottom: 1px solid var(--nl-border);
+  background: color-mix(in srgb, var(--nl-surface) 80%, var(--nl-bg));
 }
 
 .panel-icon {
   font-size: 1rem;
-  color: #0d9488;
+  color: var(--nl-accent);
 }
 
 .panel-title {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--nl-text-1);
 }
 
 .panel-body {
@@ -504,7 +746,7 @@ async function savePassword(): Promise<void> {
 .field-label {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--nl-text-2);
 }
 
 .field-input { width: 100%; }
@@ -513,26 +755,26 @@ async function savePassword(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: color-mix(in srgb, var(--nl-bg) 60%, var(--nl-surface));
+  border: 1px solid var(--nl-border);
   border-radius: 6px;
   padding: 0.55rem 0.875rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-size: 0.875rem;
 }
 
-.readonly-icon { color: #9ca3af; font-size: 0.85rem; }
+.readonly-icon { color: var(--nl-text-3); font-size: 0.85rem; }
 
 .field-hint {
   margin: 0;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--nl-text-3);
 }
 
 .section-description {
   margin: 0;
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--nl-text-3);
   line-height: 1.5;
 }
 
@@ -544,20 +786,7 @@ async function savePassword(): Promise<void> {
   padding-top: 0.25rem;
 }
 
-/* ── Dark mode ────────────────────────────────────────────────────────────────── */
-:global(.dark) .profile-page { background: #0f172a; }
-:global(.dark) .page-title   { color: #f1f5f9; }
-:global(.dark) .back-btn     { border-color: #334155; color: #94a3b8; background: transparent; }
-:global(.dark) .back-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; border-color: #475569; }
-:global(.dark) .identity-card,
-:global(.dark) .settings-panel { background: #1e293b; border-color: #334155; }
-:global(.dark) .panel-header  { background: #1a2740; border-color: #334155; }
-:global(.dark) .panel-title,
-:global(.dark) .identity-name { color: #f1f5f9; }
-:global(.dark) .field-label   { color: #cbd5e1; }
-:global(.dark) .readonly-field { background: #0f172a; border-color: #334155; color: #94a3b8; }
-:global(.dark) .identity-meta { border-color: #334155; }
-:global(.dark) .section-description { color: #94a3b8; }
+/* ── Dark mode: handled automatically via CSS variables ──────────────────────── */
 
 /* ── Mobile ───────────────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {

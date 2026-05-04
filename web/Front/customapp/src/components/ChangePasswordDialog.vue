@@ -1,10 +1,9 @@
 <template>
-  <Dialog
+  <AppModal
     :visible="visible"
-    @update:visible="emit('update:visible', $event)"
     header="Changer mon mot de passe"
-    :modal="true"
-    style="width: 420px"
+    width="420px"
+    @update:visible="emit('update:visible', $event)"
   >
     <div class="form-body">
       <div class="field-wrap">
@@ -43,20 +42,18 @@
       <NeoButton label="Annuler" severity="secondary" outlined @click="emit('update:visible', false)" />
       <NeoButton label="Enregistrer" :loading="loading" @click="submit" />
     </template>
-  </Dialog>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import { NeoPassword, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
-import { useApp } from '@/stores/useApp'
+import api from '@/lib/api'
 
-const props = defineProps<{ visible: boolean }>()
+defineProps<{ visible: boolean }>()
 const emit  = defineEmits<{ (e: 'update:visible', v: boolean): void }>()
 
-const app     = useApp()
 const toast   = useNeoToast()
 const current = ref('')
 const newPass = ref('')
@@ -78,11 +75,7 @@ async function submit() {
   }
   loading.value = true
   try {
-    await axios.post(
-      `${app.apiUrl}/auth/change-password`,
-      { currentPassword: current.value, newPassword: newPass.value },
-      { headers: app.authHeader() },
-    )
+    await api.post('/auth/change-password', { currentPassword: current.value, newPassword: newPass.value })
     toast.add({ severity: 'success', detail: 'Mot de passe modifié avec succès.', life: 3000 })
     emit('update:visible', false)
     reset()

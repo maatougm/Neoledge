@@ -40,9 +40,9 @@
       <button
         v-if="searchText || roleFilter"
         class="clear-btn"
-        @click="searchText = ''; roleFilter = ''"
         title="Effacer les filtres"
         aria-label="Effacer les filtres"
+        @click="searchText = ''; roleFilter = ''"
       >
         <i class="pi pi-times" />
         Effacer
@@ -97,10 +97,10 @@
     <!-- Temp password dialog -->
     <Dialog
       :visible="um.showTempPasswordDialog.value"
-      @update:visible="!$event && (um.showTempPasswordDialog.value = false)"
       header="Mot de passe temporaire"
       :modal="true"
       style="width: min(420px, 96vw)"
+      @update:visible="!$event && (um.showTempPasswordDialog.value = false)"
     >
       <div class="temp-body">
         <div class="temp-icon-wrap">
@@ -195,8 +195,8 @@ async function copyTempPassword(): Promise<void> {
   gap: 1rem;
 }
 
-.section-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0; }
-.section-sub   { font-size: 0.85rem; color: #6b7280; margin: 0.2rem 0 0; }
+.section-title { font-size: 1.25rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.section-sub   { font-size: 0.85rem; color: var(--nl-text-3); margin: 0.2rem 0 0; }
 
 /* ── Filter bar ───────────────────────────────────────────────────────────────── */
 .filter-bar {
@@ -214,9 +214,9 @@ async function copyTempPassword(): Promise<void> {
   align-items: center;
   gap: 0.35rem;
   background: none;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--nl-border);
   border-radius: 6px;
-  color: #6b7280;
+  color: var(--nl-text-3);
   font-size: 0.8125rem;
   padding: 0.45rem 0.75rem;
   cursor: pointer;
@@ -224,17 +224,17 @@ async function copyTempPassword(): Promise<void> {
   white-space: nowrap;
 }
 
-.clear-btn:hover { background: #f9fafb; color: #374151; border-color: #d1d5db; }
+.clear-btn:hover { background: var(--nl-surface-2); color: var(--nl-text-2); border-color: var(--nl-border-strong); }
 
 .filter-results {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.8125rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
 }
 
-.filter-results .pi { color: #0d9488; }
+.filter-results .pi { color: var(--nl-accent); }
 
 /* ── Empty state ──────────────────────────────────────────────────────────────── */
 .empty-state {
@@ -243,25 +243,25 @@ async function copyTempPassword(): Promise<void> {
   align-items: center;
   gap: 0.75rem;
   padding: 3rem 1rem;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius-lg);
 }
 
 .empty-icon {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #f0fdfa;
-  color: #0d9488;
+  background: var(--nl-accent-light);
+  color: var(--nl-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
 }
 
-.empty-title { margin: 0; font-size: 1rem; font-weight: 600; color: #374151; }
-.empty-sub   { margin: 0; font-size: 0.875rem; color: #9ca3af; }
+.empty-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--nl-text-2); }
+.empty-sub   { margin: 0; font-size: 0.875rem; color: var(--nl-text-3); }
 
 /* ── Temp password dialog ─────────────────────────────────────────────────────── */
 .temp-body {
@@ -277,7 +277,7 @@ async function copyTempPassword(): Promise<void> {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #0d9488, #0891b2);
+  background: linear-gradient(135deg, var(--nl-accent), #0891b2);
   color: #fff;
   display: flex;
   align-items: center;
@@ -288,7 +288,7 @@ async function copyTempPassword(): Promise<void> {
 .temp-instruction {
   margin: 0;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--nl-text-3);
   line-height: 1.5;
 }
 
@@ -296,9 +296,9 @@ async function copyTempPassword(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
   padding: 0.75rem 1rem;
   width: 100%;
 }
@@ -308,16 +308,16 @@ async function copyTempPassword(): Promise<void> {
   font-size: 1.1rem;
   font-family: 'Courier New', monospace;
   letter-spacing: 0.1em;
-  color: #0d9488;
+  color: var(--nl-accent);
   word-break: break-all;
   text-align: left;
 }
 
 .copy-btn {
   background: none;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--nl-border);
   border-radius: 6px;
-  color: #6b7280;
+  color: var(--nl-text-3);
   width: 32px;
   height: 32px;
   display: flex;
@@ -328,6 +328,6 @@ async function copyTempPassword(): Promise<void> {
   flex-shrink: 0;
 }
 
-.copy-btn:hover { background: #f1f5f9; color: #0d9488; }
+.copy-btn:hover { background: var(--nl-surface-2); color: var(--nl-accent); }
 .copy-btn .pi-check { color: #10b981; }
 </style>
