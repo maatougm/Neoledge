@@ -325,51 +325,7 @@ async function main() {
       console.log(`   ✓ ${count} time entries`);
     }
 
-    // 2i. Wiki pages ─────────────────────────────────────────────────────
-    const existingPages = await prisma.wikiPage.count({ where: { projectId: project.id } });
-    if (existingPages === 0) {
-      const root = await prisma.wikiPage.create({
-        data: {
-          projectId: project.id,
-          title: 'Accueil',
-          slug: 'accueil',
-          content: `# Bienvenue sur le wiki de ${project.name}\n\nCe wiki contient la documentation du projet.\n\n## Sections\n\n- **Architecture** — Schémas et conception technique\n- **Guide d'installation** — Prérequis et étapes\n- **FAQ** — Questions fréquentes`,
-          authorId: admin.id,
-          version: 1,
-        },
-      });
-      await prisma.wikiRevision.create({
-        data: { wikiPageId: root.id, version: 1, title: root.title, content: root.content, authorId: admin.id, comment: 'Initial version' },
-      });
-      const child1 = await prisma.wikiPage.create({
-        data: {
-          projectId: project.id,
-          title: 'Architecture',
-          slug: 'architecture',
-          content: `# Architecture technique\n\nL'architecture s'appuie sur une **API NestJS** et un **frontend Vue 3**.\n\n## Services\n\n- Backend: NestJS port 5122\n- Frontend: Vite port 5174\n- Transcription: FastAPI port 8000\n\n## Base de données\n\nMySQL 10.4 via XAMPP, schéma géré par Prisma 7.`,
-          authorId: admin.id,
-          parentId: root.id,
-          version: 1,
-        },
-      });
-      await prisma.wikiRevision.create({
-        data: { wikiPageId: child1.id, version: 1, title: child1.title, content: child1.content, authorId: admin.id, comment: 'Initial version' },
-      });
-      const child2 = await prisma.wikiPage.create({
-        data: {
-          projectId: project.id,
-          title: 'Guide d\'installation',
-          slug: 'installation',
-          content: `# Guide d'installation\n\n## Prérequis\n\n- Node 22+\n- MySQL 10+\n- XAMPP actif sur port 3306\n\n## Installation\n\n\`\`\`\nnpm install\nnpx prisma generate\nnpm run start:dev\n\`\`\`\n\n## Dépannage\n\nVoir la page **FAQ** pour les problèmes courants.`,
-          authorId: admin.id,
-          parentId: root.id,
-          version: 1,
-        },
-      });
-      await prisma.wikiRevision.create({
-        data: { wikiPageId: child2.id, version: 1, title: child2.title, content: child2.content, authorId: admin.id, comment: 'Initial version' },
-      });
-    }
+    // 2i. Wiki seed removed — wiki module retired.
 
     // 2j. Meeting extras (only for projects with transcripts) ────────────
     const transcripts = await prisma.meetingTranscript.findMany({ where: { projectId: project.id }, take: 1 });

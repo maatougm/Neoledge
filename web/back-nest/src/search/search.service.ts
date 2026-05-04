@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 
 export interface SearchHit {
-  type: 'project' | 'work_package' | 'wiki_page' | 'user';
+  type: 'project' | 'work_package' | 'user';
   id: string;
   title: string;
   subtitle?: string;
@@ -38,7 +38,7 @@ export class SearchService {
         ),
       ];
 
-      const [projects, wps, wikis, users] = await Promise.all([
+      const [projects, wps, users] = await Promise.all([
         this.prisma.project.findMany({
           where: {
             isDeleted: false,
@@ -56,16 +56,6 @@ export class SearchService {
             OR: [{ title: { contains: query } }, { description: { contains: query } }],
           },
           select: { id: true, title: true, status: true, projectId: true, type: true, updatedAt: true },
-          orderBy: { updatedAt: 'desc' },
-          take,
-        }),
-        this.prisma.wikiPage.findMany({
-          where: {
-            isDeleted: false,
-            projectId: { in: accessibleProjectIds },
-            OR: [{ title: { contains: query } }, { content: { contains: query } }],
-          },
-          select: { id: true, title: true, slug: true, projectId: true, updatedAt: true },
           orderBy: { updatedAt: 'desc' },
           take,
         }),
@@ -98,14 +88,6 @@ export class SearchService {
           subtitle: `${w.type} · ${w.status}`,
           projectId: w.projectId,
           link: `/app/pm/projects/${w.projectId}/workpackages`,
-        })),
-        ...wikis.map((p): SearchHit => ({
-          type: 'wiki_page',
-          id: p.id,
-          title: p.title,
-          subtitle: 'Wiki',
-          projectId: p.projectId,
-          link: `/app/pm/projects/${p.projectId}/wiki/${p.slug}`,
         })),
         ...users.map((u): SearchHit => ({
           type: 'user',

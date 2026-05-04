@@ -64,11 +64,6 @@ export const PERMISSION_CATALOG: readonly PermissionDef[] = [
   { key: 'agile.manage_board', resource: 'agile', description: 'Edit board columns/cards', projectScoped: true },
   { key: 'agile.manage_sprint', resource: 'agile', description: 'Create/close sprints', projectScoped: true },
 
-  // wiki
-  { key: 'wiki.view', resource: 'wiki', description: 'View wiki pages', projectScoped: true },
-  { key: 'wiki.edit', resource: 'wiki', description: 'Create/edit wiki pages', projectScoped: true },
-  { key: 'wiki.delete', resource: 'wiki', description: 'Delete wiki pages', projectScoped: true },
-
   // time
   { key: 'time.log', resource: 'time', description: 'Log own time entries' },
   { key: 'time.view_all', resource: 'time', description: 'View all time entries' },
@@ -129,9 +124,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'agile.view',
     'agile.manage_board',
     'agile.manage_sprint',
-    'wiki.view',
-    'wiki.edit',
-    'wiki.delete',
     'time.log',
     'time.view_all',
     'team_planner.view',
@@ -151,8 +143,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'wp.view',
     'wp.comment',
     'gantt.view',
-    'wiki.view',
-    'wiki.edit',
     'meeting.view',
     'meeting.upload',
     'time.log',
@@ -169,8 +159,6 @@ export const PRESET_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>
     'gantt.view',
     'agile.view',
     'agile.manage_board',
-    'wiki.view',
-    'wiki.edit',
     'meeting.view',
     'time.log',
     'attachment.upload',

@@ -1,6 +1,6 @@
 <!-- @file src/views/PMProjectsPage.vue — PM project list page.
      Selecting a project navigates to /app/pm/projects/:id so the v2.0 overview
-     (with WP / Gantt / Board / Backlog / Sprint / Wiki / Budget tiles) and the
+     (with WP / Gantt / Board / Backlog / Sprint tiles) and the
      project-module sidebar both render. -->
 <template>
   <div>

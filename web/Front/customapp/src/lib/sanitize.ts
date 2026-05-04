@@ -3,16 +3,14 @@ import DOMPurify from 'dompurify'
 /**
  * Canonical allow-list for sanitized HTML rendered via `v-html`.
  *
- * All user- or AI-originated HTML (markdown output, AI summaries, wiki pages,
+ * All user- or AI-originated HTML (markdown output, AI summaries,
  * transcript-derived prose, …) MUST flow through `sanitize()` before being
  * passed to Vue's `v-html`. Untrusted input (e.g. AI prompt-injection payloads
  * smuggled through meeting transcripts) can otherwise inject script-equivalent
  * markup.
  *
- * A call-site may define its own stricter allow-list where appropriate (for
- * example, the wiki renderer uses a tighter tag set and an
- * `afterSanitizeAttributes` hook to force `rel="noopener noreferrer"` on
- * anchors). Such overrides are permitted — but the shared `sanitize()` is the
+ * A call-site may define its own stricter allow-list where appropriate.
+ * Such overrides are permitted — but the shared `sanitize()` is the
  * canonical default that every other v-html path must use.
  */
 const ALLOWED_TAGS = [

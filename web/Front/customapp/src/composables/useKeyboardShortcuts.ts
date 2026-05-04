@@ -8,7 +8,6 @@
  *   c        → Create work package (when on /workpackages)
  *   g g      → Go to Gantt
  *   g b      → Go to Board
- *   g w      → Go to Wiki
  *   g t      → Go to Time
  *   g l      → Go to Project list (admin) / My projects (PM)
  *
