@@ -226,6 +226,10 @@ interface SpeechRecognitionLike {
 let recognition: SpeechRecognitionLike | null = null
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
+// Full-meeting audio buffer — every chunk is pushed here as it's recorded so
+// we can upload the merged blob at end of session for replay later.
+let archiveChunks: Blob[] = []
+let archiveMimeType = 'audio/webm'
 
 const formattedDuration = computed<string>(() => {
   void tick.value
@@ -313,6 +317,30 @@ function startSpeechRecognition(): void {
     toast.add({ severity: 'error', detail: `Démarrage micro échoué : ${(err as Error).message}`, life: 4000 })
     return
   }
+  // Archive the mic audio in parallel so the meeting can be replayed later.
+  // SpeechRecognition does the live transcription; this MediaRecorder only
+  // collects bytes for /audio upload at end of session.
+  archiveChunks = []
+  navigator.mediaDevices
+    .getUserMedia({ audio: true })
+    .then((stream) => {
+      mediaStream = stream
+      let mimeType = 'audio/webm;codecs=opus'
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm'
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''
+      mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
+      archiveMimeType = mimeType || 'audio/webm'
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) archiveChunks.push(e.data)
+      }
+      mediaRecorder.start(5_000)
+    })
+    .catch(() => {
+      // Mic permission denied or unavailable — transcript still works via
+      // SpeechRecognition, only the replay feature is disabled this session.
+    })
   beginSession()
 }
 
@@ -364,8 +392,15 @@ async function startTabCapture(): Promise<void> {
   if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm'
   if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''
   mediaRecorder = mimeType ? new MediaRecorder(audioOnly, { mimeType }) : new MediaRecorder(audioOnly)
+  archiveChunks = []
+  archiveMimeType = mimeType || 'audio/webm'
   mediaRecorder.ondataavailable = async (e) => {
-    if (!e.data || e.data.size < 5000) return // skip near-silent slivers
+    if (!e.data || e.data.size === 0) return
+    // Always archive the chunk so we can replay the full meeting later —
+    // even tiny slivers matter for continuity. Transcription still skips
+    // sub-5kB chunks because Whisper can't extract anything from them.
+    archiveChunks.push(e.data)
+    if (e.data.size < 5000) return
     await uploadChunk(e.data)
   }
   // 20-second chunks: balance between latency and Whisper call frequency
@@ -471,6 +506,9 @@ async function stopAndSave(): Promise<void> {
       },
     )
     toast.add({ severity: 'success', detail: 'Réunion enregistrée.', life: 3000 })
+    // Best-effort: upload the merged audio so the meeting can be replayed.
+    // Don't block the success toast on it — the transcript is the main artefact.
+    void uploadArchivedAudio(data.transcriptId)
     emit('saved', data.transcriptId)
   } catch (err) {
     toast.add({
@@ -478,6 +516,25 @@ async function stopAndSave(): Promise<void> {
       detail: `Échec de l'enregistrement : ${err instanceof Error ? err.message : 'erreur inconnue'}`,
       life: 4000,
     })
+  }
+}
+
+async function uploadArchivedAudio(transcriptId: string): Promise<void> {
+  if (archiveChunks.length === 0) return
+  try {
+    const blob = new Blob(archiveChunks, { type: archiveMimeType })
+    if (blob.size < 1024) return // less than 1 kB — not worth storing
+    const form = new FormData()
+    form.append('audio', blob, `meeting-${transcriptId}.webm`)
+    await api.post(
+      `/pm/projects/${props.projectId}/meetings/${transcriptId}/audio`,
+      form,
+      { timeout: 300_000 },
+    )
+  } catch {
+    // Silent — replay is a nice-to-have, transcript is already saved.
+  } finally {
+    archiveChunks = []
   }
 }
 

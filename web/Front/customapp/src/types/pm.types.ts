@@ -56,6 +56,7 @@ export interface MeetingTranscriptDetail {
   detectedLanguages: string
   recordedAt: string
   createdAt: string
+  hasAudio?: boolean
   segments: TranscriptSegment[]
 }
 

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Body,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -13,7 +14,10 @@ import {
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  StreamableFile,
 } from '@nestjs/common'
+import type { Response } from 'express'
+import { createReadStream } from 'fs'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { MeetingsService } from './meetings.service.js'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
@@ -128,5 +132,54 @@ export class MeetingsController {
     const result = await this.service.getAiResults(id)
     if (result.isFailure) throw new NotFoundException(result.error)
     return result.value
+  }
+
+  /**
+   * POST /pm/projects/:projectId/meetings/:id/audio
+   * Attach the recorded audio blob to an existing live-meeting transcript so
+   * the validation team can re-listen. Multipart field: 'audio'.
+   */
+  @Post(':id/audio')
+  @RequirePermission('meeting.upload')
+  @UseInterceptors(
+    FileInterceptor('audio', { limits: { fileSize: 200 * 1024 * 1024 } }),
+  )
+  async attachAudio(
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+    @UploadedFile() audio: Express.Multer.File,
+  ) {
+    if (!audio?.buffer?.length) {
+      throw new BadRequestException('Fichier audio requis.')
+    }
+    const result = await this.service.attachAudio(
+      projectId,
+      id,
+      audio.buffer,
+      audio.mimetype || 'audio/webm',
+    )
+    if (result.isFailure) throw new BadRequestException(result.error)
+    return result.value
+  }
+
+  /**
+   * GET /pm/projects/:projectId/meetings/:id/audio
+   * Stream the stored audio so any project member (PM or validation team)
+   * can replay the meeting.
+   */
+  @Get(':id/audio')
+  async streamAudio(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const result = await this.service.getAudioFile(id)
+    if (result.isFailure || !result.value) throw new NotFoundException(result.error ?? 'Audio non disponible.')
+    const { path: filePath, mimeType, size } = result.value
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Length': String(size),
+      'Cache-Control': 'private, max-age=300',
+    })
+    return new StreamableFile(createReadStream(filePath))
   }
 }

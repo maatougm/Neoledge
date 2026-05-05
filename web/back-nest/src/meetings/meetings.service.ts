@@ -3,6 +3,24 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
 import { AiService } from '../ai/ai.service.js'
+import * as fs from 'fs'
+import * as path from 'path'
+import { randomUUID } from 'node:crypto'
+
+const AUDIO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'meetings')
+
+const AUDIO_EXT_BY_MIME: Record<string, string> = {
+  'audio/webm': '.webm',
+  'audio/webm;codecs=opus': '.webm',
+  'audio/ogg': '.ogg',
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/x-m4a': '.m4a',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+}
+const ALLOWED_AUDIO_MIMES = new Set(Object.keys(AUDIO_EXT_BY_MIME))
 
 interface TranscriptionSegment {
   speaker: string
@@ -325,6 +343,7 @@ export class MeetingsService {
       recordedAt: t.recordedAt,
       createdAt: t.createdAt,
       aiStatus: t.aiStatus,
+      hasAudio: !!t.audioPath,
       segments: t.segments.map((s) => ({
         id: s.id,
         speaker: s.speaker,
@@ -340,8 +359,84 @@ export class MeetingsService {
   async deleteTranscript(id: string) {
     const t = await this.prisma.meetingTranscript.findUnique({ where: { id } })
     if (!t) return Result.fail('Transcription non trouvée.')
+    if (t.audioPath) {
+      try { fs.unlinkSync(t.audioPath) } catch { /* file already gone */ }
+    }
     await this.prisma.meetingTranscript.delete({ where: { id } })
     return Result.ok()
+  }
+
+  /**
+   * Persist the recorded audio for a live-meeting transcript on disk so it
+   * can be replayed via /audio. Stores under uploads/meetings/<projectId>/.
+   */
+  async attachAudio(
+    projectId: string,
+    transcriptId: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<Result<{ audioSize: number }>> {
+    const t = await this.prisma.meetingTranscript.findFirst({
+      where: { id: transcriptId, projectId },
+      select: { id: true, audioPath: true },
+    })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+
+    const cleanMime = (mimeType || 'audio/webm').split(';')[0].trim().toLowerCase()
+    if (!ALLOWED_AUDIO_MIMES.has(cleanMime) && !ALLOWED_AUDIO_MIMES.has(mimeType)) {
+      return Result.fail<any>('Format audio non supporté.')
+    }
+    const ext = AUDIO_EXT_BY_MIME[cleanMime] ?? AUDIO_EXT_BY_MIME[mimeType] ?? '.webm'
+
+    const dir = path.join(AUDIO_UPLOAD_DIR, projectId)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const fileName = `${randomUUID()}${ext}`
+    const storagePath = path.join(dir, fileName)
+
+    // Path-traversal containment.
+    const resolved = path.resolve(storagePath)
+    const root = path.resolve(AUDIO_UPLOAD_DIR)
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+      return Result.fail<any>('Invalid path')
+    }
+
+    fs.writeFileSync(storagePath, buffer)
+
+    // Replace any older audio for this transcript (re-record).
+    if (t.audioPath && t.audioPath !== storagePath) {
+      try { fs.unlinkSync(t.audioPath) } catch { /* ignore */ }
+    }
+
+    await this.prisma.meetingTranscript.update({
+      where: { id: transcriptId },
+      data: {
+        audioPath: storagePath,
+        audioMimeType: cleanMime,
+        audioSize: buffer.length,
+      },
+    })
+
+    return Result.ok({ audioSize: buffer.length })
+  }
+
+  /** Return the absolute path + content type of a transcript's stored audio. */
+  async getAudioFile(
+    transcriptId: string,
+  ): Promise<Result<{ path: string; mimeType: string; size: number }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { audioPath: true, audioMimeType: true, audioSize: true },
+    })
+    if (!t || !t.audioPath) return Result.fail<any>('Audio non disponible.')
+    if (!fs.existsSync(t.audioPath)) {
+      return Result.fail<any>('Fichier audio introuvable sur le serveur.')
+    }
+    return Result.ok({
+      path: t.audioPath,
+      mimeType: t.audioMimeType ?? 'audio/webm',
+      size: t.audioSize ?? fs.statSync(t.audioPath).size,
+    })
   }
 
   async renameSpeaker(id: string, oldName: string, newName: string, userId: string) {

@@ -382,6 +382,9 @@ model MeetingTranscript {
   aiProcessedAt     DateTime?
   aiModel           String?   @db.VarChar(50)
   aiError           String?   @db.VarChar(500)
+  audioPath         String?   @db.VarChar(500)
+  audioMimeType     String?   @db.VarChar(80)
+  audioSize         Int?
 
   // Relations
   project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
