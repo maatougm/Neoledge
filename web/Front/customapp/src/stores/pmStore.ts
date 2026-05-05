@@ -182,21 +182,6 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  const uploadMeeting = async (projectId: string, formData: FormData) => {
-    saving.value = true
-    error.value = null
-    try {
-      await api.post(`/pm/projects/${projectId}/meetings/upload`, formData, { timeout: 300_000 })
-      return true
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      error.value = msg || "Erreur lors de l'envoi de l'enregistrement."
-      return false
-    } finally {
-      saving.value = false
-    }
-  }
-
   const deleteMeeting = async (projectId: string, meetingId: string) => {
     try {
       await api.delete(`/pm/projects/${projectId}/meetings/${meetingId}`)
@@ -407,7 +392,6 @@ export const usePmStore = defineStore('pm', () => {
     fetchActivity,
     fetchMeetings,
     fetchTranscript,
-    uploadMeeting,
     deleteMeeting,
     renameSpeaker,
     triggerAiAnalysis,
