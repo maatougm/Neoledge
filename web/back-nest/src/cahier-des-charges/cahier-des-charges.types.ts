@@ -9,7 +9,6 @@ export interface CahierFormData {
   endDate: string
   priority: string
   status: string
-  budget?: string | null
   /** Dynamic / custom fields from the questionnaire form. */
   fields: Array<{
     label: string

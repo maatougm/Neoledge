@@ -22,7 +22,6 @@ interface MeResponse {
 export const useAuthStore = defineStore('auth', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const jwt = ref<string>('')
-  const mustChangePassword = ref<boolean>(false)
   const globalPermissions = ref<Set<string>>(new Set())
   const projectPermissions = ref<Map<string, Set<string>>>(new Map())
   const assignedRoles = ref<MeResponse['roles']>([])
@@ -104,7 +103,6 @@ export const useAuthStore = defineStore('auth', () => {
       jwt?: string
       requiresTotp?: boolean
       tempToken?: string
-      mustChangePassword?: boolean
     }>(config.apiUrl + '/auth/login', { email, password })
 
     if (response.data.requiresTotp) {
@@ -113,7 +111,6 @@ export const useAuthStore = defineStore('auth', () => {
 
     const token = response.data.jwt ?? ''
     jwt.value = token
-    mustChangePassword.value = response.data.mustChangePassword ?? false
     _persist(token)
     return { requiresTotp: false }
   }
@@ -124,14 +121,13 @@ export const useAuthStore = defineStore('auth', () => {
    */
   const loginTotp = async (tempToken: string, code: string): Promise<void> => {
     const config = useConfigStore()
-    const response = await axios.post<{
-      jwt?: string
-      mustChangePassword?: boolean
-    }>(config.apiUrl + '/auth/login/totp', { tempToken, code })
+    const response = await axios.post<{ jwt?: string }>(
+      config.apiUrl + '/auth/login/totp',
+      { tempToken, code },
+    )
 
     const token = response.data.jwt ?? ''
     jwt.value = token
-    mustChangePassword.value = response.data.mustChangePassword ?? false
     _persist(token)
   }
 
@@ -161,7 +157,6 @@ export const useAuthStore = defineStore('auth', () => {
   /** Clear authentication state entirely (without calling the logout endpoint). */
   const clear = (): void => {
     jwt.value = ''
-    mustChangePassword.value = false
     globalPermissions.value = new Set()
     projectPermissions.value = new Map()
     assignedRoles.value = []
@@ -211,7 +206,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     // State (expose as readonly-ish — consumers should use actions to mutate)
     jwt,
-    mustChangePassword,
     // Getters
     isAuthenticated,
     userRole,

@@ -19,8 +19,8 @@
       <div class="ai-header-right" @click.stop>
         <NeoButton
           v-if="!results || results.aiStatus === 'none' || results.aiStatus === 'failed'"
-          label="Analyser avec l'IA"
-          icon="pi pi-play"
+          :label="results?.aiStatus === 'failed' ? 'Réessayer' : 'Analyser avec l\'IA'"
+          :icon="results?.aiStatus === 'failed' ? 'pi pi-refresh' : 'pi pi-play'"
           size="small"
           :loading="triggering"
           :disabled="triggering"

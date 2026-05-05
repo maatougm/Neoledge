@@ -37,7 +37,6 @@
         <StatCard icon="pi-list"                 label="Work Packages"   :value="wpTotal" tone="normal" />
         <StatCard icon="pi-exclamation-triangle" label="En retard"       :value="wpOverdue" :tone="wpOverdue > 0 ? 'danger' : 'normal'" />
         <StatCard icon="pi-forward"              label="Sprint actif"    :value="activeSprintName || '—'" tone="normal" />
-        <StatCard icon="pi-dollar"               label="Budget consommé" :value="`${budgetPct}%`" :tone="budgetPct > 80 ? 'warning' : 'normal'" />
       </div>
 
       <!-- Grid -->
@@ -235,7 +234,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NeoButton } from '@neolibrary/components'
+import { NeoButton, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
@@ -244,7 +243,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
 import { formatRelative } from '@/lib/formatDate'
 import { isTerminal } from '@/lib/wpStatus'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 
 interface WorkPackage {
   id: string; title: string; status: string; priority: string;
@@ -265,6 +264,7 @@ interface Responsibilities {
 const props   = defineProps<{ id: string }>()
 const router  = useRouter()
 const uiStore = useUiStore()
+const toast   = useNeoToast()
 const authStore = useAuthStore()
 const collab  = useCollaborationSocket()
 
@@ -276,8 +276,6 @@ const wps             = ref<WorkPackage[]>([])
 const milestones      = ref<Milestone[]>([])
 const activity        = ref<Activity[]>([])
 const activeSprint    = ref<Sprint | null>(null)
-const budgetSpent     = ref<number>(0)
-const budgetTotal     = ref<number>(0)
 
 // Team responsibilities
 const allAssignableUsers  = ref<AssignableUser[]>([])
@@ -346,7 +344,6 @@ const daysToEndLabel = computed<string>(() => {
 })
 
 const activeSprintName = computed<string>(() => activeSprint.value?.name ?? '')
-const budgetPct        = computed<number>(() => budgetTotal.value > 0 ? Math.round((budgetSpent.value / budgetTotal.value) * 100) : 0)
 
 function go(module: string): void { void router.push(`/app/pm/projects/${props.id}/${module}`) }
 function openWp(wpId: string): void { void router.push(`/app/pm/projects/${props.id}/workpackages?wpId=${wpId}`) }
@@ -425,13 +422,6 @@ async function loadAll(): Promise<void> {
     } catch { /* silent */ }
 
     try {
-      interface Burn { spent: number; total: number }
-      const { data } = await api.get<Burn>(`/pm/projects/${props.id}/budget/burn`, { suppressErrorToast: true } as never)
-      budgetSpent.value = Number(data.spent ?? 0)
-      budgetTotal.value = Number(data.total ?? 0)
-    } catch { /* silent */ }
-
-    try {
       const [usersRes, respRes] = await Promise.all([
         api.get<AssignableUser[]>(`/pm/projects/${props.id}/assignable-users`, { suppressErrorToast: true } as never),
         api.get<Responsibilities>(`/pm/projects/${props.id}/responsibilities`, { suppressErrorToast: true } as never),
@@ -455,7 +445,11 @@ async function saveResponsibilities(): Promise<void> {
     })
     responsibilities.value = data
     editingResp.value = false
-  } catch { /* silent */ }
+    toast.add({ severity: 'success', detail: 'Responsabilités enregistrées.', life: 2500 })
+  } catch (err: unknown) {
+    const msg = extractErrorMessage(err) ?? 'Échec de l\'enregistrement.'
+    toast.add({ severity: 'error', detail: msg, life: 5000 })
+  }
 }
 
 onMounted(() => {

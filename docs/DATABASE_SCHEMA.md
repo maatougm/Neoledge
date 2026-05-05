@@ -1,6 +1,6 @@
 # NeoLeadge — Database Schema Reference
 
-**Engine:** PostgreSQL 16 · **ORM:** Prisma 7 · **Models:** 46 · **Last update:** 2026-05-04
+**Engine:** PostgreSQL 16 · **ORM:** Prisma 7 · **Models:** 44 · **Last update:** 2026-05-04
 
 ---
 
@@ -18,9 +18,8 @@
 10. [Domain 6 — Agile (boards / sprints / versions)](#domain-6--agile-boards--sprints--versions)
 11. [Domain 7 — Gantt](#domain-7--gantt-milestones--baselines)
 12. [Domain 8 — Time tracking](#domain-8--time-tracking)
-13. [Domain 9 — Wiki](#domain-9--wiki)
-14. [Domain 10 — Notifications & automation](#domain-10--notifications--automation)
-15. [Domain 11 — Cross-cutting (audit, cache, checklists)](#domain-11--cross-cutting-audit-cache-checklists)
+13. [Domain 9 — Notifications & automation](#domain-9--notifications--automation)
+14. [Domain 10 — Cross-cutting (audit, cache, checklists)](#domain-10--cross-cutting-audit-cache-checklists)
 16. [Soft-delete and cascade strategy](#16-soft-delete-and-cascade-strategy)
 17. [JSON columns](#17-json-columns)
 18. [Indexing philosophy](#18-indexing-philosophy)
@@ -97,7 +96,6 @@ erDiagram
   Project ||--o{ Version : "has releases"
   Project ||--o{ Milestone : "has milestones"
   Project ||--o{ TimeEntry : "logged hours"
-  Project ||--o{ WikiPage : "knowledge base"
   Project ||--o{ AutomationRule : "workflow rules"
   Project ||--o{ ProjectAttachment : "files"
   Project ||--o{ ProjectComment : "discussion"
@@ -123,13 +121,11 @@ erDiagram
   WorkPackage ||--o{ GanttBaseline : "baseline snapshots"
 
   Board ||--o{ BoardColumn : "columns"
+
   Board ||--o{ Sprint : "iterations"
   Sprint ||--o{ WorkPackage : "scope"
   Version ||--o{ WorkPackage : "release scope"
   BoardColumn ||--o{ WorkPackage : "kanban position"
-
-  WikiPage ||--o{ WikiPage : "parent / children"
-  WikiPage ||--o{ WikiRevision : "history"
 
   WorkPackageCustomField ||--o{ WorkPackageCustomValue : "values"
 
@@ -148,7 +144,7 @@ erDiagram
 | **IDs** | `String @id @default(uuid())` — all PKs are version-4 UUIDs stored as TEXT. Some legacy FKs are `VARCHAR(36)` to match earlier MySQL compat columns; the type difference does not affect joins. |
 | **Timestamps** | All `DateTime` columns map to `TIMESTAMP(3)` UTC. |
 | **Enums** | Stored as `String @db.VarChar(N)`. Application code validates values at the DTO layer. This avoids `ALTER TABLE` rewrites every time a value is added. |
-| **Soft-delete** | Opt-in per table: `Project`, `WorkPackage`, `WikiPage`, `ProjectComment`, `WorkPackageComment`, `ProjectAttachment`, `WorkPackageAttachment` have `isDeleted Boolean`. |
+| **Soft-delete** | Opt-in per table: `Project`, `WorkPackage`, `ProjectComment`, `WorkPackageComment`, `ProjectAttachment`, `WorkPackageAttachment` have `isDeleted Boolean`. |
 | **Map names** | Every model has `@@map("PluralPascalCase")` — table names match what you'd type in `psql`. |
 | **Cascade policy** | See [§16](#16-soft-delete-and-cascade-strategy). Children of a deleted parent CASCADE; history rows SetNull; integrity-critical FKs use NoAction. |
 | **JSON storage** | Three columns hold JSON: `Project.aiOutput`, `AppUser.preferences`, `AutomationRule.actionConfig`. See [§17](#17-json-columns). |
@@ -292,7 +288,6 @@ The root entity. Soft-deletable; carries the saved cahier as JSON.
 | `deletedAt` | TIMESTAMPTZ | yes | — | |
 | `deletedByUserId` | TEXT | yes | — | FK → AppUsers, NoAction |
 | `tags` | VARCHAR(500) | yes | — | Comma-separated |
-| `budget` | DECIMAL | yes | — | Project budget (informational) |
 | `currentPhaseEnteredAt` | TIMESTAMPTZ | yes | — | When the project entered its current `status` — drives "stuck in phase" alerts and analytics |
 
 **Status values (`status`):**
@@ -768,45 +763,7 @@ One row per logged hour-block.
 
 ---
 
-# Domain 9 — Wiki
-
-```mermaid
-erDiagram
-  Project ||--o{ WikiPage : "knowledge base"
-  WikiPage ||--o{ WikiPage : "tree"
-  WikiPage ||--o{ WikiRevision : "history"
-```
-
-### Table: `WikiPages`
-
-Markdown knowledge-base pages, optionally hierarchical.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id`, `projectId`, `title`, `slug` (VARCHAR(255)) | |
-| `content` | TEXT | |
-| `authorId` | FK → AppUsers, NoAction | |
-| `parentId?` | self-FK (NoAction) — tree structure | |
-| `version` | INT — incremented on every save | |
-| `isDeleted`, `createdAt`, `updatedAt` | | |
-| `@@unique(projectId, slug)` | URL-stable identifier per project | |
-| `@@index(parentId)`, `@@index(projectId, title)` | | |
-
-### Table: `WikiRevisions`
-
-Full revision history. Every save creates a new version.
-
-| Column | Notes |
-|---|---|
-| `id`, `wikiPageId`, `version`, `title`, `content`, `authorId`, `comment?`, `createdAt` | |
-| `@@unique(wikiPageId, version)` | |
-| `@@index(wikiPageId)` | |
-
-> **Note:** As of May 2026 the wiki is no longer surfaced in the project sidebar (the route was removed). The data is preserved.
-
----
-
-# Domain 10 — Notifications & automation
+# Domain 9 — Notifications & automation
 
 ```mermaid
 erDiagram
@@ -832,7 +789,7 @@ Per-user inbox. Real-time push via Socket.IO + optional email.
 | `isRead` | BOOLEAN | no | false | |
 | `createdAt` | TIMESTAMPTZ | no | now() | |
 | `reason` | VARCHAR(40) | no | `system` | `Mention` / `Assignee` / `Watcher` / `Deadline` / `StatusChange` / `Comment` / `System` |
-| `entityType` | VARCHAR(40) | yes | — | `work_package` / `project` / `meeting` / `wiki_page` / `comment` / `version` |
+| `entityType` | VARCHAR(40) | yes | — | `work_package` / `project` / `meeting` / `comment` / `version` |
 | `entityId` | TEXT | yes | — | What entity the notification is about |
 | `actorId` | TEXT | yes | — | FK → AppUsers ("NotificationActor"), SetNull. Who triggered it; used to skip self-notifications. |
 | `link` | VARCHAR(500) | yes | — | Front-end URL to navigate to |
@@ -876,7 +833,7 @@ Execution history of every rule fire.
 
 ---
 
-# Domain 11 — Cross-cutting (audit, cache, checklists)
+# Domain 10 — Cross-cutting (audit, cache, checklists)
 
 ### Table: `PhaseChecklists`
 
@@ -915,10 +872,10 @@ The platform follows four different deletion strategies. Picking the right one f
 
 | Strategy | When | Examples |
 |---|---|---|
-| **Soft-delete** (`isDeleted = true`) | First-class entities that benefit from un-delete + audit | `Projects`, `WorkPackages`, `WikiPages`, `ProjectComments`, `WorkPackageComments`, `ProjectAttachments`, `WorkPackageAttachments` |
+| **Soft-delete** (`isDeleted = true`) | First-class entities that benefit from un-delete + audit | `Projects`, `WorkPackages`, `ProjectComments`, `WorkPackageComments`, `ProjectAttachments`, `WorkPackageAttachments` |
 | **CASCADE** | Children that don't make sense without their parent | `ProjectMember.project`, `ProjectMember.user`, `TranscriptSegment.transcript`, `WorkPackageDependency.from/to`, `WorkPackageCustomValue.both`, `Notification.user`, `RolePermission.both`, `MeetingActionItem.transcript`, `MeetingDecision.transcript` |
 | **SetNull** | History rows that should survive parent deletion | `CahierFeedback.user` (we keep the rejection comment even if the user is deleted), `Notification.actor`, `Notification.project`, `WorkPackage.assignee/parent/sprint/version/boardColumn`, `AppUser.team` |
-| **NoAction** | Strict integrity — the parent must not be deletable while children exist | `Project.projectManager`, `Project.createdByAdmin`, `WikiPage.author`, `TimeEntry.user`, `WorkPackage.author`, `ProjectComment.user`, `MeetingOutcome.workPackage`, `Milestone.workPackage`, `ProjectActivity.user`, `AuditLog.user` |
+| **NoAction** | Strict integrity — the parent must not be deletable while children exist | `Project.projectManager`, `Project.createdByAdmin`, `TimeEntry.user`, `WorkPackage.author`, `ProjectComment.user`, `MeetingOutcome.workPackage`, `Milestone.workPackage`, `ProjectActivity.user`, `AuditLog.user` |
 
 **Why `Notification.user` is CASCADE but `AuditLog.user` is NoAction:** notifications are personal — when a user is removed, their inbox goes too (no one else can read it). Audit logs are for compliance and investigation — they must survive even if the actor is deleted (the user FK becomes nullable instead).
 
@@ -1002,6 +959,8 @@ The schema follows three rules:
 | 3 | `20260503010000_cahier_feedback_index` | 2026-05-03 | Composite `(projectId, createdAt)` for cahier-status aggregation |
 | 4 | `20260503020000_wp_custom_value_index` | 2026-05-04 | Index `customFieldId` to speed cascading deletes |
 | 5 | `20260504020000_drop_orphan_tables` | 2026-05-04 | Drop `ProjectBudgets`, `BudgetLineItems`, `Handovers`, `HandoverCriteria`, `ActivityRacis`, `HourlyRates` |
+| 6 | `20260504030000_drop_wiki` | 2026-05-04 | Drop `WikiPages` + `WikiRevisions` — wiki feature retired |
+| 7 | `20260504040000_drop_project_budget` | 2026-05-04 | Drop `Projects.budget` column — last vestige of the budget feature |
 
 All migrations are tracked in `web/back-nest/prisma/migrations/`. Apply with `npx prisma migrate deploy`.
 
@@ -1011,6 +970,7 @@ All migrations are tracked in `web/back-nest/prisma/migrations/`. Apply with `np
 - **2026-05-03** — Cahier validation flow rebuilt. Old "approve in PMProjectDetail" inline form removed; new `CahierReviewActions.vue` component owns the flow exclusively. PM self-approval blocked at the service layer. SpecificationTeam scope tightened — only team members of *this specific project* receive `cahier_ready` notifications.
 - **2026-05-03** — Multiple critical hardening pass: `ProjectAccessGuard` no longer accepts global `UserRoleAssignment` for non-Admin users (closes IDOR), JWT pinned to HS256 in both signing and verification, all bare `JSON.parse` calls wrapped in try/catch, double-toast eliminated.
 - **2026-05-04** — Six orphan tables dropped after their owning modules were retired (budgeting, handovers, RACI, hourly rates).
+- **2026-05-04** — Wiki module retired entirely (backend module, frontend view, store, schema models, search-service references all removed). Project documentation now lives in external tools (Confluence / SharePoint).
 
 ---
 

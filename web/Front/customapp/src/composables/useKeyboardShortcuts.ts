@@ -8,7 +8,6 @@
  *   c        → Create work package (when on /workpackages)
  *   g g      → Go to Gantt
  *   g b      → Go to Board
- *   g w      → Go to Wiki
  *   g t      → Go to Time
  *   g l      → Go to Project list (admin) / My projects (PM)
  *
@@ -97,13 +96,21 @@ export function useKeyboardShortcuts(): KeyboardShortcutState {
         pendingG = true
         pendingGTimer = setTimeout(clearPendingG, 800)
         return
-      case 'c':
-        if (route.name === 'pm-workpackages') {
-          // Dispatch a custom event — WorkPackagesView listens for this.
+      case 'c': {
+        // Available on every WP-creating page; the listening view (WorkPackagesView,
+        // KanbanBoardView, BacklogView) decides whether to act.
+        const CREATE_WP_ROUTES = new Set([
+          'pm-workpackages',
+          'pm-board',
+          'pm-backlogs',
+          'pm-sprint',
+        ])
+        if (CREATE_WP_ROUTES.has(route.name as string)) {
           window.dispatchEvent(new CustomEvent('neoleadge:create-wp'))
           e.preventDefault()
         }
         return
+      }
       case 'Escape':
         helpVisible.value = false
         searchVisible.value = false

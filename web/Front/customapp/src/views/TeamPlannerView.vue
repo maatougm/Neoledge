@@ -74,7 +74,7 @@
           </thead>
           <tbody>
             <tr v-for="(c, i) in store.conflicts" :key="i">
-              <td>{{ c.userId.slice(0, 8) }}…</td>
+              <td>{{ userNameFor(c.userId) }}</td>
               <td>{{ c.wp1.title }} ({{ formatDate(c.wp1.startDate || '') }} — {{ formatDate(c.wp1.dueDate || '') }})</td>
               <td>{{ c.wp2.title }} ({{ formatDate(c.wp2.startDate || '') }} — {{ formatDate(c.wp2.dueDate || '') }})</td>
             </tr>
@@ -114,6 +114,17 @@ function fillClass(pct: number): string {
   if (pct > 100) return 'tp-heatmap__fill--over'
   if (pct > 80) return 'tp-heatmap__fill--high'
   return 'tp-heatmap__fill--normal'
+}
+
+// Map a userId to a human-readable name using the data we already loaded for
+// the assignments tab — falls back to a UUID prefix only if we have nothing.
+function userNameFor(userId: string): string {
+  const u = store.assignments.find((a) => a.user.id === userId)?.user
+  if (u) return `${u.firstName} ${u.lastName}`
+  // Try the heatmap rows too
+  const cap = store.capacity.find((c) => c.user.id === userId)?.user
+  if (cap) return `${cap.firstName} ${cap.lastName}`
+  return `${userId.slice(0, 8)}…`
 }
 
 async function load() {

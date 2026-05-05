@@ -8,9 +8,8 @@ import { useAuthStore } from '@/stores/authStore'
 /**
  * Global authentication guard.
  *
- * - Redirects unauthenticated visitors to `/login` (saving the intended route
- *   as a query param so LoginView can redirect back after login).
- * - Redirects users whose password must be changed to `/force-change-password`.
+ * Redirects unauthenticated visitors to `/login` (saving the intended route
+ * as a query param so LoginView can redirect back after login).
  */
 export function authGuard(
   to: RouteLocationNormalized,
@@ -22,11 +21,6 @@ export function authGuard(
   if (!auth.isAuthenticated) {
     const redirect = to.fullPath !== '/' ? to.fullPath : undefined
     next({ name: 'login', query: redirect ? { redirect } : undefined })
-    return
-  }
-
-  if (auth.mustChangePassword && to.name !== 'force-change-password') {
-    next({ name: 'force-change-password' })
     return
   }
 

@@ -45,9 +45,9 @@
           :epic="epic"
           :epic-idx="ei"
           @update="(p) => store.updateEpic(ei, p)"
-          @remove="store.removeEpic(ei)"
+          @remove="confirmRemoveEpic(ei)"
           @update-task="(ti, p) => store.updateTask(ei, ti, p)"
-          @remove-task="(ti) => store.removeTask(ei, ti)"
+          @remove-task="(ti) => confirmRemoveTask(ei, ti)"
           @add-task="store.addTask(ei)"
         />
 
@@ -61,9 +61,13 @@
             label="Accepter et créer les tâches"
             icon="pi pi-check"
             :loading="accepting"
-            :disabled="totalTasks === 0"
+            :disabled="totalTasks === 0 || hasEmptyTitle"
             @click="onAccept"
           />
+          <p v-if="hasEmptyTitle" class="bg__warn">
+            <i class="pi pi-exclamation-triangle" />
+            Tous les epics et toutes les tâches doivent avoir un titre.
+          </p>
         </div>
       </div>
     </div>
@@ -73,7 +77,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
+import { NeoButton, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import EpicCard from '@/components/pm/backlog/EpicCard.vue'
 import { useBacklogGeneratorStore } from '@/stores/backlogGeneratorStore'
@@ -82,6 +86,7 @@ import { extractErrorMessage } from '@/lib/api'
 const props = defineProps<{ id: string }>()
 const router = useRouter()
 const toast = useNeoToast()
+const confirm = useNeoConfirm()
 const store = useBacklogGeneratorStore()
 const accepting = ref(false)
 
@@ -98,6 +103,16 @@ const totalHours = computed(() => {
   return h
 })
 
+// Block acceptance if any title is empty — empty titles in DB break the WP list view.
+const hasEmptyTitle = computed(() => {
+  if (!store.proposed) return false
+  for (const e of store.proposed.epics) {
+    if (!e.title?.trim()) return true
+    for (const t of e.children) if (!t.title?.trim()) return true
+  }
+  return false
+})
+
 async function onGenerate(): Promise<void> {
   await store.generate(props.id)
   if (store.error) {
@@ -105,7 +120,48 @@ async function onGenerate(): Promise<void> {
   }
 }
 
+function confirmRemoveEpic(epicIdx: number): void {
+  const epic = store.proposed?.epics[epicIdx]
+  if (!epic) return
+  const taskNote = epic.children.length > 0 ? ` et ses ${epic.children.length} tâche(s)` : ''
+  confirm.require({
+    message: `Supprimer l'epic « ${epic.title || 'sans titre'} »${taskNote} ? Cette action est irréversible.`,
+    header: 'Confirmer la suppression',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    acceptClass: 'p-button-danger',
+    accept: () => store.removeEpic(epicIdx),
+  })
+}
+
+function confirmRemoveTask(epicIdx: number, taskIdx: number): void {
+  const task = store.proposed?.epics[epicIdx]?.children[taskIdx]
+  if (!task) return
+  confirm.require({
+    message: `Supprimer la tâche « ${task.title || 'sans titre'} » ?`,
+    header: 'Confirmer la suppression',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    acceptClass: 'p-button-danger',
+    accept: () => store.removeTask(epicIdx, taskIdx),
+  })
+}
+
 async function onAccept(): Promise<void> {
+  // Confirm — accepting is irreversible (creates real DB rows; the proposal is discarded)
+  const totalTasksCount = totalTasks.value
+  const proceed = await new Promise<boolean>((resolve) => {
+    confirm.require({
+      message: `Créer ${totalTasksCount} tâche(s) dans le projet ? Le backlog proposé sera enregistré et ne pourra plus être modifié ici.`,
+      header: 'Accepter le backlog',
+      acceptLabel: 'Créer les tâches',
+      rejectLabel: 'Annuler',
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+    })
+  })
+  if (!proceed) return
+
   accepting.value = true
   try {
     const result = await store.accept(props.id)
@@ -163,4 +219,12 @@ onMounted(() => {
 }
 .bg__totals { display: flex; gap: 1.5rem; font-size: 0.875rem; color: var(--nl-text-muted, #6b7280); }
 .bg__totals strong { color: var(--nl-text, #111827); }
+.bg__warn {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--nl-warn, #d97706);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
 </style>

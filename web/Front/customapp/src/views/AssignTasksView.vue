@@ -85,12 +85,10 @@
       </div>
 
       <div v-if="!members.length" class="at__no-members">
-        <p>Aucun membre dans ce projet.</p>
+        <p>Aucun membre dans ce projet — ajoutez des membres pour pouvoir leur assigner des tâches.</p>
         <NeoButton
           label="Ajouter des membres"
           icon="pi pi-user-plus"
-          severity="secondary"
-          outlined
           @click="goToMembers"
         />
       </div>
@@ -100,7 +98,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
@@ -209,6 +207,24 @@ function goToMembers(): void {
 // the response into refs after unmount. Also clear any prior project's data on mount.
 let isMounted = true
 onBeforeUnmount(() => { isMounted = false })
+
+// Warn the user before they lose pending drag-and-drop assignments.
+onBeforeRouteLeave((_to, _from, next) => {
+  if (pendingChangeCount.value === 0) return next()
+  const ok = window.confirm(
+    `Vous avez ${pendingChangeCount.value} changement(s) non enregistré(s). Quitter cette page les annulera. Continuer ?`,
+  )
+  next(ok)
+})
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (e) => {
+    if (pendingChangeCount.value > 0) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+  })
+}
 
 onMounted(async () => {
   // Reset all state in case the component is reused across projects.

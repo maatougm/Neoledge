@@ -51,7 +51,6 @@ model AppUser {
   isActive            Boolean   @default(true)
   createdAt           DateTime  @default(now())
   lastLoginAt         DateTime?
-  mustChangePassword  Boolean   @default(false)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
   avatarPath          String?   @db.VarChar(500)
@@ -81,14 +80,12 @@ model AppUser {
   checkedItems     PhaseChecklist[]
 
   auditLogs    AuditLog[]
-  // Sprint 0+ back-relations (work packages, time, wiki, etc.)
+  // Sprint 0+ back-relations (work packages, time, etc.)
   wpAssignments      WorkPackage[]        @relation("WpAssignee")
   wpAuthored         WorkPackage[]        @relation("WpAuthor")
   wpWatches          WorkPackageWatcher[] @relation("WpWatchers")
   ganttBaselines     GanttBaseline[]      @relation("GanttBaselineCreator")
   timeEntries        TimeEntry[]          @relation("TimeEntryUser")
-  wikiPages          WikiPage[]           @relation("WikiPageAuthor")
-  wikiRevisions      WikiRevision[]       @relation("WikiRevisionAuthor")
   agendaItems        MeetingAgendaItem[]  @relation("AgendaResponsible")
   meetingAttendances MeetingAttendee[]    @relation("MeetingAttendeeUser")
   meetingOutcomes    MeetingOutcome[]     @relation("OutcomeOwner")
@@ -178,7 +175,6 @@ model Project {
   deletedAt                DateTime?
   deletedByUserId          String?
   tags                     String?  @db.VarChar(500)
-  budget                   Decimal?
   currentPhaseEnteredAt    DateTime?
 
   // Relations
@@ -204,7 +200,6 @@ model Project {
   timeEntries    TimeEntry[]
   milestones     Milestone[]
   ganttBaselines GanttBaseline[]
-  wikiPages       WikiPage[]
   roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   cahierFeedback  CahierFeedback[]
   projectMembers  ProjectMember[]  @relation("ProjectMembers")
@@ -830,50 +825,6 @@ model TimeEntry {
   @@index([workPackageId])
   @@map("TimeEntries")
 }
-
-model WikiPage {
-  id        String   @id @default(uuid())
-  projectId String
-  title     String   @db.VarChar(255)
-  slug      String   @db.VarChar(255)
-  content   String   @db.Text
-  authorId  String
-  parentId  String?
-  version   Int      @default(1)
-  isDeleted Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author    AppUser        @relation("WikiPageAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  parent    WikiPage?      @relation("WikiHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children  WikiPage[]     @relation("WikiHierarchy")
-  revisions WikiRevision[]
-
-  @@unique([projectId, slug])
-  @@index([parentId])
-  @@index([projectId, title])
-  @@map("WikiPages")
-}
-
-model WikiRevision {
-  id         String   @id @default(uuid())
-  wikiPageId String
-  version    Int
-  title      String   @db.VarChar(255)
-  content    String   @db.Text
-  authorId   String
-  comment    String?  @db.VarChar(500)
-  createdAt  DateTime @default(now())
-
-  wikiPage WikiPage @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
-  author   AppUser  @relation("WikiRevisionAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([wikiPageId, version])
-  @@index([wikiPageId])
-  @@map("WikiRevisions")
-}
-
 
 model MeetingAgendaItem {
   id            String   @id @default(uuid())

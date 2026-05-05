@@ -2,473 +2,193 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project overview
 
-**NeoLeadge Deployment Manager** — a full-stack project management platform for deployment projects. Administrators manage users, projects, field data, and meetings.
+**NeoLeadge** is a full-stack project-management platform for IT deployment projects. The product centres on an AI-driven workflow:
 
-**Active stack:**
-- `web/back-nest/` — **NestJS (TypeScript) — ACTIVE backend** — port 5122
-- `web/Front/customapp/` — Vue 3 + Vite + NeoLibrary SPA (TypeScript) — port 5173
-- `web/Transcription/` — Python FastAPI transcription service — port 8000
+```
+Admin creates project + assigns PM
+  → PM picks team via ProjectMember (with custom labels)
+  → PM fills questionnaire (ProjectField + ProjectFieldValue)
+  → PM uploads meetings (transcribed + AI-analysed)
+  → AI generates Cahier des Charges (saved as JSON in Project.aiOutput)
+  → SpecificationTeam approves/rejects (CahierFeedback)
+  → PM generates AI backlog (Epics + Tasks)
+  → PM drag-drops tasks onto team members → bulk-assign
+  → Team executes via Work Packages, Kanban, Gantt, Sprints
+```
 
-**Legacy (standby, not in active development):**
-- `web/Back/` — ASP.NET Core 8 Web API (C#) — kept for reference, not running
+**Stack:**
+- `web/back-nest/` — NestJS 11 (TypeScript) + Prisma 7 + PostgreSQL — port 5122
+- `web/Front/customapp/` — Vue 3 + Vite + Pinia + NeoLibrary (PrimeVue 4) — port 5173 (dev) / 8002 (prod via nginx)
+- `web/Transcription/` — Python FastAPI + faster-whisper + SpeechBrain — port 8000
+- Real-time: Socket.IO on `/notifications` and `/collaboration` namespaces
+- Deployment: Docker Compose + Caddy + Let's Encrypt at `https://neoleadge.pythagore-init.com`
+- Legacy `web/Back/` (.NET / SQL Server) kept for reference, not in active development
+
+**Authoritative DB reference:** `docs/DATABASE_SCHEMA.md` (44 models, ER diagrams, cascade rules, JSON columns).
 
 ---
 
-## Backend — NestJS (`web/back-nest/`)
+## Common commands
 
-### Run
+### Backend (`web/back-nest/`)
 
 ```bash
-cd web/back-nest
 npm install
-npm run start:dev   # Watch mode on http://localhost:5122
-npm run build       # Production build
+npm run start:dev         # watch mode → http://localhost:5122
+npm run build             # production build
+npx tsc --noEmit          # type-check only
+npx prisma generate       # regenerate client after schema.prisma edit
+npx prisma migrate dev    # create a new tracked migration in dev
+npx prisma migrate deploy # apply pending migrations (used in prod entrypoint)
 ```
 
-### Environment variables (`.env`)
+### Frontend (`web/Front/customapp/`)
 
+```bash
+npm install
+npm run dev               # http://localhost:5173
+npm run build             # → dist/
+npm run lint
+npx vue-tsc --noEmit      # type-check only
+```
+
+### Tests (Playwright E2E in `scripts/`)
+
+```bash
+node scripts/e2e-multi-role-bug-hunt.mjs    # full multi-role workflow test against the live test server
+node scripts/e2e-pm-deep-verify.mjs         # interactive component test (members modal, drag-drop, ...)
+node scripts/e2e-pm-tabs-screenshot.mjs     # PM tab visibility check
+```
+
+The scripts use the Playwright already installed under `web/Front/customapp/node_modules/playwright`. They target the live test server `https://neoleadge.pythagore-init.com` and capture screenshots to `scripts/e2e-*-shots/`.
+
+### Deploy to test server
+
+```bash
+ssh -i ~/.ssh/id_ed25519 root@187.77.70.67 \
+  'cd /root/neoleadge && git fetch origin nest-back && git reset --hard origin/nest-back \
+   && cd /root/neoleadge/deploy/neoleadge \
+   && docker compose -f docker-compose.prod.yml --env-file .env.prod build server web'
+```
+
+Then on the server: kill the running container PIDs (`kill -9 <pid>`), `docker rm -f`, then `docker compose ... up -d server web`. AppArmor blocks `docker stop` so the kill-then-rm pattern is required. `prisma migrate deploy` runs in the container entrypoint — no manual step needed.
+
+### Environment variables
+
+Backend `.env`:
 ```env
-DATABASE_URL=mysql://root:@127.0.0.1:3306/NeoLeadgeDeployment
-JWT_SECRET=your-secret
-JWT_EXPIRES_IN=7d
+DATABASE_URL=postgresql://neoleadge:<password>@localhost:5432/neoleadge
+JWT_SECRET=<32+ chars>
+JWT_EXPIRES_IN=8h
 TRANSCRIPTION_URL=http://localhost:8000
-AI_ENABLED=true
+TRANSCRIPTION_SECRET=<shared secret for the FastAPI service>
 AI_PROVIDER=openai          # openai | gemini
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
+CAHIER_AI_MODEL=gpt-4o-mini
+CORS_ORIGINS=http://localhost:5173,https://neoleadge.pythagore-init.com
 ```
+
+`AI_FALLBACK_API_KEY` (Z.AI) is optional — used as a fallback for transcription and cahier when the primary provider fails.
+
+---
+
+## Architecture
+
+### Backend patterns
+
+**Result pattern (mandatory).** All service methods return `Result.ok(data)` or `Result.fail(message)` from `src/common/result.ts`. Controllers map `Result` to HTTP exceptions (`BadRequestException`, `ConflictException`, `NotFoundException`). Never throw from a service — return a Result.
+
+**DTOs are classes, never interfaces.** When used with `@Body()`, NestJS's `ValidationPipe` (whitelist:true) reads class metadata via reflect-metadata. `import type` or `interface` declarations erase at runtime, so all fields are stripped silently. Always `class CreateXDto { @IsString() field!: string }` and import normally.
+
+**Module registration.** Every module is registered in `src/app.module.ts` `imports`. `PrismaModule` is `@Global()` — never re-import it.
+
+**Auth guard stack.**
+- `JwtAuthGuard` — verifies the JWT; pinned to HS256 in both signing (`auth.module.ts`) and verification (`jwt.strategy.ts`) for defence-in-depth.
+- `ProjectAccessGuard` + `@ProjectAccess('paramName')` — applied to every project-scoped controller. **For non-Admin users it does NOT accept global `UserRoleAssignment` (projectId=null) as proof of access** — they must have a project-scoped assignment, be the project's PM, or be in `ProjectMember`. This closes the IDOR where any user with a leaked global role could read every project.
+- `PermissionsGuard` + `@RequirePermission('wp.create')` — fine-grained permission keys catalogued in `src/permissions/permission-keys.ts`.
+
+**Notification scoping.** `NotificationsService.notify()` and `notifyEnhanced()` both verify the target user is a project member (PM, scoped UserRoleAssignment, or `ProjectMember`) before persisting. This prevents cross-project notification spam.
+
+**Real-time gateways.** Socket.IO on `/notifications` (per-user inbox push) and `/collaboration` (presence + field-focus during questionnaire editing). Both authenticate via `client.handshake.auth.token`. The collaboration presence Map is in-process — incompatible with multi-instance scaling (PM2 cluster, etc.).
 
 ### Database
 
-- **MySQL via XAMPP** on port 3306, database `NeoLeadgeDeployment`
-- **Prisma 7** with `@prisma/adapter-mariadb` — async factory pattern in `PrismaModule`
-- **`PrismaModule` is `@Global()`** — `PrismaService` is available in every module without importing `PrismaModule`
-- **NEVER run `prisma db push`** — it always fails due to FK index drift. All schema changes must be applied via raw SQL:
-  ```bash
-  C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 NeoLeadgeDeployment -e "SQL"
-  ```
-- After editing `schema.prisma`, regenerate the client:
-  ```bash
-  cd web/back-nest && npx prisma generate
-  ```
+**Engine:** PostgreSQL 16, Prisma 7. Production runs via `@prisma/adapter-pg` in the Docker stack.
 
-### Architecture
+**Migrations.** All schema changes use tracked Prisma migrations under `prisma/migrations/<timestamp>_<name>/migration.sql`. `npx prisma migrate deploy` runs in the prod container entrypoint. The legacy raw `.sql` files at `prisma/migration-*.sql` (with `mysql-legacy` suffix or sprint names) are historical artefacts from the MySQL era — do not apply them; they're kept only for traceability.
 
-- **Result pattern** — all service methods return `Result.ok(data)` / `Result.fail(message)` from `src/common/result.ts`
-- **JWT auth guard** — `JwtAuthGuard` from `src/common/guards/jwt-auth.guard.ts`; applied at controller level with `@UseGuards(JwtAuthGuard)`
-- **Socket.IO** — real-time notifications on `/notifications` namespace, collaboration on `/collaboration` namespace; both use JWT from `client.handshake.auth.token`
-- **Module registration** — all modules registered in `src/app.module.ts`
+**Soft-delete.** Opt-in per table via `isDeleted Boolean`. Active on: `Project`, `WorkPackage`, `ProjectComment`, `WorkPackageComment`, `ProjectAttachment`, `WorkPackageAttachment`. There's no global Prisma middleware — every read on a soft-deletable model must include `isDeleted: false` in its `where` clause explicitly.
 
-### Modules
+**Cascade policy.** See `docs/DATABASE_SCHEMA.md §16` for the full table. Briefly: `CASCADE` for hard children (transcript segments, dependencies, custom values, notifications), `SetNull` for history rows that should survive (`CahierFeedback.user`, `Notification.actor`, `WorkPackage.assignee/parent`), `NoAction` for integrity-critical FKs (`Project.projectManager`, `WorkPackage.author`, `TimeEntry.user`).
 
-| Module | Path | Description |
-|--------|------|-------------|
-| `AuthModule` | `src/auth/` | JWT login, token refresh |
-| `UsersModule` | `src/users/` | User CRUD, roles |
-| `ProjectsModule` | `src/projects/` | Project CRUD, status, validations, field values |
-| `MeetingsModule` | `src/meetings/` | Audio transcription, transcript management |
-| `AiModule` | `src/ai/` | AI transcript analysis (OpenAI / Gemini) |
-| `AnalyticsModule` | `src/analytics/` | Dashboard metrics with 15-min cache |
-| `AutomationModule` | `src/automation/` | Workflow rule engine, event triggers |
-| `CollaborationModule` | `src/collaboration/` | Real-time WebSocket collaboration |
-| `NotificationsModule` | `src/notifications/` | Real-time notification delivery (+ reason/entityType since v2.0) |
-| `PrismaModule` | `src/prisma/` | Global DB client (MariaDB adapter) |
-| `WorkPackagesModule` | `src/work-packages/` | Issues / tasks / features with hierarchy, watchers, dependencies, custom fields |
-| `GanttModule` | `src/gantt/` | Gantt timeline payload, milestones, baselines |
-| `AgileModule` | `src/agile/` | Boards, columns, sprints, burndown, card moves |
-| `TimeTrackingModule` | `src/time-tracking/` | Time entries, weekly timesheet, hourly rates |
-| `BudgetingModule` | `src/budgeting/` | Project budget, line items, burn report |
-| `WikiModule` | `src/wiki/` | Per-project wiki pages with revision history |
-| `PortfolioModule` | `src/portfolio/` | Portfolios grouping projects + per-project versions |
-| `TeamPlannerModule` | `src/team-planner/` | Capacity / assignments / conflicts |
+**JSON columns.** `Project.aiOutput` (the saved cahier), `AppUser.preferences`, `AutomationRule.actionConfig`. All `JSON.parse` on these columns must be in a try/catch — corrupt rows must not crash the endpoint.
 
-### API Routes
+### AI integration
 
-**Auth**
-- `POST /auth/login` — email + password → JWT
+The `src/ai/` module has two distinct features that share providers:
 
-**Users** (Admin only)
-- `GET /admin/users` — list users
-- `POST /admin/users` — create user
-- `PUT /admin/users/:id` — update user
-- `DELETE /admin/users/:id` — deactivate
-- `POST /admin/users/:id/reset-password`
+1. **Meeting transcript analysis** — `AiService.analyzeTranscript(transcriptId)` is fire-and-forget after meeting upload. Sets `aiStatus = 'processing'` (concurrency guard), builds the prompt from `TranscriptSegment` rows, calls the provider (OpenAI / Gemini), persists `MeetingActionItem` + `MeetingDecision` rows in a transaction, sets `aiStatus = 'completed'`. Frontend polls `/ai-results` every 5s until terminal state.
 
-**Projects**
-- `GET /admin/projects` — list (Admin)
-- `GET /pm/projects` — my projects (PM)
-- `GET /pm/team-projects` — team projects
-- `GET /pm/projects/:id` — project detail + validations
-- `POST /admin/projects` — create (Admin)
-- `PATCH /pm/projects/:id/field-values` — save questionnaire
-- `POST /pm/projects/:id/fields` — add custom field
-- `POST /pm/projects/:id/validations` — submit validation. Body: `{ isApproved: boolean, comment?: string }`. Comment is **required when `isApproved === false`** (rejection must be motivated). The `@@unique([projectId, validatedByUserId, phase])` constraint is enforced at the service layer (400 "déjà soumis").
+2. **AI Backlog generator** — `BacklogService.preview(projectId)` reads questionnaire answers (only fields with `isBacklogDriver = true`), the saved cahier (`Project.aiOutput`), and recent meeting summaries; returns a sanitized `{ epics: [{ title, priority, estimatedHours, children: [task...] }] }` JSON without writing to DB. PM edits in the UI; `accept()` writes `WorkPackage` rows in a transaction with `aiGeneratedFrom` set for traceability. Has an in-memory 30s cooldown per project to prevent burning API calls.
 
-**Meetings**
-- `POST /pm/projects/:id/meetings/upload` — upload audio for transcription
-- `GET /pm/projects/:id/meetings` — list meetings
-- `GET /pm/projects/:id/meetings/:meetingId` — transcript detail
-- `DELETE /pm/projects/:id/meetings/:meetingId`
-- `PATCH /pm/projects/:id/meetings/:meetingId/rename-speaker`
-- `POST /pm/projects/:id/meetings/:meetingId/ai-analyze` — trigger AI analysis
-- `GET /pm/projects/:id/meetings/:meetingId/ai-results` — poll AI results
+**Cahier des charges generation** lives in `src/cahier-des-charges/`. Pulls questionnaire + meetings + past `CahierFeedback` rejections into a TOON-formatted prompt (~50% smaller than verbose key:value), produces a 9-key JSON, persists into `Project.aiOutput` with a `savedAt` timestamp. Re-saving resets the review queue (any `CahierFeedback` older than `savedAt` is ignored). PM **cannot** self-approve — `saveFeedback()` rejects when `userId === project.projectManagerId` (400).
 
-**Analytics** (Admin only)
-- `GET /api/analytics/phase-velocity`
-- `GET /api/analytics/bottleneck`
-- `GET /api/analytics/deadline-risk`
-- `GET /api/analytics/team-workload`
+**Provider fallback.** Z.AI configured via `AI_FALLBACK_API_KEY` is used when the primary provider fails (network, 5xx). All AI fetch calls have explicit `AbortSignal.timeout()`. Fire-and-forget invocations chain `.catch((e) => logger.error(...))` to prevent unhandled rejections.
 
-**Automation** (Admin or project manager)
-- `GET /pm/projects/:id/automation/rules`
-- `POST /pm/projects/:id/automation/rules`
-- `PATCH /pm/projects/:id/automation/rules/:ruleId`
-- `DELETE /pm/projects/:id/automation/rules/:ruleId`
-- `PATCH /pm/projects/:id/automation/rules/:ruleId/toggle`
-- `GET /pm/projects/:id/automation/logs`
+### Frontend patterns
 
-**Work Packages** (PM / Admin)
-- `GET /pm/projects/:id/work-packages` — list (filters: status, type, priority, assigneeId, sprintId, versionId, parentId, q, page, limit)
-- `GET /pm/projects/:id/work-packages/:wpId` — detail with watchers, deps, custom values
-- `POST /pm/projects/:id/work-packages` — create
-- `PATCH /pm/projects/:id/work-packages/:wpId` — update (triggers notification on assignee/status change)
-- `DELETE /pm/projects/:id/work-packages/:wpId` — soft-delete
-- `PATCH /pm/projects/:id/work-packages/:wpId/move` — reposition (sprint/column/parent)
-- `POST /pm/projects/:id/work-packages/:wpId/watchers` — add watcher
-- `DELETE /pm/projects/:id/work-packages/:wpId/watchers/:userId`
-- `POST /pm/projects/:id/work-packages/:wpId/dependencies` — add dep `{ toWpId, type }`
-- `DELETE /pm/projects/:id/work-packages/:wpId/dependencies/:depId`
-- `GET/POST/DELETE /pm/projects/:id/wp-custom-fields[/:fieldId]` — custom-field CRUD
-- `PUT /pm/projects/:id/work-packages/:wpId/custom-values` — bulk upsert `{ values: [{ customFieldId, value }] }`
+**NeoLibrary constraints (will silently break in prod if violated):**
 
-**Gantt + Milestones + Baselines**
-- `GET /pm/projects/:id/gantt` — full payload (WPs with dates + milestones + dependencies)
-- `GET/POST/PATCH/DELETE /pm/projects/:id/milestones[/:msId]`
-- `POST /pm/projects/:id/milestones/:msId/reach`
-- `GET/POST /pm/projects/:id/baselines` — list + capture
-- `GET /pm/projects/:id/baselines/:snapshotName/compare` — drift report
-- `DELETE /pm/projects/:id/baselines/:snapshotName`
+| Component | Constraint |
+|---|---|
+| `NeoButton` | `severity="primary"` does NOT exist — omit severity for default teal. Allowed: `secondary` / `danger` / `warning` |
+| `NeoTag` | severity union uses `warn` (not `warning`!) — Vue tsc catches this in dev but Docker build is stricter |
+| `useNeoToast()` | Only `.add({ severity, summary?, detail, life? })` — there is NO `.success()` / `.error()` shortcut |
+| `useNeoConfirm().require()` | Returns void — pass an `accept` callback, do NOT `await` it |
+| `NeoDatePicker` | v-model is `string \| string[] \| null` — never bind to a `Date` object |
+| `NeoDialog` | Deprecated — use `AppModal` from `@/components/common/AppModal.vue` (Teleport-based) |
+| All NeoLibrary components | MUST be explicitly imported (`import { NeoButton } from '@neolibrary/components'`) — there is no auto-registration. Missing imports render as empty `<neobutton>` tags silently. |
 
-**Agile (Boards / Sprints / Burndown)**
-- `GET/POST /pm/projects/:id/boards` — auto-creates Kanban with 4 columns if none
-- `GET /pm/projects/:id/boards/:boardId` — board + columns + cards
-- `POST/PATCH/DELETE /pm/projects/:id/boards/:boardId/columns[/:colId]`
-- `PATCH /pm/projects/:id/boards/:boardId/cards/:wpId/move` — kanban drag-drop
-- `GET/POST /pm/projects/:id/boards/:boardId/sprints`
-- `PATCH/DELETE /pm/projects/:id/sprints/:sprintId`
-- `POST /pm/projects/:id/sprints/:sprintId/{start,close}`
-- `POST /pm/projects/:id/sprints/:sprintId/work-packages` — bulk add
-- `GET /pm/projects/:id/sprints/:sprintId/burndown` — ideal vs remaining hours
+**Axios error handling.** `lib/api.ts` interceptor auto-toasts only on 5xx. 4xx responses (validation errors, conflicts, not-found) are expected business responses and the calling component is responsible for displaying them. Components that want a generic 4xx toast use `extractErrorMessage(err)` exported from the same file.
 
-**Time Tracking + Hourly Rates**
-- `GET/POST/PATCH/DELETE /api/time-entries[/:id]` — my entries (self-scoped)
-- `GET /api/time-entries/week?weekStart=YYYY-MM-DD`
-- `POST /api/time-entries/lock` — Admin lock period
-- `GET /pm/projects/:id/time-entries[/summary]` — per-project
-- `GET/POST/PATCH/DELETE /admin/hourly-rates[/:id]` — Admin only
+**Pinia store reset on route change.** Per-project stores (`projectMembersStore`, `pmStore`, etc.) must be reset when the user navigates between projects, otherwise the new project briefly renders the old project's data. Each `MembersView`-style component calls `store.reset()` as the first line of `onMounted`.
 
-**Budgeting**
-- `GET /pm/projects/:id/budget` — budget + line items
-- `PUT /pm/projects/:id/budget` — upsert
-- `POST/PATCH/DELETE /pm/projects/:id/budget/line-items[/:id]`
-- `GET /pm/projects/:id/budget/burn` — spent vs remaining report
-- `GET /admin/budgets/overview` — Admin cross-project
+**Sidebar nav transitions.** `AppShell.vue` switches between role-based nav and per-project nav when entering `/app/pm/projects/:id/*`. The switch happens in `router.afterEach`, NOT in a computed — mutating `navSections` during navigation crashes `RouterView` mid-reconciliation. Per-project navs are LRU-cached in a `Map` (max 50 entries) keyed by `role:projectId`.
 
-**Wiki**
-- `GET /pm/projects/:id/wiki` — page tree
-- `GET /pm/projects/:id/wiki/search?q=`
-- `GET/POST/PATCH/DELETE /pm/projects/:id/wiki/pages[/:slug]`
-- `PATCH /pm/projects/:id/wiki/pages/:slug/move` — reparent
-- `GET /pm/projects/:id/wiki/pages/:slug/revisions[/:version]`
-- `POST /pm/projects/:id/wiki/pages/:slug/restore/:version`
+**Drag-and-drop assignment** uses native HTML5 events (`dragstart`/`dragover`/`drop`/`dragend`). The `dragend` reset is mandatory — without it `draggingWpId` leaks if the drop is cancelled (Esc, drop outside columns) and the next legitimate drop assigns the wrong WP.
 
-**Portfolio + Versions** (Admin / PM)
-- `GET/POST /admin/portfolios` — Admin only
-- `GET/PATCH/DELETE /admin/portfolios/:id`
-- `POST /admin/portfolios/:id/projects` — attach project
-- `PATCH /admin/portfolios/:id/projects/reorder`
-- `DELETE /admin/portfolios/:id/projects/:projectId`
-- `GET /admin/portfolios/:id/roadmap` — projects + versions + milestones on timeline
-- `GET/POST/PATCH/DELETE /pm/projects/:id/versions[/:versionId]`
-- `POST /pm/projects/:id/versions/:versionId/{lock,close}`
-- `GET /pm/projects/:id/versions/:versionId/progress`
+### Removed features (don't reintroduce by accident)
 
-**Team Planner** (PM / Admin)
-- `GET /pm/team-planner?from&to&userIds[]&projectIds[]` — assignments per user
-- `GET /pm/team-planner/capacity?from&to` — heatmap (allocated vs capacity)
-- `GET /pm/team-planner/conflicts?from&to` — overlapping assignments
-- `PATCH /pm/team-planner/work-packages/:wpId/reassign`
-- `GET /admin/team-planner/utilization` — Admin only
+The following modules + schema models were deliberately removed and should not come back:
 
-**Meeting enhancements**
-- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/agenda[/:itemId]`
-- `PATCH /pm/projects/:id/meetings/:mId/agenda/reorder`
-- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/attendees[/:attendeeId]`
-- `POST /pm/projects/:id/meetings/:mId/attendees/bulk-mark` — set present/absent
-- `GET/POST/PATCH/DELETE /pm/projects/:id/meetings/:mId/outcomes[/:outcomeId]`
-- `POST /pm/projects/:id/meetings/:mId/outcomes/:outcomeId/convert-to-wp` — turn an outcome into a Work Package
+- **Budgeting** (`ProjectBudget`, `BudgetLineItem`) — module deleted, tables dropped via migration `20260504020000`.
+- **Hourly rates** (`HourlyRate`) — only consumed by the deleted budget module; controller, service methods, DTOs, model all gone.
+- **Wiki** (`WikiPage`, `WikiRevision`) — module deleted, tables dropped via migration `20260504030000`. `entityType` union no longer includes `'wiki_page'`. Search service no longer indexes wiki content.
+- **Handovers + RACI** (`Handover`, `HandoverCriterion`, `ActivityRaci`) — never had controllers; tables dropped along with the orphan-table migration.
+- **Auto-login in dev** — `router/index.ts` previously auto-logged-in admin in `import.meta.env.DEV`; removed because the credentials would leak if DEV was ever true in a prod build.
 
-### Prisma Schema — Key Models
+### Active per-project routes
 
-```
-AppUser         — users with roles (Admin | ProjectManager | SpecificationTeam | RealizationTeam | DeploymentTeam | Viewer)
-Project         — projects with status, priority, budget, soft-delete
-ProjectField    — dynamic/static/custom field definitions per project
-ProjectFieldValue — field values (updatedAt, updatedBy added for collaboration tracking)
-ProjectValidation — per-phase approval records @@unique([projectId, validatedByUserId, phase])
-MeetingTranscript — transcription records with AI fields (aiStatus, aiSummary, aiModel, aiError, aiProcessedAt)
-TranscriptSegment — speaker-diarized segments
-MeetingActionItem — AI-extracted action items per transcript
-MeetingDecision   — AI-extracted decisions/risks per transcript
-AutomationRule    — workflow rules (triggerEvent, actionType, actionConfig JSON, isActive)
-AutomationLog     — execution history per rule
-AnalyticsCache    — 15-min TTL cache for analytics queries (cacheKey, data JSON)
-Notification      — per-user notifications with reason/entityType/entityId/actorId/link (v2.0)
-PhaseChecklist    — per-phase checklist items
-AuditLog          — entity change audit trail
+Under `/app/pm/projects/:id/*`:
+- `` (overview), `/questionnaire`, `/meetings`, `/cahier`, `/validations`
+- `/workpackages`, `/gantt`, `/board`, `/backlogs`, `/sprint`
+- `/backlog-generator`, `/assign-tasks` (the AI backlog flow)
+- `/members`, `/time`, `/activity`
 
-— v2.0 models (OpenProject parity) —
-Board + BoardColumn + Sprint — kanban & scrum boards, auto-seeded with 4 columns
-Version            — per-project release versions (Open/Locked/Closed)
-WorkPackage        — issues/tasks/features (type, status, priority, parent, sprint, version, column)
-WorkPackageDependency — blocks / follows / relates relationships
-WorkPackageWatcher    — subscribe users to WP change notifications
-WorkPackageCustomField + WorkPackageCustomValue — per-project custom attributes
-Milestone          — project-level milestones with isReached + color
-GanttBaseline      — dated snapshots of WP dates for drift comparison
-TimeEntry + HourlyRate — timesheet entries + role/project-scoped rates
-ProjectBudget + BudgetLineItem — labor + material budgets + line items
-WikiPage + WikiRevision — per-project wiki with revision history
-Portfolio + PortfolioProject — group projects into portfolios for roadmap view
-MeetingAgendaItem + MeetingAttendee + MeetingOutcome — meeting prep & outputs
-```
-
-### AI Module (`src/ai/`)
-
-- `AiService.analyzeTranscript(transcriptId)`:
-  1. Sets `aiStatus = 'processing'`
-  2. Builds transcript text from segments
-  3. Calls provider (OpenAI or Gemini based on `AI_PROVIDER` env var)
-  4. Persists `actionItems` + `decisions` in a transaction
-  5. Sets `aiStatus = 'completed'` or `'failed'`
-- Both providers have `AbortSignal.timeout(60_000)` on fetch calls
-- Fire-and-forget calls use `.catch((e) => logger.error(...))` to prevent unhandled rejections
-
-### Automation Module (`src/automation/`)
-
-- `executeRulesForEvent(projectId, event, context)` triggered by `ProjectsService` after:
-  - Status changes → `status_changed`
-  - Validation submissions → `validation_submitted`
-- Supported actions: `send_notification` (creates Notification row), `update_field` (upserts ProjectFieldValue)
-- Condition evaluation: `equals`, `not_equals`, `contains` operators
-
-### Collaboration Module (`src/collaboration/`)
-
-- WebSocket gateway on `/collaboration` namespace
-- Auth: reads `client.handshake.auth.token`, verifies with `JwtService` — same pattern as `NotificationsGateway`
-- Events: `join-project`, `leave-project`, `field-update`, `field-focus`, `field-blur`
-- In-process presence Map (single-instance — not distributed)
-
-### Adding a new service
-
-1. Create `src/<module>/<module>.service.ts` — inject `PrismaService`, return `Result.ok()` / `Result.fail()`
-2. Create `src/<module>/<module>.controller.ts` — `@UseGuards(JwtAuthGuard)`, map results to HTTP responses
-3. Create `src/<module>/<module>.module.ts` — declare providers/controllers, export service if needed
-4. Add to `imports` in `src/app.module.ts`
+Templates ("Modèles" / form-model) live under PM at `/app/pm/templates`, not admin.
 
 ---
 
-## Transcription Service — Python (`web/Transcription/`)
+## Critical gotchas
 
-```bash
-cd web/Transcription
-pip install -r requirements.txt
-uvicorn app:app --port 8000
-```
-
-- `POST /transcribe` — accepts `multipart/form-data` with `audio` file
-- Uses `faster-whisper large-v3` for speech-to-text
-- Uses `speechbrain ECAPA` for speaker diarization
-- Returns: `{ segments: [{speaker, text, start_time, end_time, language, confidence}], duration_seconds, detected_languages }`
-
----
-
-## Frontend — Vue 3 (`web/Front/customapp/`)
-
-```bash
-cd web/Front/customapp
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # dist/
-npm run lint
-```
-
-### NeoLibrary Component API — Critical Constraints
-
-| Component | Key Props / Notes |
-|-----------|-------------------|
-| `NeoButton` | `label`, `icon`, `loading`, `disabled`, `outlined`, `text`, `size`. **No `severity="primary"`** — omit `severity` for default teal. Use `severity="secondary"` / `"danger"` / `"warning"` only |
-| `NeoInputText` | `v-model`, `label`, `placeholder`, `disabled` |
-| `NeoSelect` | `v-model`, `options`, `optionLabel`, `optionValue`, `placeholder`, `disabled` |
-| `NeoDatePicker` | `v-model` is `string \| string[] \| null` — **never** bind to a `Date` object |
-| `NeoTag` | `value`, `severity` (`"success" \| "info" \| "warning" \| "danger" \| "secondary" \| "contrast"`) |
-| `NeoMessage` | `severity`, `text` |
-| `NeoToast` | Placed once in layout. Use `useNeoToast()` composable |
-| `NeoDialog` | `v-model:visible`, `header`, `modal`, `style` |
-| `NeoCard` | Standard card wrapper |
-
-**`useNeoToast()`** — only `.add({ severity, summary?, detail, life? })`. **No `.success()` / `.error()` shortcuts.**
-
-**`useNeoConfirm().require(options)`** — returns `void`. Use `accept` callback; do not `await` it.
-
-### Stores (`src/stores/`)
-
-| Store | Purpose |
-|-------|---------|
-| `authStore.ts` | JWT, current user, login/logout |
-| `configStore.ts` | App config from `public/config.json` |
-| `projectStore.ts` | Admin project CRUD |
-| `userStore.ts` | Admin user CRUD |
-| `pmStore.ts` | PM module — projects, meetings, transcripts, AI polling, automation rules/logs |
-| `analyticsStore.ts` | Analytics dashboard — 4 metrics, `fetchAll()` runs in parallel |
-| `notificationStore.ts` | Per-user notifications |
-| `commentStore.ts` | Project comments |
-| `templateStore.ts` | Project templates |
-| `uiStore.ts` | UI state (sidebar, dark mode) |
-| `workPackageStore.ts` | Work Packages CRUD, watchers, dependencies, custom fields |
-| `agileStore.ts` | Boards, sprints, card moves, burndown |
-| `ganttStore.ts` | Gantt payload, milestones, baselines |
-| `timeStore.ts` | Time entries, weekly grid, project summary |
-| `budgetStore.ts` | Project budget + line items + burn report |
-| `wikiStore.ts` | Wiki tree + pages + revisions |
-| `portfolioStore.ts` | Portfolios + versions |
-| `teamPlannerStore.ts` | Assignments, capacity, conflicts |
-| `meetingExtrasStore.ts` | Agenda items + attendees + outcomes (convert-to-WP) |
-
-### Composables (`src/composables/`)
-
-- `useNotificationSocket.ts` — singleton Socket.IO on `/notifications`
-- `useCollaborationSocket.ts` — singleton Socket.IO on `/collaboration`; exposes `joinProject`, `leaveProject`, `sendFieldUpdate`, `sendFieldFocus`, `sendFieldBlur`, reactive `presenceList` and `remoteFieldChange`
-- `useProjectForm.ts` — reactive project form state and validation
-
-### Key Components
-
-**Admin:**
-- `components/admin/sections/AnalyticsSection.vue` — Chart.js dashboard (phase velocity, bottleneck, deadline risk, team workload)
-
-**PM module:**
-- `components/pm/QuestionnaireForm.vue` — field form with real-time collaboration (presence avatars, field focus indicators)
-- `components/pm/MeetingSection.vue` — meeting list, upload, recorder
-- `components/pm/MeetingAiPanel.vue` — AI results tabs (summary, action items, decisions); polls every 5s while processing
-- `components/pm/AutomationSection.vue` — rule builder dialog, rules list, execution logs
-- `components/pm/PMProjectDetail.vue` — tabbed project view (questionnaire, meetings, validations, activity, automation)
-
-**Common:**
-- `components/common/PresenceAvatars.vue` — colored avatar circles with initials, up to 5 + overflow
-
-**v2.0 Views (OpenProject parity):** — all under `/app/pm/projects/:id/*`, wrapped by `ProjectModuleShell` for breadcrumbs + header
-- `WorkPackagesView.vue` — split-panel WP list + detail (tabs: Détails, Relations, Observateurs), create dialog
-- `GanttView.vue` — timeline with zoom, milestones (clickable for CRUD), baseline capture
-- `KanbanBoardView.vue` — HTML5 drag-drop cards between columns
-- `BacklogView.vue` — unassigned WPs + active sprint with drag-drop assignment
-- `SprintBoardView.vue` — sprint selector, metadata, Chart.js burndown (ideal vs remaining)
-- `WikiView.vue` — tree + markdown view/edit + search + revisions
-- `BudgetView.vue` — summary cards + line items + edit modals
-- `TimeTrackingView.vue` — log time dialog + my entries + project summary (by user/activity)
-- `MembersView.vue` — project members table
-- `ProjectActivityView.vue` — activity timeline
-- `PMProjectDetailView.vue` — project overview tile grid (entry point)
-- `PortfolioView.vue` — `/app/admin/portfolio` — portfolio CRUD
-- `TeamPlannerView.vue` — `/app/admin/team-planner` — capacity heatmap, assignments, conflicts
-
-**v2.0 Shared components:**
-- `common/ProjectModuleShell.vue` — wraps every project module with breadcrumbs + page header
-- `common/ProjectBreadcrumbs.vue` — Home > Project > Module trail
-- `common/SplitPanel.vue` — 35/65 list+detail responsive split
-- `common/ModulePageHeader.vue` — title + status tag + action bar
-- `common/AppModal.vue` — Teleport-based modal (replacement for deprecated NeoDialog)
-- `common/PriorityDot.vue` — colored dot for WP priority
-- `common/WpStatusTag.vue` — severity-mapped NeoTag wrapper
-- `meetings/MeetingExtrasTabs.vue` — agenda/attendees/outcomes tabs in meeting detail
-
-**Shared utilities:**
-- `lib/formatDate.ts` — `formatDate`, `formatDateShort`, `formatDateTime`, `formatRelative`
-- `utils/phaseLabels.ts` — FR translation of ProjectStatus enum values
-
-### Router (`src/router/index.ts`)
-
-- `/login` — LoginView (public)
-- `/app/admin/*` — AdminLayout (requires Admin role) — includes `portfolio`, `team-planner`
-- `/app/pm/*` — PmLayout (requires ProjectManager or Admin) — includes project module routes:
-  - `/app/pm/projects/:id` — project overview
-  - `/app/pm/projects/:id/{workpackages,gantt,board,backlogs,sprint,wiki,wiki/:slug,budget,time,members,activity}`
-- `/app/team/*` — TeamLayout (requires team member role)
-
-### Contextual Sidebar
-
-`AppShell.vue` builds the sidebar nav from role, but **switches to a project-module nav** when `route.path` starts with `/app/pm/projects/:id`. The switch happens in `router.afterEach` (not a computed) to avoid RouterView reconciliation crashes during layout transitions. Per-project nav arrays are cached in a `Map` keyed by projectId so navigation between sub-routes of the same project doesn't re-render the sidebar.
-
----
-
-## Database Setup (first-time)
-
-1. Start XAMPP → MySQL on port 3306
-2. Create database: `C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 -e "CREATE DATABASE IF NOT EXISTS NeoLeadgeDeployment;"`
-3. Set `DATABASE_URL=mysql://root:@127.0.0.1:3306/NeoLeadgeDeployment` in `web/back-nest/.env`
-4. Push schema (only on fresh DB — use raw SQL for updates on existing DB):
-   ```bash
-   cd web/back-nest && npx prisma db push
-   ```
-5. Generate client: `npx prisma generate`
-
-### Seed demo data (OpenProject-parity tables)
-
-After migrations are applied and the core app data exists (projects, users, meetings), run:
-
-```bash
-cd web/back-nest
-npx tsx prisma/seed-openproject.ts    # 57 WPs, 15 sprints, 20 milestones, 120 time entries, 5 budgets, 13 wiki pages, 1 portfolio, 56 watchers, 16 dependencies
-npx tsx prisma/seed-notifications.ts  # 7 demo notifications for admin (mention, assignee, watcher, deadline)
-```
-
-The seeders are idempotent — safe to re-run. They scan existing `bbbbbbbb-*` seed projects and attach demo data to each.
-
-### Migration for new tables
-
-The 21 new tables added in v2.0 are defined in `prisma/migration-sprint0.sql`. Apply to an existing DB via:
-
-```bash
-C:/xampp/mysql/bin/mysql.exe -u root -h 127.0.0.1 -P 3306 NeoLeadgeDeployment < prisma/migration-sprint0.sql
-cd web/back-nest && npx prisma generate
-```
-
----
-
-## Known Issues & Constraints
-
-- **`prisma db push` fails on existing DB** — FK index drift causes errors. Use raw SQL via `mysql.exe` for all schema changes on an existing database.
-- **HTTPS disabled in dev** — Vite dev server runs HTTP only (`http://localhost:5173`).
-- **`NeoButton severity="primary"` does not exist** — omit `severity` for default teal style.
-- **`useNeoToast()` has no shorthand methods** — always use `.add({ severity, detail, life })`.
-- **`NeoDatePicker` v-model must be `string | null`** — never bind to a `Date` object.
-- **Axios multipart uploads** — never set `Content-Type: multipart/form-data` manually; axios sets it with the boundary automatically when `FormData` is passed.
-- **Collaboration presence is single-instance** — the in-process presence Map won't work correctly with multiple NestJS processes (PM2 cluster, etc.).
-- **DTOs must be classes, not interfaces, when used with `@Body()`** — `import type` erases the class at runtime, and NestJS's `ValidationPipe` with `whitelist: true` will strip all fields because the metatype resolves to `Object`. Always define DTOs as `class` with `class-validator` decorators and import normally (not `import type`).
-- **New nav changes must defer to `router.afterEach`** — changing `navSections` during navigation crashes `RouterView` mid-reconciliation. See `AppShell.vue` for the stable pattern.
-- **Admin routes on new modules use `@Roles('Admin')`** — apply `JwtAuthGuard + RolesGuard` stack for any `/admin/*` endpoint in new modules. See `portfolio.controller.ts`, `time-tracking.controller.ts` for examples.
-
----
-
-## Legacy — ASP.NET Core 8 (`web/Back/`)
-
-> **Status: STANDBY — not in active development. Kept for reference only.**
-
-The original .NET backend built for Elise CustomAction integration. Uses:
-- EF Core 8 + SQL Server
-- Autofac DI, Serilog, AutoMapper 14+, FluentValidation
-- Elise SOAP integration via `Integration.Elise.Web.Core` package
-- JWT issued after GUID validation with Elise SOAP service
-
-Do not run or modify this backend unless specifically working on Elise CustomAction integration. All new features are built on the NestJS backend.
+- **Never run `prisma db push`** — it doesn't reconcile FK index drift well. Use `prisma migrate dev` to create a tracked migration; `migrate deploy` applies it.
+- **DTOs as classes, not interfaces.** Always.
+- **Project-scoped routes need `ProjectAccessGuard` + `@ProjectAccess('paramName')`** — without both, non-Admin users with a global role assignment get IDOR access to every project.
+- **PM self-approval on cahier is blocked at the service.** Don't reintroduce a "self-approve" path in the controller layer — it bypasses the spec-team review flow.
+- **`HourlyRate`-style orphan removal pattern.** When deleting a feature: remove backend controller + service methods + DTOs + module registration first, then schema model + Project/AppUser back-relations, then write a `DROP TABLE` migration. Run `npx prisma generate` and re-typecheck before committing.
+- **Audio uploads.** Never set `Content-Type: multipart/form-data` manually on axios — pass `FormData` and let axios set the boundary.
+- **Frontend `vue-tsc` diverges from local `tsc`** in Docker. The build will fail on `severity="warning"` instead of `"warn"` on `NeoTag`. Always run `npx vue-tsc --noEmit` before pushing.
+- **Container restart on prod uses kill-then-rm.** AppArmor blocks `docker stop`. Get the container PID via `docker inspect -f "{{.State.Pid}}"`, `kill -9` it, `docker rm -f`, then `docker compose up -d`.

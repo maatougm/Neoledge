@@ -262,13 +262,8 @@
       @assigned="showAssign = false"
     />
 
-    <!-- Duplicate dialog -->
-    <Dialog
-      v-model:visible="showDuplicate"
-      header="Dupliquer le projet"
-      :modal="true"
-      style="width: 420px"
-    >
+    <!-- Duplicate dialog (AppModal — Esc closes, click-outside does NOT, so typed name isn't lost) -->
+    <AppModal v-model:visible="showDuplicate" header="Dupliquer le projet" width="420px">
       <div class="dialog-body">
         <p class="dialog-hint">Saisissez le nom du nouveau projet (copie de « {{ duplicateSrcName }} »).</p>
         <div class="field-wrap">
@@ -291,7 +286,7 @@
           @click="confirmDuplicate"
         />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
@@ -299,7 +294,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
 import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
 import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'
@@ -335,8 +330,19 @@ function toggleMenu(event: MouseEvent, project: ProjectSummary): void {
   if (btn) {
     const rect = btn.getBoundingClientRect()
     const MENU_WIDTH = 220
+    // Approximate menu height: 11 items × ~30px + 2 group headers + 2 separators + padding ≈ 380px.
+    // Flip the menu UP when there's not enough room below the trigger so the
+    // delete button never falls off the viewport (especially when the page has
+    // few projects and isn't scrollable). Pre-clamp inside the viewport too.
+    const MENU_HEIGHT = 380
+    const VIEWPORT_PAD = 8
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PAD
+    const spaceAbove = rect.top - VIEWPORT_PAD
+    const top = spaceBelow >= MENU_HEIGHT || spaceBelow >= spaceAbove
+      ? rect.bottom + 4
+      : Math.max(VIEWPORT_PAD, rect.top - MENU_HEIGHT - 4)
     menuPos.value = {
-      top: rect.bottom + 4,
+      top,
       left: Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
     }
   }

@@ -105,14 +105,11 @@ async function load() {
 
 function openWp(wp: MyTask) {
   if (!wp.project?.id) return
-  const role = authStore.userRole
-  if (role === 'ProjectManager' || role === 'Admin') {
-    void router.push(`/app/pm/projects/${wp.project.id}/workpackages?wpId=${wp.id}`)
-  } else {
-    // Team layout has no WP-focused deep link yet; land on the project detail
-    // so the user can open the WP tab themselves. See Sprint 4.5 backlog.
-    void router.push(`/app/team/projects/${wp.project.id}`)
-  }
+  // The Work Packages view is project-scoped via ProjectAccessGuard, so any role
+  // that owns this WP (assignee or watcher) is permitted to open it. Land them
+  // directly on the WP detail panel via the ?wpId= deep-link rather than dropping
+  // team users on a project-overview dead-end.
+  void router.push(`/app/pm/projects/${wp.project.id}/workpackages?wpId=${wp.id}`)
 }
 
 onMounted(load)

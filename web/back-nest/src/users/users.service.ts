@@ -15,7 +15,6 @@ export interface UserResponseDto {
   readonly email: string;
   readonly role: string;
   readonly isActive: boolean;
-  readonly mustChangePassword: boolean;
   readonly createdAt: Date;
   readonly lastLoginAt: Date | null;
 }
@@ -39,7 +38,6 @@ function toUserResponse(user: {
   email: string;
   role: string;
   isActive: boolean;
-  mustChangePassword: boolean;
   createdAt: Date;
   lastLoginAt: Date | null;
 }): UserResponseDto {
@@ -50,7 +48,6 @@ function toUserResponse(user: {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
-    mustChangePassword: user.mustChangePassword,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
   };
@@ -204,7 +201,6 @@ export class UsersService {
       where: { id },
       data: {
         passwordHash,
-        mustChangePassword: true,
         tokenVersion: { increment: 1 },
       },
     });

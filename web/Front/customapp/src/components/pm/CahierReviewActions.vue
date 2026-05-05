@@ -1,8 +1,8 @@
 <!-- @file CahierReviewActions.vue — Approve/Reject buttons for SpecificationTeam -->
 <template>
-  <div v-if="canReview && status !== 'approved'" class="cra">
+  <div v-if="canReview && status !== 'approved'" :class="['cra', { 'cra--rejected': status === 'rejected' }]">
     <div class="cra__banner">
-      <i class="pi pi-shield" />
+      <i :class="status === 'rejected' ? 'pi pi-exclamation-circle' : 'pi pi-shield'" />
       <span v-if="status === 'rejected'">
         Vous avez rejeté ce cahier — il doit être régénéré par le PM avant nouvelle revue.
       </span>
@@ -74,7 +74,9 @@
           rows="6"
           placeholder="Décrivez précisément ce qui doit être corrigé. L'IA utilisera ce commentaire pour améliorer la prochaine génération."
         />
-        <p class="cra-hint">{{ rejectComment.length }} / 10 caractères minimum</p>
+        <p class="cra-hint">
+          Minimum 10 caractères ({{ rejectComment.length }} actuellement)
+        </p>
       </div>
     </div>
     <template #footer>
@@ -221,6 +223,11 @@ async function onReject(): Promise<void> {
   font-weight: 500;
 }
 .cra__banner i { color: var(--nl-accent, #1e9e8f); font-size: 1.125rem; }
+.cra--rejected {
+  background: linear-gradient(to right, rgba(220, 38, 38, 0.08), rgba(220, 38, 38, 0.03));
+  border-color: var(--nl-danger, #dc2626);
+}
+.cra--rejected .cra__banner i { color: var(--nl-danger, #dc2626); }
 .cra__actions { display: flex; gap: 0.5rem; }
 .cra-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }
 .cra-field { display: flex; flex-direction: column; gap: 0.375rem; }

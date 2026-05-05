@@ -94,13 +94,12 @@
       @update="um.handleUpdate"
     />
 
-    <!-- Temp password dialog -->
-    <Dialog
+    <!-- Temp password dialog (AppModal — Esc closes; click-outside does not, to avoid losing the password) -->
+    <AppModal
       :visible="um.showTempPasswordDialog.value"
       header="Mot de passe temporaire"
-      :modal="true"
-      style="width: min(420px, 96vw)"
-      @update:visible="!$event && (um.showTempPasswordDialog.value = false)"
+      width="420px"
+      @update:visible="(v) => { if (!v) { um.showTempPasswordDialog.value = false; copied = false } }"
     >
       <div class="temp-body">
         <div class="temp-icon-wrap">
@@ -131,13 +130,13 @@
           @click="um.showTempPasswordDialog.value = false; copied = false"
         />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import { NeoButton, NeoInputIcon, NeoSelect, NeoMessage } from '@neolibrary/components'
 import UserList       from '@/components/admin/UserList.vue'
 import UserFormDialog from '@/components/admin/UserFormDialog.vue'

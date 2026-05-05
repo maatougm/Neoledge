@@ -147,7 +147,7 @@ export class NotificationsService {
     message: string;
     projectId?: string | null;
     reason?: 'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange' | 'Comment' | 'System';
-    entityType?: 'work_package' | 'project' | 'meeting' | 'wiki_page' | 'comment' | 'version' | null;
+    entityType?: 'work_package' | 'project' | 'meeting' | 'comment' | 'version' | null;
     entityId?: string | null;
     actorId?: string | null;
     link?: string | null;

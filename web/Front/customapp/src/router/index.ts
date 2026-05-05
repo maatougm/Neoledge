@@ -20,7 +20,7 @@ declare module 'vue-router' {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'force-change-password', 'forgot-password', 'reset-password'])
+const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'forgot-password', 'reset-password'])
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -38,11 +38,6 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-    },
-    {
-      path: '/force-change-password',
-      name: 'force-change-password',
-      component: () => import('@/views/ForceChangePasswordView.vue'),
     },
     {
       path: '/forgot-password',
@@ -408,12 +403,7 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
       return { name: 'login', query: redirect ? { redirect } : undefined }
     }
 
-    // Force password change
-    if (auth.mustChangePassword && to.name !== 'force-change-password') {
-      return { name: 'force-change-password' }
-    }
-
-    // Hydrate permission set on first authenticated navigation (or after login).
+// Hydrate permission set on first authenticated navigation (or after login).
     // fetchMe clears the token if it's been invalidated server-side.
     if (auth.isAuthenticated && auth.globalPermissions.size === 0) {
       await auth.fetchMe()

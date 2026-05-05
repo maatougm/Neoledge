@@ -28,7 +28,6 @@ export const useApp = defineStore('App', () => {
   const apiUrl = ref('')
   const eliseUrl = ref('')
   const loading = ref(false)
-  const mustChangePassword = ref(false)
 
   const fetchApiUrl = async () => {
     const { data } = await axios.get(import.meta.env.BASE_URL + 'config.json?_=' + Date.now())
@@ -45,7 +44,7 @@ export const useApp = defineStore('App', () => {
   }
   /**
    * Login step 1.
-   * Returns { jwt, mustChangePassword } on success without TOTP,
+   * Returns { jwt } on success without TOTP,
    * or { requiresTotp: true, tempToken } when 2FA is required.
    */
   const login = async (
@@ -57,7 +56,6 @@ export const useApp = defineStore('App', () => {
       return { requiresTotp: true, tempToken: response.data.tempToken }
     }
     jwt.value = response.data.jwt
-    mustChangePassword.value = response.data.mustChangePassword ?? false
     return {}
   }
 
@@ -67,12 +65,10 @@ export const useApp = defineStore('App', () => {
   const loginTotp = async (tempToken: string, code: string): Promise<void> => {
     const response = await axios.post(apiUrl.value + '/auth/login/totp', { tempToken, code })
     jwt.value = response.data.jwt
-    mustChangePassword.value = response.data.mustChangePassword ?? false
   }
 
   const logout = async () => {
     jwt.value = ''
-    mustChangePassword.value = false
     try {
       await axios.get(apiUrl.value + '/hook/logout')
     } catch {
@@ -150,7 +146,6 @@ export const useApp = defineStore('App', () => {
     jwt,
     apiUrl,
     loading,
-    mustChangePassword,
     userRole,
     authHeader,
     fetchApiUrl,

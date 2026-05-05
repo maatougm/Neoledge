@@ -106,7 +106,7 @@
                   text
                   size="small"
                   title="Désactiver"
-                  @click="emit('deactivate', user.id)"
+                  @click="emit('deactivate', user)"
                 />
                 <NeoButton
                   v-else
@@ -144,7 +144,7 @@ const emit = defineEmits<{
   create: []
   edit: [user: UserResponse]
   'reset-password': [id: string]
-  deactivate: [id: string]
+  deactivate: [user: UserResponse]
   reactivate: [id: string]
 }>()
 

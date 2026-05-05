@@ -79,7 +79,7 @@ import api from '@/lib/api'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useAuthStore } from '@/stores/authStore'
 
-type ItemKind = 'command' | 'project' | 'work_package' | 'wiki_page' | 'user' | 'recent'
+type ItemKind = 'command' | 'project' | 'work_package' | 'user' | 'recent'
 
 interface PaletteItem {
   kind: ItemKind
@@ -163,11 +163,13 @@ async function runServerSearch(): Promise<void> {
 const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
   const isInProject = /^\/app\/pm\/projects\/[^/]+/.test(route.path)
   const projectId   = isInProject ? route.path.split('/')[4] : null
+  const role = authStore.userRole
+  const tasksRoute =
+    role === 'Admin' || role === 'ProjectManager' ? '/app/pm/my-tasks' : '/app/team/my-tasks'
   const cmds: Omit<PaletteItem, '_idx'>[] = [
     { kind: 'command', id: 'home',   title: 'Aller à l\'accueil',     icon: 'pi-inbox',     action: () => router.push('/app') },
-    { kind: 'command', id: 'projs',  title: 'Mes projets',              icon: 'pi-briefcase', action: () => router.push(authStore.userRole === 'Admin' ? '/app/admin/projects' : '/app/pm/projects') },
-    { kind: 'command', id: 'tasks',  title: 'Mes tâches',               icon: 'pi-list',      action: () => router.push('/app/pm/my-tasks') },
-    { kind: 'command', id: 'notif',  title: 'Notifications',            icon: 'pi-bell' },
+    { kind: 'command', id: 'projs',  title: 'Mes projets',              icon: 'pi-briefcase', action: () => router.push(role === 'Admin' ? '/app/admin/projects' : '/app/pm/projects') },
+    { kind: 'command', id: 'tasks',  title: 'Mes tâches',               icon: 'pi-list',      action: () => router.push(tasksRoute) },
     { kind: 'command', id: 'dark',   title: dark.isDark.value ? 'Thème clair' : 'Thème sombre', icon: dark.isDark.value ? 'pi-sun' : 'pi-moon', action: () => { void dark.toggle() } },
     { kind: 'command', id: 'prof',   title: 'Mon profil',               icon: 'pi-user',      action: () => router.push('/app/profile') },
   ]
@@ -180,7 +182,6 @@ const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
       { kind: 'command', id: 'proj-wp',     title: 'Projet courant → Work Packages', icon: 'pi-list',       action: () => router.push(`${b}/workpackages`) },
       { kind: 'command', id: 'proj-gantt',  title: 'Projet courant → Gantt',         icon: 'pi-chart-bar',  action: () => router.push(`${b}/gantt`) },
       { kind: 'command', id: 'proj-board',  title: 'Projet courant → Board',         icon: 'pi-th-large',   action: () => router.push(`${b}/board`) },
-      { kind: 'command', id: 'proj-wiki',   title: 'Projet courant → Wiki',          icon: 'pi-book',       action: () => router.push(`${b}/wiki`) },
     )
   }
   return cmds
@@ -190,7 +191,6 @@ function iconFor(t: ItemKind): string {
   switch (t) {
     case 'project':      return 'pi-briefcase'
     case 'work_package': return 'pi-list'
-    case 'wiki_page':    return 'pi-book'
     case 'user':         return 'pi-user'
     case 'recent':       return 'pi-clock'
     default:             return 'pi-arrow-right'
@@ -216,12 +216,10 @@ const groupedItems = computed(() => {
   const cmds  = flatItems.value.filter((x) => x.kind === 'command')
   const projs = flatItems.value.filter((x) => x.kind === 'project')
   const wps   = flatItems.value.filter((x) => x.kind === 'work_package')
-  const wiki  = flatItems.value.filter((x) => x.kind === 'wiki_page')
   const users = flatItems.value.filter((x) => x.kind === 'user')
   if (cmds.length)  groups.push({ label: 'Commandes', items: cmds })
   if (projs.length) groups.push({ label: 'Projets', items: projs })
   if (wps.length)   groups.push({ label: 'Work Packages', items: wps })
-  if (wiki.length)  groups.push({ label: 'Wiki', items: wiki })
   if (users.length) groups.push({ label: 'Utilisateurs', items: users })
   return groups
 })

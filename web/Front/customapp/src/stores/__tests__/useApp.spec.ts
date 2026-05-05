@@ -35,9 +35,9 @@ describe('useApp', () => {
   // ─── login ──────────────────────────────────────────────────────────────────
 
   describe('login', () => {
-    it('posts credentials and sets jwt and mustChangePassword', async () => {
+    it('posts credentials and sets jwt', async () => {
       vi.mocked(axios.post).mockResolvedValueOnce({
-        data: { jwt: 'jwt-abc-123', mustChangePassword: true },
+        data: { jwt: 'jwt-abc-123' },
       })
 
       const store = await getStore()
@@ -48,35 +48,21 @@ describe('useApp', () => {
         { email: 'user@test.com', password: 'P@ss1234' },
       )
       expect(store.jwt).toBe('jwt-abc-123')
-      expect(store.mustChangePassword).toBe(true)
-    })
-
-    it('sets mustChangePassword to false when not returned', async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({
-        data: { jwt: 'jwt-xyz' },
-      })
-
-      const store = await getStore()
-      await store.login('user@test.com', 'P@ss1234')
-
-      expect(store.mustChangePassword).toBe(false)
     })
   })
 
   // ─── logout ─────────────────────────────────────────────────────────────────
 
   describe('logout', () => {
-    it('clears jwt and mustChangePassword', async () => {
+    it('clears jwt', async () => {
       const store = await getStore()
       store.jwt = 'existing-token'
-      store.mustChangePassword = true
 
       vi.mocked(axios.get).mockResolvedValueOnce({})
 
       await store.logout()
 
       expect(store.jwt).toBe('')
-      expect(store.mustChangePassword).toBe(false)
     })
 
     it('clears jwt even when logout API call fails', async () => {

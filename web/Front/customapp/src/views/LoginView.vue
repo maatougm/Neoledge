@@ -238,10 +238,6 @@ async function quickLogin(e: string, p: string): Promise<void> {
 }
 
 function redirectAfterLogin(): void {
-  if (authStore.mustChangePassword) {
-    router.push({ name: 'force-change-password' })
-    return
-  }
   // /app has a role-based redirect child — let the router decide
   router.push({ name: 'app-home' })
 }

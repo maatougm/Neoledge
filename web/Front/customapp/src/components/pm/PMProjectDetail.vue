@@ -161,8 +161,9 @@ watch(activeTab, (tab) => {
 // → 4. Finaliser le cahier des charges → 5. Validation par les équipes
 // → 6. Consulter l'historique → 7. Échanger en commentaires
 // → 8. Consulter l'activité → 9. Configurer les automatisations
+// Order matches the workflow narrative: Questionnaire → Réunions → IA → Cahier
+// → Validation → Historique → Commentaires → Activité → Automatisations.
 const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'automation',    label: 'Automatisations',         icon: 'pi-bolt' },
   { id: 'questionnaire', label: 'Questionnaire',           icon: 'pi-list-check' },
   { id: 'meetings',      label: 'Réunions',                icon: 'pi-microphone' },
   { id: 'ai',            label: 'Résultat IA',             icon: 'pi-sparkles' },
@@ -171,6 +172,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'history',       label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'comments',      label: 'Commentaires',            icon: 'pi-comments' },
   { id: 'activity',      label: 'Activité',                icon: 'pi-history' },
+  { id: 'automation',    label: 'Automatisations',         icon: 'pi-bolt' },
 ]
 
 // Per-role tab visibility.
@@ -200,12 +202,21 @@ watch(visibleTabs, (list) => {
   }
 }, { immediate: true })
 
-// ── Live stepper polling — phase changes propagate even when another user
-// triggers a validation or an automation bumps the status.
+// ── Live stepper polling — phase changes propagate when another user / automation
+// bumps the status. Two safeguards:
+//  1. Pause polling when the document is hidden (browser tab in background) — no
+//     point burning bandwidth or hammering the API.
+//  2. Pause when the user is editing the questionnaire — refetching mid-edit
+//     would clobber the form's reactive `fields` array with stale server data.
 let _poll: number | null = null
+function shouldPoll(): boolean {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false
+  if (activeTab.value === 'questionnaire') return false
+  return true
+}
 onMounted(() => {
   _poll = window.setInterval(() => {
-    // Refetch the project detail so PhasesStepper's :current-status prop updates.
+    if (!shouldPoll()) return
     store.fetchProject(props.project.id)
   }, 15_000)
 })

@@ -30,7 +30,7 @@ import { PrismaService } from './prisma.service.js';
         // new extended type that is incompatible with `PrismaService extends PrismaClient`,
         // requiring a full type-cast refactor across all services.  Deferred to a dedicated
         // refactor ticket.  In the meantime, every service/controller that performs reads on
-        // soft-deletable models (WorkPackage, Project, ProjectComment, WikiPage, etc.) adds
+        // soft-deletable models (WorkPackage, Project, ProjectComment, etc.) adds
         // `isDeleted: false` to its `where` clause explicitly — see audit in docs/qa/.
 
         return client as PrismaService;

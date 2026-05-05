@@ -138,7 +138,7 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
         { key: 'proj-sprint',       label: 'Sprint',         icon: 'pi-forward',     to: `${base}/sprint` },
     ]},
     { heading: 'Suivi', items: [
-{ key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
+        { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
         { key: 'proj-members',      label: 'Membres',        icon: 'pi-users',       to: `${base}/members` },
         { key: 'proj-activity',     label: 'Activité',       icon: 'pi-history',     to: `${base}/activity` },
     ]},
