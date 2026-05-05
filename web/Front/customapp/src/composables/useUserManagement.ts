@@ -8,12 +8,13 @@
 
 import { ref, onMounted } from 'vue'
 import { useUserStore } from '@/stores/userStore'
-import { useNeoToast } from '@neolibrary/components'
+import { useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import type { UserResponse, CreateUserPayload, UpdateUserPayload } from '@/types/user.types'
 
 export function useUserManagement() {
   const store = useUserStore()
   const toast = useNeoToast()
+  const confirm = useNeoConfirm()
 
   // Fetch the user list on first mount of the consumer component. Without this,
   // navigating to /app/admin/users (or returning to it after logout/login) shows
@@ -78,13 +79,25 @@ export function useUserManagement() {
     }
   }
 
-  const handleDeactivate = async (id: string) => {
-    await store.deactivateUser(id)
-    if (!store.error) {
-      toast.add({ severity: 'success', detail: 'Compte désactivé.', life: 3000 })
-    } else {
-      toast.add({ severity: 'error', detail: store.error, life: 5000 })
-    }
+  const handleDeactivate = (user: UserResponse) => {
+    confirm.require({
+      message: `Désactiver le compte de ${user.firstName} ${user.lastName} (${user.email}) ? L'utilisateur ne pourra plus se connecter.`,
+      header: 'Confirmer la désactivation',
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Désactiver',
+      rejectLabel: 'Annuler',
+      acceptClass: 'p-button-danger',
+      accept: () => {
+        void (async () => {
+          await store.deactivateUser(user.id)
+          if (!store.error) {
+            toast.add({ severity: 'success', detail: 'Compte désactivé.', life: 3000 })
+          } else {
+            toast.add({ severity: 'error', detail: store.error, life: 5000 })
+          }
+        })()
+      },
+    })
   }
 
   const handleReactivate = async (id: string) => {
