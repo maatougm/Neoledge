@@ -5,7 +5,7 @@
       <button v-if="view !== 'list'" class="back-link" @click="goToList">
         <i class="pi pi-arrow-left" /> Retour
       </button>
-      <h3 v-if="view === 'list'" class="section-title">Reunions</h3>
+      <h3 v-if="view === 'list'" class="section-title">Réunions</h3>
       <div v-if="view === 'list'" class="header-actions">
         <NeoButton
           label="Réunion en direct"
@@ -100,7 +100,7 @@
     <div v-else-if="view === 'list'">
       <div v-if="store.meetings.length === 0" class="empty-state">
         <i class="pi pi-microphone empty-icon" />
-        <p>Aucune reunion enregistree.</p>
+        <p>Aucune réunion enregistrée.</p>
       </div>
 
       <div v-else class="meeting-list">
@@ -159,7 +159,8 @@
                 size="small"
                 severity="danger"
                 outlined
-                @click="removeMeeting(meeting.id)"
+                aria-label="Supprimer la réunion"
+                @click="confirmRemoveMeeting(meeting)"
               />
             </div>
           </div>
@@ -172,7 +173,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { NeoButton, NeoTag, NeoInputText, NeoMessage } from '@neolibrary/components'
-import { useNeoToast } from '@neolibrary/components'
+import { useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
 import MeetingRecorder from '@/components/pm/MeetingRecorder.vue'
 import TranscriptViewer from '@/components/pm/TranscriptViewer.vue'
@@ -183,6 +184,7 @@ const props = defineProps<{ projectId: string }>()
 
 const store = usePmStore()
 const toast = useNeoToast()
+const confirm = useNeoConfirm()
 
 type ViewState = 'list' | 'record' | 'detail' | 'upload' | 'live'
 const view = ref<ViewState>('list')
@@ -299,10 +301,21 @@ async function openMeeting(meetingId: string) {
   }
 }
 
+function confirmRemoveMeeting(meeting: { id: string; title?: string }): void {
+  confirm.require({
+    message: `Supprimer la réunion « ${meeting.title ?? 'sans titre'} » ? Cette action est définitive.`,
+    header: 'Confirmer la suppression',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    acceptClass: 'p-button-danger',
+    accept: () => { void removeMeeting(meeting.id) },
+  })
+}
+
 async function removeMeeting(meetingId: string) {
   const ok = await store.deleteMeeting(props.projectId, meetingId)
   if (ok) {
-    toast.add({ severity: 'success', detail: 'Reunion supprimee.', life: 3000 })
+    toast.add({ severity: 'success', detail: 'Réunion supprimée.', life: 3000 })
   } else {
     toast.add({ severity: 'error', detail: store.error ?? 'Erreur lors de la suppression.', life: 4000 })
   }

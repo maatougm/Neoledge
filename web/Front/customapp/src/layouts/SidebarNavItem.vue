@@ -61,6 +61,12 @@ const isActive = computed<boolean>(() => {
   // stay highlighted on every sub-route (workpackages, gantt, etc.)
   const PROJECT_OVERVIEW_RE = /^\/app\/pm\/projects\/[^/]+$/
   if (PROJECT_OVERVIEW_RE.test(to)) return path === to
+  // List pages (`/app/pm/projects`, `/app/admin/projects`, `/app/team/projects`) must NOT
+  // stay highlighted while the user is inside a specific project — the per-project
+  // contextual sidebar already shows where they are. Otherwise both the list link AND
+  // the contextual project items light up at the same time.
+  const LIST_PAGES = ['/app/pm/projects', '/app/admin/projects', '/app/team/projects']
+  if (LIST_PAGES.includes(to)) return path === to
   return path === to || path.startsWith(to + '/')
 })
 

@@ -72,6 +72,7 @@ const adminNav: NavSection[] = [
       { key: 'admin-projects',   label: 'Projets',       icon: 'pi-briefcase',  to: '/app/admin/projects'   },
       { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
       { key: 'admin-roles',      label: 'Rôles',         icon: 'pi-key',        to: '/app/admin/roles'      },
+      { key: 'admin-templates',  label: 'Modèles',       icon: 'pi-copy',       to: '/app/pm/templates'     },
   ]},
   { heading: 'Rapports', items: [
       { key: 'admin-activity',      label: 'Activité',     icon: 'pi-history',    to: '/app/admin/activity'  },

@@ -163,11 +163,13 @@ async function runServerSearch(): Promise<void> {
 const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
   const isInProject = /^\/app\/pm\/projects\/[^/]+/.test(route.path)
   const projectId   = isInProject ? route.path.split('/')[4] : null
+  const role = authStore.userRole
+  const tasksRoute =
+    role === 'Admin' || role === 'ProjectManager' ? '/app/pm/my-tasks' : '/app/team/my-tasks'
   const cmds: Omit<PaletteItem, '_idx'>[] = [
     { kind: 'command', id: 'home',   title: 'Aller à l\'accueil',     icon: 'pi-inbox',     action: () => router.push('/app') },
-    { kind: 'command', id: 'projs',  title: 'Mes projets',              icon: 'pi-briefcase', action: () => router.push(authStore.userRole === 'Admin' ? '/app/admin/projects' : '/app/pm/projects') },
-    { kind: 'command', id: 'tasks',  title: 'Mes tâches',               icon: 'pi-list',      action: () => router.push('/app/pm/my-tasks') },
-    { kind: 'command', id: 'notif',  title: 'Notifications',            icon: 'pi-bell' },
+    { kind: 'command', id: 'projs',  title: 'Mes projets',              icon: 'pi-briefcase', action: () => router.push(role === 'Admin' ? '/app/admin/projects' : '/app/pm/projects') },
+    { kind: 'command', id: 'tasks',  title: 'Mes tâches',               icon: 'pi-list',      action: () => router.push(tasksRoute) },
     { kind: 'command', id: 'dark',   title: dark.isDark.value ? 'Thème clair' : 'Thème sombre', icon: dark.isDark.value ? 'pi-sun' : 'pi-moon', action: () => { void dark.toggle() } },
     { kind: 'command', id: 'prof',   title: 'Mon profil',               icon: 'pi-user',      action: () => router.push('/app/profile') },
   ]

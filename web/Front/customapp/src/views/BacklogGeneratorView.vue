@@ -45,9 +45,9 @@
           :epic="epic"
           :epic-idx="ei"
           @update="(p) => store.updateEpic(ei, p)"
-          @remove="store.removeEpic(ei)"
+          @remove="confirmRemoveEpic(ei)"
           @update-task="(ti, p) => store.updateTask(ei, ti, p)"
-          @remove-task="(ti) => store.removeTask(ei, ti)"
+          @remove-task="(ti) => confirmRemoveTask(ei, ti)"
           @add-task="store.addTask(ei)"
         />
 
@@ -73,7 +73,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
+import { NeoButton, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import EpicCard from '@/components/pm/backlog/EpicCard.vue'
 import { useBacklogGeneratorStore } from '@/stores/backlogGeneratorStore'
@@ -82,6 +82,7 @@ import { extractErrorMessage } from '@/lib/api'
 const props = defineProps<{ id: string }>()
 const router = useRouter()
 const toast = useNeoToast()
+const confirm = useNeoConfirm()
 const store = useBacklogGeneratorStore()
 const accepting = ref(false)
 
@@ -105,7 +106,48 @@ async function onGenerate(): Promise<void> {
   }
 }
 
+function confirmRemoveEpic(epicIdx: number): void {
+  const epic = store.proposed?.epics[epicIdx]
+  if (!epic) return
+  const taskNote = epic.children.length > 0 ? ` et ses ${epic.children.length} tâche(s)` : ''
+  confirm.require({
+    message: `Supprimer l'epic « ${epic.title || 'sans titre'} »${taskNote} ? Cette action est irréversible.`,
+    header: 'Confirmer la suppression',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    acceptClass: 'p-button-danger',
+    accept: () => store.removeEpic(epicIdx),
+  })
+}
+
+function confirmRemoveTask(epicIdx: number, taskIdx: number): void {
+  const task = store.proposed?.epics[epicIdx]?.children[taskIdx]
+  if (!task) return
+  confirm.require({
+    message: `Supprimer la tâche « ${task.title || 'sans titre'} » ?`,
+    header: 'Confirmer la suppression',
+    acceptLabel: 'Supprimer',
+    rejectLabel: 'Annuler',
+    acceptClass: 'p-button-danger',
+    accept: () => store.removeTask(epicIdx, taskIdx),
+  })
+}
+
 async function onAccept(): Promise<void> {
+  // Confirm — accepting is irreversible (creates real DB rows; the proposal is discarded)
+  const totalTasksCount = totalTasks.value
+  const proceed = await new Promise<boolean>((resolve) => {
+    confirm.require({
+      message: `Créer ${totalTasksCount} tâche(s) dans le projet ? Le backlog proposé sera enregistré et ne pourra plus être modifié ici.`,
+      header: 'Accepter le backlog',
+      acceptLabel: 'Créer les tâches',
+      rejectLabel: 'Annuler',
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+    })
+  })
+  if (!proceed) return
+
   accepting.value = true
   try {
     const result = await store.accept(props.id)

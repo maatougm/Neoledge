@@ -89,7 +89,7 @@
             label="Régénérer"
             icon="pi pi-refresh"
             outlined
-            @click="handleGenerate"
+            @click="confirmRegenerate"
             :disabled="generating"
           />
         </div>
@@ -157,7 +157,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
+import { NeoButton, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
@@ -196,6 +196,23 @@ interface CahierStatus {
 
 const props = defineProps<{ projectId: string }>()
 const toast = useNeoToast()
+const confirm = useNeoConfirm()
+
+function confirmRegenerate(): void {
+  // Re-generation overwrites the saved cahier. If it has been approved, this
+  // resets the validation queue — make the user explicitly opt-in.
+  const status = cahierStatus.value?.status
+  const message = status === 'approved'
+    ? 'Le cahier actuel est APPROUVÉ. Régénérer le remplacera et l\'équipe de validation devra l\'examiner à nouveau. Continuer ?'
+    : 'Régénérer remplacera la version actuelle. L\'équipe de validation sera notifiée à nouveau. Continuer ?'
+  confirm.require({
+    message,
+    header: 'Régénérer le cahier des charges',
+    acceptLabel: 'Régénérer',
+    rejectLabel: 'Annuler',
+    accept: () => { void handleGenerate() },
+  })
+}
 
 const expanded = ref(true)
 const generating = ref(false)

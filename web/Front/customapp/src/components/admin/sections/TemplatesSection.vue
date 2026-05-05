@@ -85,7 +85,7 @@
                 <input v-model="row.isRequired" type="checkbox" />
                 <span>Obligatoire</span>
               </label>
-              <label class="field-flag" title="Cet champ alimente la génération IA du cahier des charges et du backlog. Sans réponse, l'IA bloque la génération.">
+              <label class="field-flag" title="Ce champ alimente la génération IA du cahier des charges et du backlog. Sans réponse, l'IA bloque la génération.">
                 <input v-model="row.isBacklogDriver" type="checkbox" />
                 <span>Alimente l'IA <i class="pi pi-sparkles" style="color:var(--nl-accent)" /></span>
               </label>

@@ -66,24 +66,49 @@ function openPalette(): void { kb.searchVisible.value = true }
 // ─── Breadcrumb label mapping ─────────────────────────────────────────────────
 
 const ROUTE_LABELS: Record<string, string> = {
-  'admin-dashboard':     'Tableau de bord',
-  'admin-projects':      'Projets',
-  'admin-project-detail':'Détail du projet',
-  'admin-users':         'Utilisateurs',
-  'admin-activity':      'Activité',
-  'admin-templates':     'Modèles',
-  'admin-system':        'Système',
-  'admin-trash':         'Corbeille',
-  'pm-projects':         'Mes projets',
-  'pm-analytics':        'Analytiques',
-  'pm-team-planner':     'Planification équipe',
-  'pm-my-tasks':         'Mes tâches',
-  'team-my-tasks':       'Mes tâches',
-  'team-projects':       'Projets',
-  'team-project-detail': 'Détail du projet',
-  'team-validations':    'Mes validations',
-  'team-pending-reviews': 'Cahiers à valider',
-  'profile':             'Profil',
+  // Admin
+  'admin-dashboard':           'Tableau de bord',
+  'admin-projects':            'Projets',
+  'admin-project-detail':      'Détail du projet',
+  'admin-users':               'Utilisateurs',
+  'admin-roles':               'Rôles',
+  'admin-activity':            'Activité',
+  'admin-system':              'Système',
+  'admin-audit':               'Audit',
+  'admin-trash':               'Corbeille',
+  // PM
+  'pm-projects':               'Mes projets',
+  'pm-project-detail':         'Projet',
+  'pm-analytics':              'Analytiques',
+  'pm-team-planner':           'Planification équipe',
+  'pm-my-tasks':               'Mes tâches',
+  'pm-templates':              'Modèles',
+  'admin-templates':           'Modèles',
+  // Project module deep-links (the legacy tabbed view)
+  'pm-project-questionnaire':  'Questionnaire',
+  'pm-project-meetings':       'Réunions',
+  'pm-project-cahier':         'Cahier des charges',
+  'pm-project-validations':    'Validations',
+  // OpenProject-parity per-project routes
+  'pm-workpackages':           'Work Packages',
+  'pm-gantt':                  'Gantt',
+  'pm-board':                  'Board',
+  'pm-backlogs':               'Backlog Sprint',
+  'pm-sprint':                 'Sprint',
+  'pm-backlog-generator':      'Backlog IA',
+  'pm-assign-tasks':           'Assignation',
+  'pm-time':                   'Temps',
+  'pm-members':                'Membres',
+  'pm-project-activity':       'Activité',
+  // Team
+  'team-my-tasks':             'Mes tâches',
+  'team-projects':             'Projets',
+  'team-project-detail':       'Détail du projet',
+  'team-validations':          'Mes validations',
+  'team-pending-reviews':      'Cahiers à valider',
+  // User
+  'profile':                   'Profil',
+  'force-change-password':     'Changement de mot de passe',
 }
 
 const breadcrumbLabel = computed<string>(() => {
