@@ -151,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
 
@@ -441,19 +441,63 @@ async function uploadChunk(blob: Blob): Promise<void> {
   }
 }
 
+// ── Adaptive checklist refresh ─────────────────────────────────────────────
+// Drive refreshes off transcript growth, not a fixed metronome:
+//   - schedule a refresh as soon as ≥60 new chars have arrived AND
+//     MIN_INTERVAL_MS has elapsed since the last call;
+//   - keep a long-tail safety timer so the checklist still moves during
+//     slow stretches (long pauses, single-speaker monologues).
+const MIN_INTERVAL_MS = 6_000        // never call AI more than once per 6 s
+const NEW_TEXT_TRIGGER = 60          // ~10–15 s of speech in French
+const SAFETY_INTERVAL_MS = 18_000    // hard refresh if growth alone hasn't fired
+const FIRST_CALL_TRIGGER_CHARS = 80  // earliest call once enough text is in
+let lastChecklistCallAt = 0
+let lastChecklistText = ''
+let pendingScheduleId: number | null = null
+function maybeRefreshChecklist(): void {
+  const now = Date.now()
+  const sinceLast = now - lastChecklistCallAt
+  if (sinceLast < MIN_INTERVAL_MS) {
+    if (pendingScheduleId === null) {
+      pendingScheduleId = window.setTimeout(() => {
+        pendingScheduleId = null
+        maybeRefreshChecklist()
+      }, MIN_INTERVAL_MS - sinceLast + 50)
+    }
+    return
+  }
+  void refreshChecklist()
+}
+
+// Trigger a checklist refresh as soon as the transcript has grown enough to
+// be worth re-analysing. The first call fires once we have FIRST_CALL_TRIGGER_CHARS;
+// subsequent calls fire after every NEW_TEXT_TRIGGER chars added since the
+// last call, throttled to at most once per MIN_INTERVAL_MS.
+watch(transcript, (next) => {
+  if (!recording.value) return
+  const trimmed = next.trim()
+  if (trimmed.length < FIRST_CALL_TRIGGER_CHARS && checklist.value.length === 0) return
+  const grown = trimmed.length - lastChecklistText.length
+  if (grown < NEW_TEXT_TRIGGER && lastChecklistText.length > 0) return
+  maybeRefreshChecklist()
+})
+
 function beginSession(): void {
   recording.value = true
   startedAt.value = Date.now()
   tickIntervalId.value = window.setInterval(() => { tick.value += 1 }, 1000)
-  // First checklist call after 25s, then every 30s
-  initialChecklistTimeoutId.value = window.setTimeout(refreshChecklist, 25_000)
-  checklistTimerId.value = window.setInterval(refreshChecklist, 30_000)
+  // Long-tail safety: if growth-driven refreshes haven't fired (slow speech,
+  // single speaker), still nudge the checklist every SAFETY_INTERVAL_MS so
+  // the PM sees something move.
+  checklistTimerId.value = window.setInterval(maybeRefreshChecklist, SAFETY_INTERVAL_MS)
 }
 
 async function refreshChecklist(): Promise<void> {
   if (checklistLoading.value) return
   const text = transcript.value.trim()
   if (text.length < 30 && checklist.value.length === 0) return
+  lastChecklistCallAt = Date.now()
+  lastChecklistText = text
   checklistLoading.value = true
   try {
     const { data } = await api.post<ChecklistResponse>(
@@ -486,6 +530,9 @@ async function stopAndSave(): Promise<void> {
   if (tickIntervalId.value !== null) { window.clearInterval(tickIntervalId.value); tickIntervalId.value = null }
   if (checklistTimerId.value !== null) { window.clearInterval(checklistTimerId.value); checklistTimerId.value = null }
   if (initialChecklistTimeoutId.value !== null) { window.clearTimeout(initialChecklistTimeoutId.value); initialChecklistTimeoutId.value = null }
+  if (pendingScheduleId !== null) { window.clearTimeout(pendingScheduleId); pendingScheduleId = null }
+  lastChecklistCallAt = 0
+  lastChecklistText = ''
 
   // Final checklist refresh so the saved meeting carries the freshest state
   await refreshChecklist()
@@ -548,6 +595,7 @@ onUnmounted(() => {
   if (tickIntervalId.value !== null) window.clearInterval(tickIntervalId.value)
   if (checklistTimerId.value !== null) window.clearInterval(checklistTimerId.value)
   if (initialChecklistTimeoutId.value !== null) window.clearTimeout(initialChecklistTimeoutId.value)
+  if (pendingScheduleId !== null) window.clearTimeout(pendingScheduleId)
 })
 </script>
 

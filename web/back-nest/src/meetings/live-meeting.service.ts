@@ -74,7 +74,9 @@ export class LiveMeetingService {
 
   /** Per-project cooldown to throttle accidental request bursts. */
   private readonly lastCallAt = new Map<string, number>();
-  private readonly COOLDOWN_MS = 8_000;
+  // Tight enough to feel responsive (the frontend already throttles to once
+  // per 6 s) while still catching outright spam from buggy clients.
+  private readonly COOLDOWN_MS = 4_000;
 
   constructor(
     private readonly prisma: PrismaService,
