@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
 import { AiService } from '../ai/ai.service.js'
+import { AssemblyAiProvider } from './assemblyai.provider.js'
 import * as fs from 'fs'
 import * as path from 'path'
 import { randomUUID } from 'node:crypto'
@@ -88,6 +89,7 @@ export class MeetingsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly aiService: AiService,
+    private readonly assemblyAi: AssemblyAiProvider,
   ) {}
 
   async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
@@ -425,8 +427,12 @@ export class MeetingsService {
    * file already attached to a transcript. Replaces the existing
    * TranscriptSegment rows. Used after a live meeting saves its audio
    * because the live flow only stored a single "PM + invités" segment.
+   *
+   * Provider order: AssemblyAI Universal-2 (when configured) → local
+   * faster-whisper + SpeechBrain. AssemblyAI gives noticeably better
+   * speaker separation; the local stack stays as a free fallback.
    */
-  async redoDiarization(transcriptId: string): Promise<Result<{ speakers: number }>> {
+  async redoDiarization(transcriptId: string): Promise<Result<{ speakers: number; provider: string }>> {
     const t = await this.prisma.meetingTranscript.findUnique({
       where: { id: transcriptId },
       select: { id: true, audioPath: true, audioMimeType: true },
@@ -436,19 +442,48 @@ export class MeetingsService {
       return Result.fail<any>('Fichier audio introuvable.')
     }
 
-    const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+    const buffer = fs.readFileSync(t.audioPath)
     let data: TranscriptionResponse
-    try {
-      const buffer = fs.readFileSync(t.audioPath)
-      data = await this.callLocalTranscription(
-        serviceUrl,
-        buffer,
-        path.basename(t.audioPath),
-      )
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.logger.warn(`redoDiarization fetch failed for ${transcriptId}: ${msg}`)
-      return Result.fail<any>('Échec de la diarisation.')
+    let provider = 'unknown'
+
+    if (this.assemblyAi.isConfigured()) {
+      try {
+        data = await this.assemblyAi.transcribeWithDiarization(buffer)
+        provider = 'assemblyai'
+        this.logger.log(`AssemblyAI diarization succeeded for ${transcriptId}`)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.warn(
+          `AssemblyAI failed for ${transcriptId}: ${msg.slice(0, 200)} — falling back to local`,
+        )
+        try {
+          const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+          data = await this.callLocalTranscription(
+            serviceUrl,
+            buffer,
+            path.basename(t.audioPath),
+          )
+          provider = 'local-whisper'
+        } catch (localErr: unknown) {
+          const lmsg = localErr instanceof Error ? localErr.message : String(localErr)
+          this.logger.warn(`Local fallback also failed for ${transcriptId}: ${lmsg}`)
+          return Result.fail<any>('Échec de la diarisation.')
+        }
+      }
+    } else {
+      try {
+        const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+        data = await this.callLocalTranscription(
+          serviceUrl,
+          buffer,
+          path.basename(t.audioPath),
+        )
+        provider = 'local-whisper'
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.warn(`redoDiarization fetch failed for ${transcriptId}: ${msg}`)
+        return Result.fail<any>('Échec de la diarisation.')
+      }
     }
 
     // Replace all segments atomically. If diarization didn't actually
@@ -479,9 +514,9 @@ export class MeetingsService {
 
     const speakers = new Set(data.segments.map((s) => s.speaker)).size
     this.logger.log(
-      `Re-diarized transcript ${transcriptId}: ${data.segments.length} segments, ${speakers} speaker(s)`,
+      `Re-diarized transcript ${transcriptId} via ${provider}: ${data.segments.length} segments, ${speakers} speaker(s)`,
     )
-    return Result.ok({ speakers })
+    return Result.ok({ speakers, provider })
   }
 
   /** Return the absolute path + content type of a transcript's stored audio. */
