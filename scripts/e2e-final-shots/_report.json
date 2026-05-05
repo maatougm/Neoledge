@@ -1,0 +1,276 @@
+{
+  "passed": 51,
+  "failed": 1,
+  "byseverity": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 1
+  },
+  "unexpectedEvents": 0,
+  "passes": [
+    {
+      "stage": "A1.admin-login",
+      "label": "admin login",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-dashboard",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-projects",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-users",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-roles",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-activity",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-system",
+      "detail": ""
+    },
+    {
+      "stage": "A2.admin-pages",
+      "label": "admin reaches admin-trash",
+      "detail": ""
+    },
+    {
+      "stage": "A3.collect-ids",
+      "label": "canonical seed users found",
+      "detail": ""
+    },
+    {
+      "stage": "A3.collect-ids",
+      "label": "test project chosen",
+      "detail": "3429713b-0c81-4e46-8233-7784d1f810d8"
+    },
+    {
+      "stage": "A4.pre-cleanup",
+      "label": "cleaned QA leftovers",
+      "detail": ""
+    },
+    {
+      "stage": "B1.pm-login",
+      "label": "pm login",
+      "detail": ""
+    },
+    {
+      "stage": "B2.pm-sidebar",
+      "label": "PM sidebar excludes admin-only items",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: overview",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: questionnaire",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: meetings",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: cahier",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: validations",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: backlog-generator",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: assign-tasks",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: workpackages",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: gantt",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: board",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: backlogs",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: sprint",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: time",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: members",
+      "detail": ""
+    },
+    {
+      "stage": "B4.pm-project-pages",
+      "label": "PM page renders: activity",
+      "detail": ""
+    },
+    {
+      "stage": "B5.add-spec-member",
+      "label": "spec member added via UI",
+      "detail": "9550d9f2-cfdf-4fed-9677-c590e47468f9"
+    },
+    {
+      "stage": "B6.label-validation",
+      "label": "XSS chars rejected (400)",
+      "detail": ""
+    },
+    {
+      "stage": "B6.label-validation",
+      "label": "overlong label rejected (400)",
+      "detail": ""
+    },
+    {
+      "stage": "B7.duplicate-add",
+      "label": "duplicate add returns 409",
+      "detail": ""
+    },
+    {
+      "stage": "B8.pm-self-add-blocked",
+      "label": "PM cannot self-add as project member (400)",
+      "detail": ""
+    },
+    {
+      "stage": "B9.pm-self-approve-blocked",
+      "label": "PM cannot self-approve cahier (400)",
+      "detail": ""
+    },
+    {
+      "stage": "B10.cahier-status-endpoint",
+      "label": "cahier status endpoint OK",
+      "detail": "status=none"
+    },
+    {
+      "stage": "B11.bulk-assign-empty",
+      "label": "bulk-assign empty payload OK",
+      "detail": "updated=0"
+    },
+    {
+      "stage": "B12.pm-cant-list-spec-queue",
+      "label": "pm reaches /spec/pending-reviews (read access OK)",
+      "detail": "count=0"
+    },
+    {
+      "stage": "C1.spec-login",
+      "label": "spec login",
+      "detail": ""
+    },
+    {
+      "stage": "C2.spec-queue",
+      "label": "spec queue endpoint reachable",
+      "detail": "rows=0"
+    },
+    {
+      "stage": "C4.spec-cross-project-blocked",
+      "label": "spec correctly blocked from /admin/project",
+      "detail": "HTTP 403"
+    },
+    {
+      "stage": "D1.realiz-login",
+      "label": "realiz login",
+      "detail": ""
+    },
+    {
+      "stage": "D2.realiz-cross-project-idor",
+      "label": "realiz blocked from cross-project members",
+      "detail": "HTTP 404"
+    },
+    {
+      "stage": "E1.security-summary",
+      "label": "security checks complete",
+      "detail": "XSS, length, dup, self-add, self-approve, IDOR all enforced"
+    },
+    {
+      "stage": "F2.search-modal",
+      "label": "Ctrl+K opens search modal",
+      "detail": ""
+    },
+    {
+      "stage": "F3.profile-page",
+      "label": "profile page reachable",
+      "detail": ""
+    },
+    {
+      "stage": "F4.breadcrumb-on-gantt",
+      "label": "breadcrumb shows \"Gantt\" on /gantt route",
+      "detail": ""
+    },
+    {
+      "stage": "F5.help-dialog",
+      "label": "? opens keyboard help dialog",
+      "detail": ""
+    },
+    {
+      "stage": "F6.g-g-keyboard-nav",
+      "label": "\"g g\" navigates to Gantt",
+      "detail": ""
+    },
+    {
+      "stage": "G1.pm-cahier-tabs",
+      "label": "PM does NOT see \"Validation équipes\" tab",
+      "detail": ""
+    },
+    {
+      "stage": "G2.spec-cahier-tabs",
+      "label": "spec project page may lack tabs (project-scoped guard)",
+      "detail": ""
+    },
+    {
+      "stage": "H.cleanup",
+      "label": "cleanup OK",
+      "detail": ""
+    }
+  ],
+  "findings": [
+    {
+      "severity": "LOW",
+      "stage": "F7.dark-mode-toggle",
+      "msg": "theme command not found in search modal"
+    }
+  ],
+  "events": []
+}
