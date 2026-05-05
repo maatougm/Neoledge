@@ -309,7 +309,7 @@ const router = createRouter({
             {
               path: 'projects/:id',
               name: 'team-project-detail',
-              component: () => import('@/components/pm/PMProjectDetail.vue'),
+              component: () => import('@/views/PMProjectDetailView.vue'),
               props: true,
               meta: { readonly: true },
             },
