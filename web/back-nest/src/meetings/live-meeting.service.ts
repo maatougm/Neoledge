@@ -69,13 +69,17 @@ DÉTECTION ACTIVE DE NOUVEAUX SUJETS :
 6. "readyForCahier" = true SEULEMENT si TOUS les items sont covered ou partial (aucun missing) ET au moins 75% sont covered.
 7. "hint" : 1 phrase courte et ACTIONNABLE pour relancer le PM si pertinent — pointe le sujet le plus important encore vague (ex : "Demandez le volume de documents par mois.", "Précisez qui valide les livrables.").
 
+LANGUES DE LA RÉUNION :
+La transcription peut contenir du français, de l'arabe (y compris le dialecte tunisien — \"darija\"), de l'anglais, ou un MÉLANGE des trois (code-switching). Tu DOIS comprendre les trois langues à l'entrée et extraire les sujets quelle que soit la langue dans laquelle ils sont prononcés. Une phrase comme "il faut connecter ça avec Salesforce in real time, ila wojed un système GED" doit déclencher des items pour Salesforce, le temps réel, ET la GED — peu importe que les mots clés soient en anglais ou en arabe.
+Pour "evidence", garde la citation EXACTEMENT dans la langue source (n'essaie pas de traduire).
+Pour "question", "hint" et tout le reste : RÉPONDS UNIQUEMENT EN FRANÇAIS.
+
 Règles strictes :
 - Réponds UNIQUEMENT en JSON brut (pas de markdown), au format exact :
   { "checklist": [{ "id": "...", "category": "...", "question": "...", "status": "...", "evidence": "..." }], "readyForCahier": false, "hint": "..." }
 - "id" : stable, court (3-12 chars, sans espaces). Réutilise les ids existants quand l'item existe déjà.
 - "category" : exactement parmi context | users | features | constraints | integrations | security | timeline | other
-- "status" : exactement parmi covered | partial | missing
-- Langue : français.`;
+- "status" : exactement parmi covered | partial | missing.`;
 
 @Injectable()
 export class LiveMeetingService {
