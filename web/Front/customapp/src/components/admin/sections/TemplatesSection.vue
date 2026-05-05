@@ -56,7 +56,7 @@
     </div>
 
     <!-- Create dialog -->
-    <Dialog v-model:visible="showCreateDialog" header="Nouveau modèle" :modal="true" style="width: 600px">
+    <AppModal v-model:visible="showCreateDialog" header="Nouveau modèle" width="600px">
       <div class="create-form">
         <NeoInputText v-model="form.name" label="Nom du modèle" placeholder="Ex : Modèle NeoLeadge standard" class="w-full" />
         <NeoInputText v-model="form.description" label="Description (optionnel)" placeholder="Description courte" class="w-full" />
@@ -105,10 +105,10 @@
         <NeoButton label="Annuler" severity="secondary" outlined @click="showCreateDialog = false" />
         <NeoButton label="Créer" :loading="saving" :disabled="!form.name.trim()" @click="handleCreate" />
       </template>
-    </Dialog>
+    </AppModal>
 
     <!-- Apply to project dialog -->
-    <Dialog v-model:visible="showApplyDialog" header="Appliquer le modèle" :modal="true" style="width: 480px">
+    <AppModal v-model:visible="showApplyDialog" header="Appliquer le modèle" width="480px">
       <div class="apply-form">
         <p class="apply-hint">
           Sélectionnez un projet pour y ajouter les champs du modèle
@@ -133,14 +133,14 @@
           @click="handleApply"
         />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { NeoButton, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import { useTemplateStore } from '@/stores/templateStore'
 import { useProjectStore } from '@/stores/projectStore'
 import type { ProjectTemplateSummary } from '@/types/project.types'
@@ -304,7 +304,13 @@ async function handleApply() {
 .data-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--nl-surface-2); color: var(--nl-text-2); }
 .data-table tr:last-child td { border-bottom: none; }
 .td-name { font-weight: 600; color: var(--nl-text-1); }
-.td-desc { color: var(--nl-text-3); max-width: 240px; }
+.td-desc {
+  color: var(--nl-text-3);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .td-actions { text-align: right; display: flex; gap: 0.5rem; justify-content: flex-end; }
 
 .create-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }

@@ -11,9 +11,10 @@
         <tr><td><kbd>g</kbd> <kbd>g</kbd></td><td>Gantt</td></tr>
         <tr><td><kbd>g</kbd> <kbd>b</kbd></td><td>Board (Kanban)</td></tr>
         <tr><td><kbd>g</kbd> <kbd>t</kbd></td><td>Temps</td></tr>
-<tr><td><kbd>g</kbd> <kbd>l</kbd></td><td>Liste des projets</td></tr>
-        <tr><td class="kb-help__sep" colspan="2">Actions</td></tr>
-        <tr><td><kbd>c</kbd></td><td>Nouveau Work Package (sur /workpackages)</td></tr>
+        <tr><td><kbd>g</kbd> <kbd>l</kbd></td><td>Liste des projets</td></tr>
+        <tr><td class="kb-help__sep" colspan="2">Actions contextuelles</td></tr>
+        <tr><td><kbd>c</kbd></td><td>Nouveau Work Package (depuis la page Work Packages)</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Fermer un dialogue / annuler une saisie</td></tr>
       </tbody>
     </table>
   </AppModal>

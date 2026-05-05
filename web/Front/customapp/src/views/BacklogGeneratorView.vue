@@ -61,9 +61,13 @@
             label="Accepter et créer les tâches"
             icon="pi pi-check"
             :loading="accepting"
-            :disabled="totalTasks === 0"
+            :disabled="totalTasks === 0 || hasEmptyTitle"
             @click="onAccept"
           />
+          <p v-if="hasEmptyTitle" class="bg__warn">
+            <i class="pi pi-exclamation-triangle" />
+            Tous les epics et toutes les tâches doivent avoir un titre.
+          </p>
         </div>
       </div>
     </div>
@@ -97,6 +101,16 @@ const totalHours = computed(() => {
     for (const t of e.children) h += Number(t.estimatedHours) || 0
   }
   return h
+})
+
+// Block acceptance if any title is empty — empty titles in DB break the WP list view.
+const hasEmptyTitle = computed(() => {
+  if (!store.proposed) return false
+  for (const e of store.proposed.epics) {
+    if (!e.title?.trim()) return true
+    for (const t of e.children) if (!t.title?.trim()) return true
+  }
+  return false
 })
 
 async function onGenerate(): Promise<void> {
@@ -205,4 +219,12 @@ onMounted(() => {
 }
 .bg__totals { display: flex; gap: 1.5rem; font-size: 0.875rem; color: var(--nl-text-muted, #6b7280); }
 .bg__totals strong { color: var(--nl-text, #111827); }
+.bg__warn {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--nl-warn, #d97706);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
 </style>

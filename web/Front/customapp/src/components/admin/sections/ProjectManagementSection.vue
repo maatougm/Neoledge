@@ -262,13 +262,8 @@
       @assigned="showAssign = false"
     />
 
-    <!-- Duplicate dialog -->
-    <Dialog
-      v-model:visible="showDuplicate"
-      header="Dupliquer le projet"
-      :modal="true"
-      style="width: 420px"
-    >
+    <!-- Duplicate dialog (AppModal — Esc closes, click-outside does NOT, so typed name isn't lost) -->
+    <AppModal v-model:visible="showDuplicate" header="Dupliquer le projet" width="420px">
       <div class="dialog-body">
         <p class="dialog-hint">Saisissez le nom du nouveau projet (copie de « {{ duplicateSrcName }} »).</p>
         <div class="field-wrap">
@@ -291,7 +286,7 @@
           @click="confirmDuplicate"
         />
       </template>
-    </Dialog>
+    </AppModal>
   </div>
 </template>
 
@@ -299,7 +294,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import Dialog from 'primevue/dialog'
+import AppModal from '@/components/common/AppModal.vue'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
 import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
 import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'

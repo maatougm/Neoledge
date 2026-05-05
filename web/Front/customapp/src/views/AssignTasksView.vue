@@ -85,12 +85,10 @@
       </div>
 
       <div v-if="!members.length" class="at__no-members">
-        <p>Aucun membre dans ce projet.</p>
+        <p>Aucun membre dans ce projet — ajoutez des membres pour pouvoir leur assigner des tâches.</p>
         <NeoButton
           label="Ajouter des membres"
           icon="pi pi-user-plus"
-          severity="secondary"
-          outlined
           @click="goToMembers"
         />
       </div>

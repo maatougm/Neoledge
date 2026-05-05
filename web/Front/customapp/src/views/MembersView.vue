@@ -186,7 +186,9 @@
       </div>
 
       <template #footer>
-        <NeoButton label="Annuler" severity="secondary" outlined @click="closeBlockersModal" />
+        <!-- Layout: danger on the far LEFT, spacer, then Cancel + primary on the RIGHT.
+             Stops users from accidentally clicking "Supprimer quand même" while reaching for
+             the recommended "Réassigner et retirer" path. -->
         <NeoButton
           label="Supprimer quand même"
           icon="pi pi-trash"
@@ -195,6 +197,8 @@
           :loading="resolvingBlockers"
           @click="forceRemove"
         />
+        <span class="mem-blockers__spacer" />
+        <NeoButton label="Annuler" severity="secondary" outlined @click="closeBlockersModal" />
         <NeoButton
           label="Réassigner et retirer"
           icon="pi pi-arrows-h"
@@ -537,6 +541,7 @@ onMounted(async () => {
 .mem-icon-btn--ok:hover { color: var(--nl-accent, #1e9e8f); }
 
 .mem-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }
+.mem-blockers__spacer { flex: 1; }
 .mem-field { display: flex; flex-direction: column; gap: 0.375rem; }
 .mem-field__label { font-size: 0.8125rem; font-weight: 500; color: var(--nl-text-muted, #6b7280); }
 .mem-field__hint { font-size: 0.75rem; color: var(--nl-text-muted, #9ca3af); margin: 0.25rem 0 0; }

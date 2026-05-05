@@ -234,7 +234,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NeoButton } from '@neolibrary/components'
+import { NeoButton, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
@@ -243,7 +243,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
 import { formatRelative } from '@/lib/formatDate'
 import { isTerminal } from '@/lib/wpStatus'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 
 interface WorkPackage {
   id: string; title: string; status: string; priority: string;
@@ -264,6 +264,7 @@ interface Responsibilities {
 const props   = defineProps<{ id: string }>()
 const router  = useRouter()
 const uiStore = useUiStore()
+const toast   = useNeoToast()
 const authStore = useAuthStore()
 const collab  = useCollaborationSocket()
 
@@ -444,7 +445,11 @@ async function saveResponsibilities(): Promise<void> {
     })
     responsibilities.value = data
     editingResp.value = false
-  } catch { /* silent */ }
+    toast.add({ severity: 'success', detail: 'Responsabilités enregistrées.', life: 2500 })
+  } catch (err: unknown) {
+    const msg = extractErrorMessage(err) ?? 'Échec de l\'enregistrement.'
+    toast.add({ severity: 'error', detail: msg, life: 5000 })
+  }
 }
 
 onMounted(() => {

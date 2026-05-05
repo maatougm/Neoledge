@@ -41,17 +41,23 @@ const route = useRoute()
 const projectName = ref<string>('')
 
 const MODULE_LABELS: Record<string, string> = {
-  'pm-project-detail':    '',
-  'pm-workpackages':      'Work Packages',
-  'pm-gantt':             'Gantt',
-  'pm-board':             'Board',
-  'pm-backlogs':          'Backlog',
-  'pm-sprint':            'Sprint',
-  'pm-backlog-generator': 'Backlog IA',
-  'pm-assign-tasks':      'Assignation',
-'pm-time':              'Temps',
-  'pm-members':           'Membres',
-  'pm-project-activity':  'Activité',
+  'pm-project-detail':         '',
+  // Tabbed legacy module deep-links
+  'pm-project-questionnaire':  'Questionnaire',
+  'pm-project-meetings':       'Réunions',
+  'pm-project-cahier':         'Cahier des charges',
+  'pm-project-validations':    'Validations',
+  // OpenProject-parity per-project routes
+  'pm-workpackages':           'Work Packages',
+  'pm-gantt':                  'Gantt',
+  'pm-board':                  'Board',
+  'pm-backlogs':               'Backlog Sprint',
+  'pm-sprint':                 'Sprint',
+  'pm-backlog-generator':      'Backlog IA',
+  'pm-assign-tasks':           'Assignation',
+  'pm-time':                   'Temps',
+  'pm-members':                'Membres',
+  'pm-project-activity':       'Activité',
 }
 
 const moduleLabel = computed<string>(() => {

@@ -436,7 +436,7 @@ async function handleDownload() {
   border-radius: 6px;
   margin-bottom: 16px;
 }
-.cahier-success-icon { font-size: 1.5rem; color: #27ae60; }
+.cahier-success-icon { font-size: 1.5rem; color: var(--nl-success, #27ae60); }
 .cahier-success-text { font-weight: 600; margin: 0; }
 .cahier-success-meta { font-size: 0.85rem; color: var(--nl-text-muted, #666); margin: 2px 0 0; }
 
