@@ -45,20 +45,29 @@ const SYSTEM_PROMPT = `Tu es un assistant IA expert en gestion de projet, prése
 Ton rôle : maintenir une CHECKLIST PERSONNALISÉE des informations à collecter pour produire ensuite un cahier des charges et un backlog parfaits POUR CE PROJET PRÉCIS.
 
 À chaque appel, on te fournit :
-- Le contexte du projet (nom, cahier des charges existant)
+- Le contexte du projet (nom, client, champs du questionnaire, cahier des charges existant)
 - La transcription accumulée jusqu'ici
 - La checklist précédente (peut être vide au tout premier appel)
 
 Mission :
-1. Si la checklist précédente est VIDE : génère 8 à 14 items adaptés au projet, couvrant : utilisateurs cibles, fonctionnalités principales, intégrations, contraintes techniques, sécurité, volumétrie, échéances, livrables, méthode de validation. Ne mets que des items VRAIMENT pertinents pour ce projet.
+1. Si la checklist précédente est VIDE : génère 10 à 16 items adaptés au projet, couvrant : utilisateurs cibles, fonctionnalités principales, intégrations, contraintes techniques, sécurité, volumétrie, échéances, livrables, méthode de validation, budget/effort, livraison/déploiement. Ne mets que des items VRAIMENT pertinents pour ce projet.
 2. Si la checklist existe : conserve les mêmes "id" (stables), mets à jour le "status" de chaque item :
-   - "covered" si la transcription contient une réponse claire et précise
-   - "partial" si l'info a été touchée mais reste vague
-   - "missing" si rien n'a été dit
-   Tu peux AJOUTER 1-2 nouveaux items si la conversation a révélé un sujet imprévu (max 18 items au total). Tu peux aussi reformuler une "question" devenue trop vague.
-3. Pour chaque item passant de missing/partial à covered, remplis "evidence" avec une citation courte (≤ 200 caractères) du transcript.
-4. "readyForCahier" = true SEULEMENT si TOUS les items sont covered ou partial (aucun missing) ET au moins 70% sont covered.
-5. "hint" : 1 phrase courte pour relancer le PM si pertinent (ex : "Demandez les volumes de données.").
+   - "covered" si la transcription contient une réponse CLAIRE, EXPLICITE et PRÉCISE (ex : un nom d'outil cité, un nombre, une date, un nom de personne, une décision actée)
+   - "partial" si le sujet a été MENTIONNÉ ou ÉVOQUÉ même brièvement, sans détail concret. Sois GÉNÉREUX avec ce statut — dès qu'un mot-clé du sujet apparaît, passe en partial.
+   - "missing" SEULEMENT si le sujet n'a jamais été cité.
+
+DÉTECTION ACTIVE DE NOUVEAUX SUJETS :
+3. **Scan exhaustif** : à chaque appel, relis attentivement la transcription pour détecter TOUT sujet implicite ou mentionné en passant qui n'est pas dans la checklist existante :
+   - Outils, technos, plateformes nommées (Salesforce, SAP, Outlook, Teams, Azure, AWS, etc.)
+   - Contraintes implicites (RGPD, conformité, audits, SLA, charge attendue)
+   - Personnes/rôles évoqués (DPO, sponsor, équipe support, etc.)
+   - Échéances ou jalons cités même vaguement
+   - Risques ou blocages mentionnés
+   - Process internes existants à intégrer
+4. **Ajoute systématiquement** un item dès qu'un sujet manquant est mentionné — ne reporte pas à plus tard. Tu peux ajouter jusqu'à 6 nouveaux items par appel (max 24 items au total).
+5. Pour chaque item passant de missing/partial à covered, remplis "evidence" avec une citation courte (≤ 200 caractères) du transcript.
+6. "readyForCahier" = true SEULEMENT si TOUS les items sont covered ou partial (aucun missing) ET au moins 75% sont covered.
+7. "hint" : 1 phrase courte et ACTIONNABLE pour relancer le PM si pertinent — pointe le sujet le plus important encore vague (ex : "Demandez le volume de documents par mois.", "Précisez qui valide les livrables.").
 
 Règles strictes :
 - Réponds UNIQUEMENT en JSON brut (pas de markdown), au format exact :
@@ -108,6 +117,26 @@ export class LiveMeetingService {
     });
     if (!project) throw new NotFoundException('Projet non trouvé');
 
+    // Pull questionnaire field labels so the AI knows the project's defined
+    // topics — these are the answers the cahier ultimately needs.
+    let questionnaireSummary = '';
+    try {
+      const fields = await this.prisma.projectField.findMany({
+        where: { projectId },
+        select: { label: true, isBacklogDriver: true },
+        orderBy: { orderIndex: 'asc' },
+        take: 40,
+      });
+      if (fields.length > 0) {
+        const lines = fields.map((f) =>
+          `- ${f.label}${f.isBacklogDriver ? ' (alimente l\'IA)' : ''}`,
+        );
+        questionnaireSummary = lines.join('\n');
+      }
+    } catch {
+      /* questionnaire is best-effort context */
+    }
+
     let cahierExtract = '(aucun cahier des charges existant)';
     if (project.aiOutput) {
       try {
@@ -118,14 +147,24 @@ export class LiveMeetingService {
       }
     }
 
+    // 24k chars is roughly 60–90 minutes of French speech — well past the
+    // length of any normal kickoff meeting. Earlier we trimmed at 8k which
+    // dropped topics from the first half of long sessions.
+    const TRANSCRIPT_WINDOW_CHARS = 24_000;
+
     const userMessage = [
       `# Projet : ${project.name} (client : ${project.clientName})`,
+      '',
+      '## Champs du questionnaire (sujets attendus pour CE projet)',
+      questionnaireSummary || '(aucun champ défini — toutes les inférences viennent du transcript et du cahier ci-dessous)',
       '',
       '## Cahier des charges existant (extrait)',
       cahierExtract,
       '',
       '## Transcription accumulée',
-      trimmed.slice(-8000),
+      trimmed.length > TRANSCRIPT_WINDOW_CHARS
+        ? trimmed.slice(-TRANSCRIPT_WINDOW_CHARS)
+        : trimmed,
       '',
       '## Checklist précédente',
       previousChecklist.length === 0
@@ -162,8 +201,11 @@ export class LiveMeetingService {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMessage },
         ],
-        temperature: 0.4,
-        max_tokens: 2000,
+        // Lower temperature = more deterministic topic extraction; the model
+        // should pick up the same mention every call instead of forgetting.
+        temperature: 0.2,
+        // 3 000 tokens covers 24 items × 150 tokens with evidence + hints.
+        max_tokens: 3_000,
         response_format: { type: 'json_object' },
       }),
     });
@@ -191,7 +233,7 @@ export class LiveMeetingService {
     const r = raw as Record<string, unknown>;
     const items = Array.isArray(r.checklist) ? r.checklist : [];
     const checklist: ChecklistItem[] = [];
-    for (const it of items.slice(0, 18)) {
+    for (const it of items.slice(0, 24)) {
       if (!it || typeof it !== 'object') continue;
       const x = it as Record<string, unknown>;
       const id = typeof x.id === 'string' ? x.id.trim().slice(0, 16) : '';
@@ -212,7 +254,7 @@ export class LiveMeetingService {
     const readyForCahier =
       checklist.length > 0 &&
       checklist.every((i) => i.status !== 'missing') &&
-      checklist.filter((i) => i.status === 'covered').length / checklist.length >= 0.7;
+      checklist.filter((i) => i.status === 'covered').length / checklist.length >= 0.75;
     const hint = typeof r.hint === 'string' ? r.hint.trim().slice(0, 200) : null;
     return { checklist, readyForCahier, hint };
   }
