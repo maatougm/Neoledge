@@ -217,7 +217,9 @@ function shouldPoll(): boolean {
 onMounted(() => {
   _poll = window.setInterval(() => {
     if (!shouldPoll()) return
-    store.fetchProject(props.project.id)
+    const id = props.project?.id
+    if (!id) return
+    store.fetchProject(id)
   }, 15_000)
 })
 onUnmounted(() => {
