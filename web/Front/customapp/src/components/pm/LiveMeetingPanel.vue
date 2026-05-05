@@ -376,17 +376,31 @@ async function startTabCapture(): Promise<void> {
 async function uploadChunk(blob: Blob): Promise<void> {
   chunkPending.value = true
   try {
-    const form = new FormData()
-    form.append('audio', blob, `chunk-${Date.now()}.webm`)
-    const { data } = await api.post<{ text: string }>(
-      `/pm/projects/${props.projectId}/meetings/live/transcribe-chunk`,
-      form,
-    )
-    if (data.text && data.text.trim().length > 0) {
-      transcript.value += (transcript.value ? ' ' : '') + data.text.trim()
+    // Retry up to 2 extra times when Whisper returns empty text —
+    // short or quiet audio slices can silently fail on the first pass.
+    const MAX_ATTEMPTS = 3
+    const RETRY_DELAY_MS = 1500
+    let text = ''
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const form = new FormData()
+        form.append('audio', blob, `chunk-${Date.now()}.webm`)
+        const { data } = await api.post<{ text: string }>(
+          `/pm/projects/${props.projectId}/meetings/live/transcribe-chunk`,
+          form,
+        )
+        text = typeof data.text === 'string' ? data.text.trim() : ''
+        if (text.length > 0) break
+      } catch {
+        // network/server error — wait then retry unless it's the last attempt
+      }
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      }
     }
-  } catch {
-    // Don't toast-spam — the next chunk may succeed
+    if (text.length > 0) {
+      transcript.value += (transcript.value ? ' ' : '') + text
+    }
   } finally {
     chunkPending.value = false
   }
