@@ -420,6 +420,70 @@ export class MeetingsService {
     return Result.ok({ audioSize: buffer.length })
   }
 
+  /**
+   * Re-run the full transcription (with speaker diarization) on the audio
+   * file already attached to a transcript. Replaces the existing
+   * TranscriptSegment rows. Used after a live meeting saves its audio
+   * because the live flow only stored a single "PM + invités" segment.
+   */
+  async redoDiarization(transcriptId: string): Promise<Result<{ speakers: number }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { id: true, audioPath: true, audioMimeType: true },
+    })
+    if (!t || !t.audioPath) return Result.fail<any>('Audio non disponible.')
+    if (!fs.existsSync(t.audioPath)) {
+      return Result.fail<any>('Fichier audio introuvable.')
+    }
+
+    const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+    let data: TranscriptionResponse
+    try {
+      const buffer = fs.readFileSync(t.audioPath)
+      data = await this.callLocalTranscription(
+        serviceUrl,
+        buffer,
+        path.basename(t.audioPath),
+      )
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger.warn(`redoDiarization fetch failed for ${transcriptId}: ${msg}`)
+      return Result.fail<any>('Échec de la diarisation.')
+    }
+
+    // Replace all segments atomically. If diarization didn't actually
+    // separate speakers (still returns 1 unique speaker), we still keep
+    // the new segments since they're more granular than the single-blob
+    // saved by the live flow.
+    await this.prisma.$transaction([
+      this.prisma.transcriptSegment.deleteMany({ where: { transcriptId } }),
+      this.prisma.meetingTranscript.update({
+        where: { id: transcriptId },
+        data: {
+          durationSeconds: Math.round(data.duration_seconds || 0),
+          detectedLanguages: (data.detected_languages || []).join(','),
+        },
+      }),
+      this.prisma.transcriptSegment.createMany({
+        data: data.segments.map((s) => ({
+          transcriptId,
+          speaker: s.speaker || 'Speaker 1',
+          text: s.text,
+          startTime: s.start_time,
+          endTime: s.end_time,
+          language: s.language,
+          confidence: s.confidence,
+        })),
+      }),
+    ])
+
+    const speakers = new Set(data.segments.map((s) => s.speaker)).size
+    this.logger.log(
+      `Re-diarized transcript ${transcriptId}: ${data.segments.length} segments, ${speakers} speaker(s)`,
+    )
+    return Result.ok({ speakers })
+  }
+
   /** Return the absolute path + content type of a transcript's stored audio. */
   async getAudioFile(
     transcriptId: string,

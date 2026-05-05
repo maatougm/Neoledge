@@ -10,4 +10,10 @@ scikit-learn==1.4.2
 torch==2.3.1
 torchaudio==2.3.1
 speechbrain==1.0.2
+# speechbrain 1.0.2 still calls `hf_hub_download(..., use_auth_token=...)`,
+# which huggingface_hub >= 0.28 removed. Pin below that ceiling so the
+# diarization model loads cleanly. Without this, the service starts but
+# logs `Speaker diarization unavailable: ... unexpected keyword argument
+# 'use_auth_token'` and every transcript falls back to a single speaker.
+huggingface_hub>=0.20,<0.28
 pydantic==2.7.4

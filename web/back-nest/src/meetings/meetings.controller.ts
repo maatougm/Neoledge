@@ -159,6 +159,10 @@ export class MeetingsController {
       audio.mimetype || 'audio/webm',
     )
     if (result.isFailure) throw new BadRequestException(result.error)
+    // Fire-and-forget: re-run the full transcription with speaker
+    // diarization on the saved audio so the meeting detail shows real
+    // speaker separation instead of a single "PM + invités" blob.
+    void this.service.redoDiarization(id).catch(() => undefined)
     return result.value
   }
 
