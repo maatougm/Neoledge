@@ -98,10 +98,8 @@ export class ProfileService {
     const user = await this.prisma.appUser.findUnique({ where: { id: userId } });
     if (!user) return Result.fail('Utilisateur non trouvé.');
 
-    if (!user.mustChangePassword) {
-      const valid = await bcrypt.compare(currentPassword, user.passwordHash);
-      if (!valid) return Result.fail('Mot de passe actuel incorrect.');
-    }
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) return Result.fail('Mot de passe actuel incorrect.');
 
     // Complexity: min 8 chars, at least one uppercase, one digit, one special character.
     const complexityRe = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/;
@@ -116,7 +114,6 @@ export class ProfileService {
       where: { id: userId },
       data: {
         passwordHash: hash,
-        mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },
     });

@@ -108,7 +108,6 @@ const ROUTE_LABELS: Record<string, string> = {
   'team-pending-reviews':      'Cahiers à valider',
   // User
   'profile':                   'Profil',
-  'force-change-password':     'Changement de mot de passe',
 }
 
 const breadcrumbLabel = computed<string>(() => {

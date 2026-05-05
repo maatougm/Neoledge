@@ -97,8 +97,8 @@ async function main() {
     const { id, ...rest } = u;
     await prisma.appUser.upsert({
       where: { email: u.email },
-      update: { ...rest, isActive: true, mustChangePassword: false },
-      create: { ...u, isActive: true, mustChangePassword: false },
+      update: { ...rest, isActive: true },
+      create: { ...u, isActive: true },
     });
   }
   console.log(`  ✓ ${users.length} users`);

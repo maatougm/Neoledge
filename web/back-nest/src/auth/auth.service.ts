@@ -23,8 +23,8 @@ const DUMMY_BCRYPT_HASH =
   '$2a$12$CwTycUXWue0Thq9StjUM0uJ8oNO.KsVqxjB5lK5OoT0uU4cEO4SGu';
 
 type LoginResult =
-  | { jwt: string; mustChangePassword: boolean; requiresTotp?: never }
-  | { requiresTotp: true; tempToken: string; jwt?: never; mustChangePassword?: never };
+  | { jwt: string; requiresTotp?: never }
+  | { requiresTotp: true; tempToken: string; jwt?: never };
 
 @Injectable()
 export class AuthService {
@@ -59,7 +59,7 @@ export class AuthService {
   async loginWithTotp(
     tempToken: string,
     code: string,
-  ): Promise<{ jwt: string; mustChangePassword: boolean }> {
+  ): Promise<{ jwt: string }> {
     let payload: { sub: string; totpPending: boolean; aud?: string };
 
     try {
@@ -127,7 +127,7 @@ export class AuthService {
       lastName: user.lastName,
     });
 
-    return { jwt, mustChangePassword: user.mustChangePassword };
+    return { jwt };
   }
 
   async setupTotp(userId: string): Promise<{ secret: string; qrCode: string }> {
@@ -257,19 +257,12 @@ export class AuthService {
       throw new UnauthorizedException(this.authFailureMessage('User not found'));
     }
 
-    // When a user is required to change their password (freshly-seeded or
-    // admin-reset accounts), the UI cannot supply the temp password — they
-    // already used it to log in, and the JwtAuthGuard on the endpoint has
-    // re-verified the session. Skip the bcrypt re-check in that case to
-    // unblock the force-change flow; otherwise require the current password.
-    if (!user.mustChangePassword) {
-      const isCurrentValid = await bcrypt.compare(
-        currentPassword,
-        user.passwordHash,
-      );
-      if (!isCurrentValid) {
-        throw new UnauthorizedException(this.authFailureMessage('Current password is incorrect'));
-      }
+    const isCurrentValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!isCurrentValid) {
+      throw new UnauthorizedException(this.authFailureMessage('Current password is incorrect'));
     }
 
     // Reject re-using the current password as the new one. Runs BEFORE the
@@ -285,7 +278,6 @@ export class AuthService {
       where: { id: userId },
       data: {
         passwordHash: newHash,
-        mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },
     });
@@ -338,7 +330,6 @@ export class AuthService {
         passwordHash: newHash,
         passwordResetToken: null,
         passwordResetTokenExpiry: null,
-        mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },
     });
@@ -353,7 +344,6 @@ export class AuthService {
       role: string;
       passwordHash: string;
       isActive: boolean;
-      mustChangePassword: boolean;
       failedLoginAttempts: number;
       lockedUntil: Date | null;
       totpEnabled: boolean;
@@ -447,7 +437,7 @@ export class AuthService {
 
     void this.audit.log('AppUser', user.id, 'LOGIN', user.id)
       .catch((e) => this.logger.error('audit login failed', e));
-    return { jwt, mustChangePassword: user.mustChangePassword };
+    return { jwt };
   }
 
   async getMe(userId: string): Promise<{
