@@ -39,6 +39,8 @@ const PATH_TO_TAB: Record<string, string> = {
   'pm-project-cahier':        'cahier',
   'pm-project-validations':   'validation',
   'pm-project-automation':    'automation',
+  // Team / spec reviewer enters via the queue — default to the cahier review.
+  'team-project-detail':      'cahier',
 }
 const initialTab = computed<string>(() => {
   const name = (route.name as string | undefined) ?? ''

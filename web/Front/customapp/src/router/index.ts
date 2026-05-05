@@ -309,8 +309,8 @@ const router = createRouter({
             {
               path: 'projects/:id',
               name: 'team-project-detail',
-              component: () => import('@/views/PMProjectDetailView.vue'),
-              props: true,
+              component: () => import('@/views/PMProjectFullView.vue'),
+              props: (route) => ({ id: route.params.id }),
               meta: { readonly: true },
             },
             {
