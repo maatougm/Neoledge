@@ -216,39 +216,47 @@ export class LiveMeetingService {
   }
 
   /**
-   * Transcribe a short audio chunk via OpenAI Whisper. Used by the online
-   * meeting mode (getDisplayMedia tab capture). Audio comes in as webm/opus
-   * typically; Whisper accepts that format directly.
+   * Transcribe a short audio chunk via the local Python Whisper service.
+   * Used by the online meeting mode (getDisplayMedia tab capture).
+   * Falls back to a plain empty string on service error so the live UI
+   * keeps running rather than showing a hard error for every chunk.
    */
   async transcribeChunk(buffer: Buffer, mimeType: string): Promise<{ text: string }> {
     if (!buffer?.length) throw new BadRequestException('Chunk audio vide.');
     if (buffer.length > 25 * 1024 * 1024) {
       throw new BadRequestException('Chunk trop volumineux (> 25 Mo).');
     }
-    const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    if (!apiKey) throw new BadGatewayException('OPENAI_API_KEY non configuré');
-    const baseUrl = this.config.get<string>('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1';
+
+    const serviceUrl = this.config.get<string>('TRANSCRIPTION_URL');
+    if (!serviceUrl) throw new BadGatewayException('TRANSCRIPTION_URL non configuré.');
 
     const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('mp4') ? 'mp4' : 'ogg';
     const form = new FormData();
-    form.append('file', new Blob([buffer as unknown as BlobPart], { type: mimeType }), `chunk.${ext}`);
-    form.append('model', 'whisper-1');
-    form.append('language', 'fr');
-    form.append('response_format', 'json');
+    form.append('audio', new Blob([buffer as unknown as BlobPart], { type: mimeType }), `chunk.${ext}`);
 
-    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(60_000),
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      this.logger.error(`Whisper chunk error ${response.status}: ${text.slice(0, 200)}`);
-      throw new BadGatewayException('Transcription audio temporairement indisponible.');
+    const secret = this.config.get<string>('TRANSCRIPTION_SECRET', '');
+    const headers: Record<string, string> = {};
+    if (secret) headers['x-transcription-secret'] = secret;
+
+    try {
+      const response = await fetch(`${serviceUrl}/transcribe`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(60_000),
+        headers,
+        body: form,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        this.logger.error(`Transcription chunk error ${response.status}: ${body.slice(0, 200)}`);
+        return { text: '' };
+      }
+      const data = (await response.json()) as { segments?: Array<{ text?: string }> };
+      const text = (data.segments ?? []).map((s) => s.text ?? '').join(' ').trim();
+      return { text };
+    } catch (e) {
+      this.logger.warn(`Transcription chunk failed: ${e instanceof Error ? e.message : String(e)}`);
+      return { text: '' };
     }
-    const data = (await response.json()) as { text?: string };
-    return { text: typeof data.text === 'string' ? data.text : '' };
   }
 
   /** Persist a live-meeting transcript as a regular MeetingTranscript so it
