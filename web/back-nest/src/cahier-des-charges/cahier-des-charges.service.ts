@@ -21,7 +21,13 @@ STRUCTURE ATTENDUE (inspiré du modèle NeoLedge interne) :
 - livrables : module intégré (Frontend + Backend), base de données + scripts, documentation technique + guide utilisateur, rapport de projet.
 
 RÈGLES JSON STRICTES : tous les textes sont des strings JSON échappées. Pas de \`**\` ni de \`-\` en dehors des strings. Markdown (\`**gras**\`, listes \`- \`, sauts de ligne \\n) autorisé À L'INTÉRIEUR des strings uniquement.
-RÈGLES CONTENU : français, ton contractuel professionnel, exhaustif. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate si le type de projet le justifie. "À définir" si info manquante. Conclusion = paragraphe synthétique sans liste.`
+RÈGLES CONTENU : français, ton contractuel professionnel, exhaustif. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate si le type de projet le justifie. "À définir" si info manquante. Conclusion = paragraphe synthétique sans liste.
+
+PRIORITÉ DES SOURCES (du plus prioritaire au moins prioritaire) :
+1. CAHIER_VALIDE_PAR_EQUIPE (si présent) — version corrigée par l'équipe de validation, fait foi. Conserve les phrases telles qu'elles sont rédigées pour les sections qu'ils ont modifiées. NE LES RÉÉCRIS PAS.
+2. FEEDBACK_PRECEDENT — corrige uniquement ce qui est explicitement signalé. Ne touche pas au reste.
+3. QUESTIONNAIRE + REUNIONS — sources brutes pour combler ce qui manque.
+Tu n'es PAS autorisé à reformuler une section que l'équipe de validation a corrigée juste pour "améliorer le style". Leur rédaction prévaut.`
 
 @Injectable()
 export class CahierDesChargesService {
@@ -471,6 +477,7 @@ export class CahierDesChargesService {
     formData: CahierFormData,
     transcripts: CahierTranscriptInput[],
     pastFeedback?: string[],
+    previousCorrectedCahier?: unknown,
   ): string {
     const parts: string[] = []
 
@@ -526,6 +533,21 @@ export class CahierDesChargesService {
       for (const fb of pastFeedback) parts.push(`- ${fb}`)
     }
 
+    // ── Previously-corrected cahier — authoritative reference ──
+    // The validation team has manually edited this version. Treat their wording
+    // as canonical: keep their sentences verbatim for any section they touched,
+    // only refine sections they explicitly flagged in FEEDBACK_PRECEDENT.
+    if (previousCorrectedCahier && typeof previousCorrectedCahier === 'object') {
+      const json = JSON.stringify(previousCorrectedCahier)
+      // Cap to avoid blowing the token budget on a huge previous cahier.
+      const MAX = 12000
+      const trimmed = json.length > MAX ? json.slice(0, MAX) + ' [trunc]' : json
+      parts.push(
+        `\n# CAHIER_VALIDE_PAR_EQUIPE (version manuellement corrigee par l'equipe de validation — REFERENCE FAISANT FOI: conserve les phrases exactes pour les sections qu'ils ont corrigees, n'ameliore que les sections explicitement signalees dans FEEDBACK_PRECEDENT):`,
+      )
+      parts.push(trimmed)
+    }
+
     return parts.join('\n')
   }
 
@@ -545,14 +567,27 @@ export class CahierDesChargesService {
 
     // Fetch past feedback to inject into prompt (AI learning)
     let pastFeedback: string[] = []
+    let previousCorrectedCahier: unknown = null
     if (projectId) {
       pastFeedback = await this.getPastFeedback(projectId)
       if (pastFeedback.length > 0) {
         this.logger.log(`Including ${pastFeedback.length} past feedback items for AI learning`)
       }
+      // Pull the last saved cahier (which may carry the validation team's
+      // manual edits) so the AI doesn't undo their corrections on the next
+      // regeneration.
+      try {
+        const persisted = await this.getPersistedCahier(projectId)
+        if (persisted.aiContent) {
+          previousCorrectedCahier = persisted.aiContent
+          this.logger.log('Including previous corrected cahier as authoritative reference')
+        }
+      } catch {
+        /* silent — previous cahier is best-effort */
+      }
     }
 
-    const userPrompt = this.buildUserPrompt(formData, transcripts, pastFeedback)
+    const userPrompt = this.buildUserPrompt(formData, transcripts, pastFeedback, previousCorrectedCahier)
 
     this.logger.log(`Generating cahier des charges (provider: ${provider}, prompt length: ${userPrompt.length} chars)`)
 
