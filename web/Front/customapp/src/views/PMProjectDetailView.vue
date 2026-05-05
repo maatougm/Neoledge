@@ -37,7 +37,6 @@
         <StatCard icon="pi-list"                 label="Work Packages"   :value="wpTotal" tone="normal" />
         <StatCard icon="pi-exclamation-triangle" label="En retard"       :value="wpOverdue" :tone="wpOverdue > 0 ? 'danger' : 'normal'" />
         <StatCard icon="pi-forward"              label="Sprint actif"    :value="activeSprintName || '—'" tone="normal" />
-        <StatCard icon="pi-dollar"               label="Budget consommé" :value="`${budgetPct}%`" :tone="budgetPct > 80 ? 'warning' : 'normal'" />
       </div>
 
       <!-- Grid -->
@@ -276,8 +275,6 @@ const wps             = ref<WorkPackage[]>([])
 const milestones      = ref<Milestone[]>([])
 const activity        = ref<Activity[]>([])
 const activeSprint    = ref<Sprint | null>(null)
-const budgetSpent     = ref<number>(0)
-const budgetTotal     = ref<number>(0)
 
 // Team responsibilities
 const allAssignableUsers  = ref<AssignableUser[]>([])
@@ -346,7 +343,6 @@ const daysToEndLabel = computed<string>(() => {
 })
 
 const activeSprintName = computed<string>(() => activeSprint.value?.name ?? '')
-const budgetPct        = computed<number>(() => budgetTotal.value > 0 ? Math.round((budgetSpent.value / budgetTotal.value) * 100) : 0)
 
 function go(module: string): void { void router.push(`/app/pm/projects/${props.id}/${module}`) }
 function openWp(wpId: string): void { void router.push(`/app/pm/projects/${props.id}/workpackages?wpId=${wpId}`) }
@@ -422,13 +418,6 @@ async function loadAll(): Promise<void> {
         const { data: sprints } = await api.get<Sprint[]>(`/pm/projects/${props.id}/boards/${boards[0].id}/sprints`, { suppressErrorToast: true } as never)
         activeSprint.value = sprints.find((s) => s.isActive) ?? null
       }
-    } catch { /* silent */ }
-
-    try {
-      interface Burn { spent: number; total: number }
-      const { data } = await api.get<Burn>(`/pm/projects/${props.id}/budget/burn`, { suppressErrorToast: true } as never)
-      budgetSpent.value = Number(data.spent ?? 0)
-      budgetTotal.value = Number(data.total ?? 0)
     } catch { /* silent */ }
 
     try {

@@ -10,7 +10,6 @@ export type ChecklistCategory =
   | 'constraints'
   | 'integrations'
   | 'security'
-  | 'budget'
   | 'timeline'
   | 'other';
 
@@ -37,7 +36,6 @@ const VALID_CATEGORIES: ChecklistCategory[] = [
   'constraints',
   'integrations',
   'security',
-  'budget',
   'timeline',
   'other',
 ];
@@ -52,7 +50,7 @@ Ton rôle : maintenir une CHECKLIST PERSONNALISÉE des informations à collecter
 - La checklist précédente (peut être vide au tout premier appel)
 
 Mission :
-1. Si la checklist précédente est VIDE : génère 8 à 14 items adaptés au projet, couvrant : utilisateurs cibles, fonctionnalités principales, intégrations, contraintes techniques, sécurité, volumétrie, budget, échéances, livrables, méthode de validation. Ne mets que des items VRAIMENT pertinents pour ce projet.
+1. Si la checklist précédente est VIDE : génère 8 à 14 items adaptés au projet, couvrant : utilisateurs cibles, fonctionnalités principales, intégrations, contraintes techniques, sécurité, volumétrie, échéances, livrables, méthode de validation. Ne mets que des items VRAIMENT pertinents pour ce projet.
 2. Si la checklist existe : conserve les mêmes "id" (stables), mets à jour le "status" de chaque item :
    - "covered" si la transcription contient une réponse claire et précise
    - "partial" si l'info a été touchée mais reste vague
@@ -66,7 +64,7 @@ Règles strictes :
 - Réponds UNIQUEMENT en JSON brut (pas de markdown), au format exact :
   { "checklist": [{ "id": "...", "category": "...", "question": "...", "status": "...", "evidence": "..." }], "readyForCahier": false, "hint": "..." }
 - "id" : stable, court (3-12 chars, sans espaces). Réutilise les ids existants quand l'item existe déjà.
-- "category" : exactement parmi context | users | features | constraints | integrations | security | budget | timeline | other
+- "category" : exactement parmi context | users | features | constraints | integrations | security | timeline | other
 - "status" : exactement parmi covered | partial | missing
 - Langue : français.`;
 

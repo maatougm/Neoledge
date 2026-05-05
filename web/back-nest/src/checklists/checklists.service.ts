@@ -6,7 +6,6 @@ const PHASE_DEFAULTS: Record<string, string[]> = {
   Draft: [
     'Cadrage initial validé',
     'Équipe projet identifiée',
-    'Budget prévisionnel approuvé',
   ],
   Kickoff: [
     'Kick-off réalisé',

@@ -176,7 +176,6 @@ model Project {
   deletedAt                DateTime?
   deletedByUserId          String?
   tags                     String?  @db.VarChar(500)
-  budget                   Decimal?
   currentPhaseEnteredAt    DateTime?
 
   // Relations

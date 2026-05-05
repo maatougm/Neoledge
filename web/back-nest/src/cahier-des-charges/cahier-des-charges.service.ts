@@ -79,7 +79,6 @@ export class CahierDesChargesService {
       endDate: project.endDate.toISOString().slice(0, 10),
       priority: project.priority,
       status: project.status,
-      budget: project.budget?.toString() ?? null,
       fields: project.fieldValues.map((v) => ({
         label: v.field?.label ?? 'Champ',
         value: v.value,
@@ -432,7 +431,6 @@ export class CahierDesChargesService {
     parts.push(`fin: ${formData.endDate}`)
     parts.push(`priorite: ${formData.priority}`)
     parts.push(`statut: ${formData.status}`)
-    if (formData.budget) parts.push(`budget: ${formData.budget}`)
 
     // ── Questionnaire fields — TOON table ──
     if (formData.fields.length > 0) {

@@ -288,7 +288,6 @@ The root entity. Soft-deletable; carries the saved cahier as JSON.
 | `deletedAt` | TIMESTAMPTZ | yes | — | |
 | `deletedByUserId` | TEXT | yes | — | FK → AppUsers, NoAction |
 | `tags` | VARCHAR(500) | yes | — | Comma-separated |
-| `budget` | DECIMAL | yes | — | Project budget (informational) |
 | `currentPhaseEnteredAt` | TIMESTAMPTZ | yes | — | When the project entered its current `status` — drives "stuck in phase" alerts and analytics |
 
 **Status values (`status`):**
@@ -961,6 +960,7 @@ The schema follows three rules:
 | 4 | `20260503020000_wp_custom_value_index` | 2026-05-04 | Index `customFieldId` to speed cascading deletes |
 | 5 | `20260504020000_drop_orphan_tables` | 2026-05-04 | Drop `ProjectBudgets`, `BudgetLineItems`, `Handovers`, `HandoverCriteria`, `ActivityRacis`, `HourlyRates` |
 | 6 | `20260504030000_drop_wiki` | 2026-05-04 | Drop `WikiPages` + `WikiRevisions` — wiki feature retired |
+| 7 | `20260504040000_drop_project_budget` | 2026-05-04 | Drop `Projects.budget` column — last vestige of the budget feature |
 
 All migrations are tracked in `web/back-nest/prisma/migrations/`. Apply with `npx prisma migrate deploy`.
 

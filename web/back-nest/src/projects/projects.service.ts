@@ -186,8 +186,7 @@ export class ProjectsService {
       { label: 'Stack technique proposée', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 3 },
       { label: 'Livrables attendus', fieldType: 'Text', fieldCategory: 'Static', isRequired: true, orderIndex: 4 },
       { label: 'Périmètre exclus', fieldType: 'Text', fieldCategory: 'Static', isRequired: false, orderIndex: 5 },
-      { label: 'Budget prévisionnel (€)', fieldType: 'Number', fieldCategory: 'Static', isRequired: false, orderIndex: 6 },
-      { label: 'Priorité', fieldType: 'Select', fieldCategory: 'Static', isRequired: false, orderIndex: 7, options: '["Low","Medium","High","Critical"]' },
+      { label: 'Priorité', fieldType: 'Select', fieldCategory: 'Static', isRequired: false, orderIndex: 6, options: '["Low","Medium","High","Critical"]' },
     ];
 
     // Atomic multi-step create: project + fields + field-values all succeed or

@@ -4,14 +4,12 @@ import { ref, computed, onUnmounted } from 'vue'
 
 export interface FeatureFlags {
   showGantt: boolean
-  showBudget: boolean
   showTeamPlanner: boolean
   showAudit: boolean
 }
 
 const DEFAULTS: FeatureFlags = {
   showGantt: true,
-  showBudget: true,
   showTeamPlanner: true,
   showAudit: true,
 }
