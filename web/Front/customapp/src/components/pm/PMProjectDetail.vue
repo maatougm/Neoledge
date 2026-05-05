@@ -86,6 +86,7 @@
       <MeetingSection
         v-else-if="activeTab === 'meetings'"
         :project-id="project.id"
+        :readonly="readonly"
       />
       <CommentsSection
         v-else-if="activeTab === 'comments'"
@@ -184,7 +185,10 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 // - Member: read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
   ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity', 'automation'],
-  SpecificationTeam: ['validation', 'cahier', 'history', 'comments', 'activity'],
+  // Validation team needs full read context to review the cahier:
+  // questionnaire (formulaire), meetings (transcripts), the cahier itself
+  // (which they can edit), and the validation actions.
+  SpecificationTeam: ['questionnaire', 'meetings', 'cahier', 'validation', 'history', 'comments', 'activity'],
   Member:            ['cahier', 'history', 'comments', 'activity'],
 }
 

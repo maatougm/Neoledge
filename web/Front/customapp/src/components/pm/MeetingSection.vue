@@ -6,7 +6,7 @@
         <i class="pi pi-arrow-left" /> Retour
       </button>
       <h3 v-if="view === 'list'" class="section-title">Réunions</h3>
-      <div v-if="view === 'list'" class="header-actions">
+      <div v-if="view === 'list' && !readonly" class="header-actions">
         <NeoButton
           label="Réunion en direct"
           icon="pi pi-bolt"
@@ -94,6 +94,7 @@
                 @click="openMeeting(meeting.id)"
               />
               <NeoButton
+                v-if="!readonly"
                 icon="pi pi-trash"
                 size="small"
                 severity="danger"
@@ -118,7 +119,10 @@ import TranscriptViewer from '@/components/pm/TranscriptViewer.vue'
 import MeetingExtrasTabs from '@/components/meetings/MeetingExtrasTabs.vue'
 import LiveMeetingPanel from '@/components/pm/LiveMeetingPanel.vue'
 
-const props = defineProps<{ projectId: string }>()
+const props = withDefaults(
+  defineProps<{ projectId: string; readonly?: boolean }>(),
+  { readonly: false },
+)
 
 const store = usePmStore()
 const toast = useNeoToast()

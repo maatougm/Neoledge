@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Req, Res, UseGuards, Logger } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Req, Res, UseGuards, Logger } from '@nestjs/common'
 import type { Response, Request } from 'express'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
@@ -77,6 +77,27 @@ export class CahierDesChargesController {
     @Body() body: { aiContent: unknown },
   ) {
     await this.cahierService.savePersistedCahier(projectId, body?.aiContent)
+    return { success: true }
+  }
+
+  /**
+   * PATCH /pm/projects/:projectId/cahier-des-charges/content
+   *
+   * In-place edit of the saved cahier JSON. Used by the SpecificationTeam (or
+   * the PM) to fix wording / structure without re-running the AI. Preserves
+   * the original savedAt so the validation queue is NOT reset, and writes a
+   * `cahier_edited` activity row.
+   */
+  @Patch('pm/projects/:projectId/cahier-des-charges/content')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async editContent(
+    @Param('projectId') projectId: string,
+    @Body() body: { aiContent: unknown },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user?.userId ?? null
+    await this.cahierService.editCahierContent(projectId, body?.aiContent, userId)
     return { success: true }
   }
 

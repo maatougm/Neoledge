@@ -80,22 +80,47 @@
 
         <div class="cahier-actions">
           <NeoButton
+            v-if="!editMode"
             label="Télécharger (.docx)"
             icon="pi pi-download"
             @click="handleDownload"
             :loading="downloading"
           />
           <NeoButton
+            v-if="!editMode"
+            label="Modifier"
+            icon="pi pi-pencil"
+            outlined
+            @click="enterEditMode"
+          />
+          <NeoButton
+            v-if="!editMode"
             label="Régénérer"
             icon="pi pi-refresh"
             outlined
             @click="confirmRegenerate"
             :disabled="generating"
           />
+          <NeoButton
+            v-if="editMode"
+            label="Enregistrer les modifications"
+            icon="pi pi-check"
+            :loading="savingEdit"
+            @click="saveEdits"
+          />
+          <NeoButton
+            v-if="editMode"
+            label="Annuler"
+            icon="pi pi-times"
+            outlined
+            severity="secondary"
+            :disabled="savingEdit"
+            @click="cancelEdits"
+          />
         </div>
 
-        <!-- Inline rendering of the saved cahier -->
-        <div class="cahier-doc">
+        <!-- View mode -->
+        <div v-if="!editMode" class="cahier-doc">
           <CahierReviewActions :project-id="projectId" :status="cahierStatus?.status" @reviewed="onReviewed" />
           <CahierDocSection title="1.1 Objectif du document" :markdown="savedContent.objectifDocument" />
           <CahierDocSection title="1.2 Contexte" :markdown="savedContent.contexte" />
@@ -129,6 +154,106 @@
 
           <CahierDocSection title="2.5 Livrables" :markdown="savedContent.livrables" />
           <CahierDocSection title="3. Conclusion" :markdown="savedContent.conclusion" />
+        </div>
+
+        <!-- Edit mode — same section structure, fields are editable textareas -->
+        <div v-else-if="editingContent" class="cahier-doc cahier-doc--edit">
+          <p class="cahier-edit-hint">
+            <i class="pi pi-info-circle" />
+            Vous modifiez le cahier. Les remarques de validation déjà enregistrées sont préservées.
+          </p>
+
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">1.1 Objectif du document</h3>
+            <textarea v-model="editingContent.objectifDocument" class="cahier-edit-textarea" rows="3" />
+          </div>
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">1.2 Contexte</h3>
+            <textarea v-model="editingContent.contexte" class="cahier-edit-textarea" rows="6" />
+          </div>
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">2.1 Objectif du projet</h3>
+            <textarea v-model="editingContent.objectifProjet" class="cahier-edit-textarea" rows="5" />
+          </div>
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">2.2.1 Périmètre — Éléments inclus</h3>
+            <textarea v-model="editingContent.perimetreInclus" class="cahier-edit-textarea" rows="5" />
+          </div>
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">2.2.2 Périmètre — Éléments exclus</h3>
+            <textarea v-model="editingContent.perimetreExclus" class="cahier-edit-textarea" rows="4" />
+          </div>
+
+          <div class="cahier-edit-block">
+            <div class="cahier-edit-block__head">
+              <h3 class="cahier-doc-h">2.3 Exigences fonctionnelles</h3>
+              <NeoButton
+                label="Ajouter une section"
+                icon="pi pi-plus"
+                size="small"
+                outlined
+                @click="editingContent.exigencesFonctionnelles.push({ title: '', content: '' })"
+              />
+            </div>
+            <div
+              v-for="(s, i) in editingContent.exigencesFonctionnelles"
+              :key="`ef-edit-${i}`"
+              class="cahier-edit-row"
+            >
+              <input
+                v-model="s.title"
+                class="cahier-edit-input"
+                placeholder="Titre de la section"
+              />
+              <textarea v-model="s.content" class="cahier-edit-textarea" rows="4" />
+              <button
+                type="button"
+                class="cahier-edit-row__remove"
+                aria-label="Supprimer la section"
+                @click="editingContent.exigencesFonctionnelles.splice(i, 1)"
+              ><i class="pi pi-trash" /></button>
+            </div>
+          </div>
+
+          <div class="cahier-edit-block">
+            <div class="cahier-edit-block__head">
+              <h3 class="cahier-doc-h">2.4 Architecture technique</h3>
+              <NeoButton
+                label="Ajouter une section"
+                icon="pi pi-plus"
+                size="small"
+                outlined
+                @click="editingContent.architectureTechnique.push({ title: '', content: '' })"
+              />
+            </div>
+            <div
+              v-for="(s, i) in editingContent.architectureTechnique"
+              :key="`at-edit-${i}`"
+              class="cahier-edit-row"
+            >
+              <input
+                v-model="s.title"
+                class="cahier-edit-input"
+                placeholder="Titre de la section"
+              />
+              <textarea v-model="s.content" class="cahier-edit-textarea" rows="4" />
+              <button
+                type="button"
+                class="cahier-edit-row__remove"
+                aria-label="Supprimer la section"
+                @click="editingContent.architectureTechnique.splice(i, 1)"
+              ><i class="pi pi-trash" /></button>
+            </div>
+          </div>
+
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">2.5 Livrables</h3>
+            <textarea v-model="editingContent.livrables" class="cahier-edit-textarea" rows="5" />
+          </div>
+          <div class="cahier-edit-block">
+            <h3 class="cahier-doc-h">3. Conclusion</h3>
+            <textarea v-model="editingContent.conclusion" class="cahier-edit-textarea" rows="4" />
+          </div>
         </div>
 
         <!-- Past feedback history (read-only — approve/reject moved to CahierReviewActions for spec team) -->
@@ -222,6 +347,53 @@ const savedContent = ref<CahierAiResult | null>(null)
 const savedAt = ref<string | null>(null)
 const pastFeedback = ref<string[]>([])
 const cahierStatus = ref<CahierStatus | null>(null)
+
+// ─── Manual edit mode ─────────────────────────────────────────────────────────
+const editMode = ref(false)
+const savingEdit = ref(false)
+const editingContent = ref<CahierAiResult | null>(null)
+
+function enterEditMode(): void {
+  if (!savedContent.value) return
+  // Deep copy so cancel restores cleanly even if the user touched array entries.
+  editingContent.value = JSON.parse(JSON.stringify(savedContent.value)) as CahierAiResult
+  if (!Array.isArray(editingContent.value.exigencesFonctionnelles)) {
+    editingContent.value.exigencesFonctionnelles = []
+  }
+  if (!Array.isArray(editingContent.value.architectureTechnique)) {
+    editingContent.value.architectureTechnique = []
+  }
+  editMode.value = true
+}
+
+function cancelEdits(): void {
+  editingContent.value = null
+  editMode.value = false
+}
+
+async function saveEdits(): Promise<void> {
+  if (!editingContent.value) return
+  savingEdit.value = true
+  try {
+    await api.patch(
+      `/pm/projects/${props.projectId}/cahier-des-charges/content`,
+      { aiContent: editingContent.value },
+    )
+    savedContent.value = editingContent.value
+    editingContent.value = null
+    editMode.value = false
+    toast.add({ severity: 'success', detail: 'Cahier mis à jour.', life: 3000 })
+  } catch (e: unknown) {
+    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+    toast.add({
+      severity: 'error',
+      detail: msg ?? 'Erreur lors de l\'enregistrement.',
+      life: 5000,
+    })
+  } finally {
+    savingEdit.value = false
+  }
+}
 
 const SECTION_LABELS: Record<string, string> = {
   contexte: 'Contexte',
@@ -553,4 +725,78 @@ async function handleDownload() {
 }
 .cahier-empty-icon { font-size: 2.5rem; margin-bottom: 12px; color: var(--nl-primary, #1b4f72); opacity: 0.4; }
 .cahier-empty-detail { font-size: 0.85rem; margin-top: 6px; }
+
+/* ── Edit mode ─────────────────────────────────────────────────────────── */
+.cahier-doc--edit { padding-bottom: 8px; }
+.cahier-edit-hint {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--nl-accent-light, #eff6ff);
+  color: var(--nl-accent, #1d4ed8);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  margin: 0 0 16px;
+}
+.cahier-edit-block { margin-bottom: 18px; }
+.cahier-edit-block__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.cahier-edit-block .cahier-doc-h { margin: 0 0 6px; }
+.cahier-edit-textarea {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--nl-border, #d1d5db);
+  border-radius: 6px;
+  background: var(--nl-surface, #fff);
+  color: var(--nl-text-1, #111827);
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.cahier-edit-textarea:focus {
+  outline: none;
+  border-color: var(--nl-accent, #1d4ed8);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+.cahier-edit-input {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--nl-border, #d1d5db);
+  border-radius: 6px;
+  background: var(--nl-surface, #fff);
+  color: var(--nl-text-1, #111827);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.cahier-edit-input:focus {
+  outline: none;
+  border-color: var(--nl-accent, #1d4ed8);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+.cahier-edit-row {
+  position: relative;
+  background: var(--nl-surface-2, #f9fafb);
+  border: 1px solid var(--nl-border, #e5e7eb);
+  border-radius: 8px;
+  padding: 10px 12px 10px 12px;
+  margin-bottom: 10px;
+}
+.cahier-edit-row__remove {
+  position: absolute; top: 8px; right: 8px;
+  width: 28px; height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--nl-text-3, #6b7280);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.cahier-edit-row__remove:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--nl-danger, #dc2626);
+}
 </style>

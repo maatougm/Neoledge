@@ -123,6 +123,58 @@ export class CahierDesChargesService {
     )
   }
 
+  /**
+   * In-place edit of an already-saved cahier. Preserves the original `savedAt`
+   * so the existing validation queue and feedback rows stay valid (an edit is
+   * NOT a regeneration). No notifications fire — only an activity log row.
+   */
+  async editCahierContent(
+    projectId: string,
+    aiContent: unknown,
+    userId: string | null,
+  ): Promise<void> {
+    if (!aiContent || typeof aiContent !== 'object') {
+      throw new BadRequestException('aiContent manquant ou invalide')
+    }
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, aiOutput: true },
+    })
+    if (!project) throw new BadRequestException('Projet introuvable')
+    if (!project.aiOutput) {
+      throw new BadRequestException(
+        'Aucun cahier à éditer — générez-le d\'abord.',
+      )
+    }
+    let originalSavedAt: string | null = null
+    try {
+      const parsed = JSON.parse(project.aiOutput) as { savedAt?: string }
+      originalSavedAt = parsed.savedAt ?? null
+    } catch {
+      // corrupt JSON — fall back to current time so we still write a valid row
+    }
+    const payload = JSON.stringify({
+      aiContent,
+      savedAt: originalSavedAt ?? new Date().toISOString(),
+    })
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { aiOutput: payload },
+    })
+    void this.prisma.projectActivity
+      .create({
+        data: {
+          projectId,
+          userId,
+          action: 'cahier_edited',
+          detail: 'Cahier des charges modifié manuellement',
+        },
+      })
+      .catch((e) =>
+        this.logger.warn(`activity log failed: ${e instanceof Error ? e.message : e}`),
+      )
+  }
+
   /** Persist a generated cahier JSON in Project.aiOutput + notify review teams. */
   async savePersistedCahier(projectId: string, aiContent: unknown): Promise<void> {
     if (!aiContent || typeof aiContent !== 'object') {
