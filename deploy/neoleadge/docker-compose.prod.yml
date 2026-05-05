@@ -58,6 +58,9 @@ services:
       # would break the compose-network resolution.
       TRANSCRIPTION_URL: http://transcription:8000
       TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
+      # AssemblyAI Universal-2 — primary STT + diarization for live meetings.
+      # When unset, falls back to the local faster-whisper + SpeechBrain stack.
+      ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS}
       THROTTLER_WHITELIST: ${THROTTLER_WHITELIST:-}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
