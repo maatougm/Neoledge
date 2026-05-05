@@ -335,8 +335,19 @@ function toggleMenu(event: MouseEvent, project: ProjectSummary): void {
   if (btn) {
     const rect = btn.getBoundingClientRect()
     const MENU_WIDTH = 220
+    // Approximate menu height: 11 items × ~30px + 2 group headers + 2 separators + padding ≈ 380px.
+    // Flip the menu UP when there's not enough room below the trigger so the
+    // delete button never falls off the viewport (especially when the page has
+    // few projects and isn't scrollable). Pre-clamp inside the viewport too.
+    const MENU_HEIGHT = 380
+    const VIEWPORT_PAD = 8
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PAD
+    const spaceAbove = rect.top - VIEWPORT_PAD
+    const top = spaceBelow >= MENU_HEIGHT || spaceBelow >= spaceAbove
+      ? rect.bottom + 4
+      : Math.max(VIEWPORT_PAD, rect.top - MENU_HEIGHT - 4)
     menuPos.value = {
-      top: rect.bottom + 4,
+      top,
       left: Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8),
     }
   }

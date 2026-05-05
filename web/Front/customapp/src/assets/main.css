@@ -101,6 +101,11 @@
   padding: 4px; z-index: 9500;
   display: flex; flex-direction: column; gap: 1px;
   font-family: var(--nl-font);
+  /* Safety net: if the trigger is placed such that the menu would still overflow
+     the viewport, scroll inside the menu instead of letting the bottom items
+     (incl. delete) fall off-screen. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .ptr__overflow-menu button {
   display: flex; align-items: center; gap: var(--nl-sp-2);
