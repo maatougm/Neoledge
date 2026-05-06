@@ -519,6 +519,21 @@ export class MeetingsService {
     return Result.ok({ speakers, provider })
   }
 
+  /** Mark a meeting's audio as preserved (or release the flag). The
+   *  retention cron skips preserved recordings. */
+  async setAudioPreserved(transcriptId: string, preserved: boolean): Promise<Result<{ preserved: boolean }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { id: true },
+    })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+    await this.prisma.meetingTranscript.update({
+      where: { id: transcriptId },
+      data: { audioPreserved: preserved },
+    })
+    return Result.ok({ preserved })
+  }
+
   /** Return the absolute path + content type of a transcript's stored audio. */
   async getAudioFile(
     transcriptId: string,

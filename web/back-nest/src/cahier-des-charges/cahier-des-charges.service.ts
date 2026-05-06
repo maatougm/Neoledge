@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
 import { AutomationService } from '../automation/automation.service.js'
+import { AiUsageService } from '../ai-usage/ai-usage.service.js'
+import { redactPii } from '../common/pii-redact.js'
 import type {
   CahierFormData,
   CahierTranscriptInput,
@@ -38,6 +40,7 @@ export class CahierDesChargesService {
     private readonly config: ConfigService,
     private readonly zaiFallback: ZaiFallbackProvider,
     private readonly automationService: AutomationService,
+    private readonly aiUsage: AiUsageService,
   ) {}
 
   // ─── 1. Gather all project data ────────────────────────────────────────────
@@ -167,6 +170,11 @@ export class CahierDesChargesService {
       where: { id: projectId },
       data: { aiOutput: payload },
     })
+    // Snapshot the new content as a CahierVersion so the team can roll
+    // back / diff later. Failure is logged, not surfaced.
+    void this.snapshotVersion(projectId, aiContent, 'edited', userId).catch((e) =>
+      this.logger.warn(`cahier version snapshot failed: ${e instanceof Error ? e.message : e}`),
+    )
     void this.prisma.projectActivity
       .create({
         data: {
@@ -181,8 +189,83 @@ export class CahierDesChargesService {
       )
   }
 
+  /**
+   * Append a new CahierVersion row. Version number is monotonic per project.
+   */
+  private async snapshotVersion(
+    projectId: string,
+    aiContent: unknown,
+    kind: 'generated' | 'edited' | 'approved',
+    userId: string | null,
+  ): Promise<void> {
+    const last = await this.prisma.cahierVersion.findFirst({
+      where: { projectId },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    })
+    const nextVersion = (last?.version ?? 0) + 1
+    await this.prisma.cahierVersion.create({
+      data: {
+        projectId,
+        version: nextVersion,
+        kind,
+        aiContent: JSON.stringify(aiContent),
+        createdById: userId ?? null,
+      },
+    })
+  }
+
+  /** Public read API — list versions for a project, newest first. */
+  async listVersions(projectId: string) {
+    const rows = await this.prisma.cahierVersion.findMany({
+      where: { projectId },
+      orderBy: { version: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        version: true,
+        kind: true,
+        createdAt: true,
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    })
+    return rows.map((r) => ({
+      id: r.id,
+      version: r.version,
+      kind: r.kind,
+      createdAt: r.createdAt,
+      createdBy: r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : null,
+    }))
+  }
+
+  /** Public read API — fetch one version's full content. */
+  async getVersion(projectId: string, versionId: string) {
+    const row = await this.prisma.cahierVersion.findFirst({
+      where: { id: versionId, projectId },
+      select: {
+        id: true,
+        version: true,
+        kind: true,
+        createdAt: true,
+        aiContent: true,
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    })
+    if (!row) return null
+    let content: unknown = null
+    try { content = JSON.parse(row.aiContent) } catch { content = null }
+    return {
+      id: row.id,
+      version: row.version,
+      kind: row.kind,
+      createdAt: row.createdAt,
+      createdBy: row.createdBy ? `${row.createdBy.firstName} ${row.createdBy.lastName}` : null,
+      aiContent: content,
+    }
+  }
+
   /** Persist a generated cahier JSON in Project.aiOutput + notify review teams. */
-  async savePersistedCahier(projectId: string, aiContent: unknown): Promise<void> {
+  async savePersistedCahier(projectId: string, aiContent: unknown, userId: string | null = null): Promise<void> {
     if (!aiContent || typeof aiContent !== 'object') {
       throw new BadRequestException('aiContent manquant ou invalide')
     }
@@ -205,12 +288,17 @@ export class CahierDesChargesService {
     })
     this.logger.log(`Saved cahier for project ${projectId} (${payload.length} bytes)`)
 
+    // Snapshot the generated content for rollback / diff.
+    void this.snapshotVersion(projectId, aiContent, 'generated', userId).catch((e) =>
+      this.logger.warn(`cahier version snapshot failed: ${e instanceof Error ? e.message : e}`),
+    )
+
     // Write an activity row so the admin / project activity feed updates live
     void this.prisma.projectActivity
       .create({
         data: {
           projectId,
-          userId: null,
+          userId,
           action: 'cahier_generated',
           detail: `Cahier des charges généré par l'IA (${Math.round(payload.length / 1024)} Ko)`,
         },
@@ -520,10 +608,12 @@ export class CahierDesChargesService {
         }
         // Raw transcript is inherently unstructured free text — keep as-is, truncated
         const maxChars = 8000
-        const txt = t.fullText.length > maxChars
+        const trimmedText = t.fullText.length > maxChars
           ? t.fullText.slice(0, maxChars) + ' [trunc]'
           : t.fullText
-        parts.push(`transcript: ${txt}`)
+        // Mask emails / phones / IBAN before the transcript leaves our backend.
+        const { text: redacted } = redactPii(trimmedText)
+        parts.push(`transcript: ${redacted}`)
       }
     }
 
@@ -591,16 +681,57 @@ export class CahierDesChargesService {
 
     this.logger.log(`Generating cahier des charges (provider: ${provider}, prompt length: ${userPrompt.length} chars)`)
 
+    // Hard budget check — cahier generation is the most expensive single call.
+    if (projectId) {
+      await this.aiUsage.assertWithinDailyBudget(projectId, Math.ceil(userPrompt.length / 4) + 4_000)
+    }
+
+    const startedAt = Date.now()
+    const model = this.config.get<string>('CAHIER_AI_MODEL') ?? this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini'
     try {
-      if (provider === 'gemini') {
-        return await this.callGemini(userPrompt)
-      }
-      return await this.callOpenAi(userPrompt)
+      const result = provider === 'gemini'
+        ? await this.callGemini(userPrompt)
+        : await this.callOpenAi(userPrompt)
+      void this.aiUsage.log({
+        projectId: projectId ?? null,
+        provider,
+        model,
+        feature: 'cahier',
+        // We don't get token counts back from the helpers today — estimate
+        // from char count (~4 chars/token).
+        promptTokens: Math.ceil(userPrompt.length / 4),
+        completionTokens: 1_500,
+        durationMs: Date.now() - startedAt,
+        success: true,
+      })
+      return result
     } catch (primaryErr: unknown) {
-      if (!this.zaiFallback.isConfigured()) throw primaryErr
+      if (!this.zaiFallback.isConfigured()) {
+        void this.aiUsage.log({
+          projectId: projectId ?? null,
+          provider,
+          model,
+          feature: 'cahier',
+          promptTokens: Math.ceil(userPrompt.length / 4),
+          durationMs: Date.now() - startedAt,
+          success: false,
+          errorMessage: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
+        })
+        throw primaryErr
+      }
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
       this.logger.warn(`Primary cahier provider (${provider}) failed: ${msg.slice(0, 200)} — falling back to Z.AI`)
       const content = await this.zaiFallback.chat(SYSTEM_PROMPT, userPrompt)
+      void this.aiUsage.log({
+        projectId: projectId ?? null,
+        provider: 'zai-fallback',
+        model: this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air',
+        feature: 'cahier',
+        promptTokens: Math.ceil(userPrompt.length / 4),
+        completionTokens: 1_500,
+        durationMs: Date.now() - startedAt,
+        success: true,
+      })
       return this.parseCahierResult(content)
     }
   }

@@ -37,6 +37,8 @@ import { HealthModule } from './health/health.module.js';
 import { TeamsModule } from './teams/teams.module.js';
 import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.module.js';
 import { ProjectMembersModule } from './project-members/project-members.module.js';
+import { AiUsageModule } from './ai-usage/ai-usage.module.js';
+import { RetentionModule } from './retention/retention.module.js';
 
 @Module({
   providers: [],
@@ -158,6 +160,8 @@ import { ProjectMembersModule } from './project-members/project-members.module.j
     TeamsModule,
     CahierDesChargesModule,
     ProjectMembersModule,
+    AiUsageModule,
+    RetentionModule,
   ],
 })
 export class AppModule {}

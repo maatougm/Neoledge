@@ -80,6 +80,8 @@ model AppUser {
   checkedItems     PhaseChecklist[]
 
   auditLogs    AuditLog[]
+  cahierVersions CahierVersion[]
+  aiUsages       AiUsage[]
   // Sprint 0+ back-relations (work packages, time, etc.)
   wpAssignments      WorkPackage[]        @relation("WpAssignee")
   wpAuthored         WorkPackage[]        @relation("WpAuthor")
@@ -191,6 +193,8 @@ model Project {
   notifications  Notification[]
   checklists      PhaseChecklist[]
   automationRules AutomationRule[]
+  cahierVersions  CahierVersion[]
+  aiUsages        AiUsage[]
 
   // Sprint 0+ back-relations
   boards         Board[]
@@ -385,6 +389,9 @@ model MeetingTranscript {
   audioPath         String?   @db.VarChar(500)
   audioMimeType     String?   @db.VarChar(80)
   audioSize         Int?
+  // When true, the retention cron will not purge this audio. Used for
+  // meetings the team explicitly wants to keep beyond the global window.
+  audioPreserved    Boolean   @default(false)
 
   // Relations
   project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -512,6 +519,57 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("AuditLogs")
+}
+
+// ─── Cahier versioning ─────────────────────────────────────────────────────
+// Every save / manual edit / approval snapshots a row here so the validation
+// team can see what was changed by whom, and the PM can roll back to any
+// earlier version without re-running the AI.
+model CahierVersion {
+  id          String   @id @default(uuid())
+  projectId   String
+  version     Int      // Monotonic counter per project, starts at 1
+  kind        String   @db.VarChar(20)    // 'generated' | 'edited' | 'approved'
+  aiContent   String   @db.Text           // Stringified JSON of the cahier
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy AppUser? @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
+  @@map("CahierVersions")
+}
+
+// ─── AI usage tracking ─────────────────────────────────────────────────────
+// One row per AI call (cahier generation, checklist refresh, backlog gen,
+// transcribe-chunk, redoDiarization). Drives the per-project soft cap and
+// the admin cost dashboard.
+model AiUsage {
+  id                String   @id @default(uuid())
+  projectId         String?
+  userId            String?
+  provider          String   @db.VarChar(40)   // 'openai' | 'gemini' | 'assemblyai' | 'zai-fallback' | 'local-whisper'
+  model             String   @db.VarChar(80)
+  feature           String   @db.VarChar(40)   // 'cahier' | 'checklist' | 'backlog' | 'meeting-analysis' | 'transcribe' | 'transcribe-chunk'
+  promptTokens      Int      @default(0)
+  completionTokens  Int      @default(0)
+  totalTokens       Int      @default(0)
+  audioSeconds      Int      @default(0)       // For STT calls
+  costEstimateUsd   Float    @default(0)
+  durationMs        Int      @default(0)
+  success           Boolean  @default(true)
+  errorMessage      String?  @db.VarChar(500)
+  createdAt         DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([projectId, createdAt])
+  @@index([feature, createdAt])
+  @@index([createdAt])
+  @@map("AiUsages")
 }
 
 model AnalyticsCache {

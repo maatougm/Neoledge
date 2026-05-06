@@ -167,6 +167,23 @@ export class MeetingsController {
   }
 
   /**
+   * PATCH /pm/projects/:projectId/meetings/:id/preserve
+   * Body: { preserved: boolean }
+   * Marks (or unmarks) the meeting's audio as preserved so the retention
+   * cron will skip it.
+   */
+  @Patch(':id/preserve')
+  @RequirePermission('meeting.manage', { projectParam: 'projectId' })
+  async setPreserve(
+    @Param('id') id: string,
+    @Body() body: { preserved?: boolean },
+  ) {
+    const result = await this.service.setAudioPreserved(id, !!body.preserved)
+    if (result.isFailure) throw new NotFoundException(result.error)
+    return result.value
+  }
+
+  /**
    * GET /pm/projects/:projectId/meetings/:id/audio
    * Stream the stored audio so any project member (PM or validation team)
    * can replay the meeting.

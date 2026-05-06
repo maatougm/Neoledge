@@ -75,9 +75,38 @@ export class CahierDesChargesController {
   async saveCahier(
     @Param('projectId') projectId: string,
     @Body() body: { aiContent: unknown },
+    @Req() req: AuthenticatedRequest,
   ) {
-    await this.cahierService.savePersistedCahier(projectId, body?.aiContent)
+    const userId = req.user?.userId ?? null
+    await this.cahierService.savePersistedCahier(projectId, body?.aiContent, userId)
     return { success: true }
+  }
+
+  /**
+   * GET /pm/projects/:projectId/cahier-des-charges/versions
+   * List the project's cahier history (last 50, newest first).
+   */
+  @Get('pm/projects/:projectId/cahier-des-charges/versions')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async listVersions(@Param('projectId') projectId: string) {
+    return { versions: await this.cahierService.listVersions(projectId) }
+  }
+
+  /**
+   * GET /pm/projects/:projectId/cahier-des-charges/versions/:versionId
+   * Return one historical version's full content.
+   */
+  @Get('pm/projects/:projectId/cahier-des-charges/versions/:versionId')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async getVersion(
+    @Param('projectId') projectId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    const v = await this.cahierService.getVersion(projectId, versionId)
+    if (!v) return { aiContent: null }
+    return v
   }
 
   /**

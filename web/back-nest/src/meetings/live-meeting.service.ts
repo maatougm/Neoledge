@@ -1,6 +1,8 @@
 import { Injectable, Logger, BadGatewayException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AiUsageService } from '../ai-usage/ai-usage.service.js';
+import { redactPii } from '../common/pii-redact.js';
 
 export type ChecklistStatus = 'covered' | 'partial' | 'missing';
 export type ChecklistCategory =
@@ -94,6 +96,7 @@ export class LiveMeetingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly aiUsage: AiUsageService,
   ) {}
 
   async checklist(
@@ -156,6 +159,16 @@ export class LiveMeetingService {
     // dropped topics from the first half of long sessions.
     const TRANSCRIPT_WINDOW_CHARS = 24_000;
 
+    // Mask emails / phones / IBAN before the transcript leaves our backend.
+    // The AI still sees that "an email was said", just not the actual one.
+    const transcriptForAi = trimmed.length > TRANSCRIPT_WINDOW_CHARS
+      ? trimmed.slice(-TRANSCRIPT_WINDOW_CHARS)
+      : trimmed;
+    const { text: redactedTranscript, stats: redactionStats } = redactPii(transcriptForAi);
+    if (redactionStats.total > 0) {
+      this.logger.debug(`PII redaction (checklist project=${projectId}): ${JSON.stringify(redactionStats.counts)}`);
+    }
+
     const userMessage = [
       `# Projet : ${project.name} (client : ${project.clientName})`,
       '',
@@ -165,10 +178,8 @@ export class LiveMeetingService {
       '## Cahier des charges existant (extrait)',
       cahierExtract,
       '',
-      '## Transcription accumulée',
-      trimmed.length > TRANSCRIPT_WINDOW_CHARS
-        ? trimmed.slice(-TRANSCRIPT_WINDOW_CHARS)
-        : trimmed,
+      '## Transcription accumulée (PII masquée)',
+      redactedTranscript,
       '',
       '## Checklist précédente',
       previousChecklist.length === 0
@@ -176,17 +187,42 @@ export class LiveMeetingService {
         : JSON.stringify(previousChecklist, null, 2),
     ].join('\n');
 
+    // Block the call if the project has burned through its daily AI budget.
+    await this.aiUsage.assertWithinDailyBudget(projectId, Math.ceil(userMessage.length / 4));
+
+    const startedAt = Date.now();
+    const model = this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini';
     try {
-      const raw = await this.callOpenAi(userMessage);
+      const { raw, usage } = await this.callOpenAi(userMessage);
       this.lastCallAt.set(projectId, Date.now()); // success — burn cooldown
+      void this.aiUsage.log({
+        projectId,
+        provider: 'openai',
+        model,
+        feature: 'checklist',
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+        durationMs: Date.now() - startedAt,
+        success: true,
+      });
       return this.sanitize(raw);
     } catch (e) {
-      this.logger.error(`live checklist failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`live checklist failed: ${msg}`);
+      void this.aiUsage.log({
+        projectId,
+        provider: 'openai',
+        model,
+        feature: 'checklist',
+        durationMs: Date.now() - startedAt,
+        success: false,
+        errorMessage: msg,
+      });
       throw new BadGatewayException("L'assistant IA est temporairement indisponible.");
     }
   }
 
-  private async callOpenAi(userMessage: string): Promise<unknown> {
+  private async callOpenAi(userMessage: string): Promise<{ raw: unknown; usage: { prompt_tokens: number; completion_tokens: number } }> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
     const baseUrl = this.config.get<string>('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1';
@@ -220,10 +256,17 @@ export class LiveMeetingService {
       throw new Error(`OpenAI ${response.status}`);
     }
 
-    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
     const content = data.choices?.[0]?.message?.content ?? '{}';
+    const usage = {
+      prompt_tokens: data.usage?.prompt_tokens ?? 0,
+      completion_tokens: data.usage?.completion_tokens ?? 0,
+    };
     try {
-      return JSON.parse(content);
+      return { raw: JSON.parse(content), usage };
     } catch (e) {
       this.logger.error(`OpenAI checklist response was not valid JSON: ${content.slice(0, 200)}`);
       throw new Error(`Réponse IA invalide : ${(e as Error).message}`);
