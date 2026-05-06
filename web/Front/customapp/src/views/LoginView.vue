@@ -192,10 +192,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoInputText, NeoPassword, NeoButton, NeoMessage } from '@neolibrary/components'
 import { useAuthStore } from '@/stores/authStore'
+import { applyAutofill } from '@/lib/autofillFix'
 
 const router   = useRouter()
 const authStore = useAuthStore()
@@ -215,6 +216,14 @@ const totpTempToken = ref('')
 const totpCode      = ref('')
 const totpError     = ref<string | null>(null)
 const totpInputRef  = ref<HTMLInputElement | null>(null)
+
+// ── A11y / autofill — NeoLibrary wrappers don't forward `autocomplete` /
+// `name` to the inner <input>, which makes Chrome's password manager and
+// the DOM Issues panel complain. Helper patches the inner inputs directly.
+onMounted(async () => {
+  await nextTick()
+  applyAutofill({ scope: 'form', email: 'email', password: 'current-password' })
+})
 
 // ── Quick-access demo accounts (only populated in dev, empty in production) ───
 const quickAccounts = [

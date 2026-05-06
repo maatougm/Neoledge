@@ -83,11 +83,12 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, watch, computed } from 'vue'
+import { reactive, watch, computed, nextTick } from 'vue'
 import { NeoInputText, NeoPassword, NeoSelect, NeoButton, NeoTag } from '@neolibrary/components'
 import { USER_ROLE_OPTIONS, USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserResponse, CreateUserPayload, UpdateUserPayload, UserRole } from '@/types/user.types'
 import { useAuthStore } from '@/stores/authStore'
+import { applyAutofill } from '@/lib/autofillFix'
 
 const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   Admin:              'Accès complet — gestion des utilisateurs et des projets.',
@@ -150,6 +151,26 @@ watch(
       Object.assign(form, { firstName: '', lastName: '', email: '', password: '', role: 'Member' })
     }
     Object.keys(errors).forEach((k) => delete errors[k as keyof typeof errors])
+  },
+  { immediate: true },
+)
+
+/**
+ * Patch autocomplete / name attributes on the inner inputs once the dialog
+ * is mounted in the DOM. NeoLibrary wrappers don't forward these attrs, which
+ * makes Chrome's password manager skip the fields and the DOM Issues panel
+ * complain. The password field only exists in create mode (!isEdit).
+ */
+watch(
+  () => props.visible,
+  async (v) => {
+    if (!v) return
+    await nextTick()
+    applyAutofill({
+      scope: '.modal-box',
+      email: 'email',
+      ...(isEdit.value ? {} : { password: 'new-password' as const }),
+    })
   },
   { immediate: true },
 )
