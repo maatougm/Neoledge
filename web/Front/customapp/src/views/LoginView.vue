@@ -225,12 +225,15 @@ onMounted(async () => {
   applyAutofill({ scope: 'form', email: 'email', password: 'current-password' })
 })
 
-// ── Quick-access demo accounts (only populated in dev, empty in production) ───
+// ── Quick-access demo accounts ───────────────────────────────────────────────
+// Passwords MUST match what prisma/seed.ts hashes (the previous values were
+// stale and silently broke quick-login for PM, Spec, and Dev).
 const quickAccounts = [
-  { role: 'admin',  label: 'Administrateur',        email: 'admin@neoleadge.com',   pwd: 'Admin@123',   color: 'var(--nl-accent)', init: 'A'  },
-  { role: 'pm',     label: 'Chef de projet',         email: 'pm@neoleadge.com',      pwd: 'Pm@12345',    color: '#3B82F6',          init: 'CP' },
-  { role: 'spec',   label: 'Équipe spécification',   email: 'spec@neoleadge.com',    pwd: 'Valid@123',   color: '#8B5CF6',          init: 'ES' },
-  { role: 'realiz', label: 'Équipe réalisation',     email: 'realiz@neoleadge.com',  pwd: 'Valid@123',   color: '#F97316',          init: 'ER' },
+  { role: 'admin',  label: 'Administrateur',          email: 'admin@neoleadge.com',   pwd: 'Admin@123',   color: 'var(--nl-accent)', init: 'A'  },
+  { role: 'pm',     label: 'Chef de projet',          email: 'pm@neoleadge.com',      pwd: 'Pm@123',      color: '#3B82F6',          init: 'CP' },
+  { role: 'spec',   label: 'Équipe spécification',    email: 'spec@neoleadge.com',    pwd: 'Spec@123',    color: '#8B5CF6',          init: 'ES' },
+  { role: 'realiz', label: 'Développeur',             email: 'realiz@neoleadge.com',  pwd: 'Realiz@123',  color: '#F97316',          init: 'D'  },
+  { role: 'deploy', label: 'Ingénieur déploiement',   email: 'deploy@neoleadge.com',  pwd: 'Deploy@123',  color: '#10B981',          init: 'ID' },
 ]
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
