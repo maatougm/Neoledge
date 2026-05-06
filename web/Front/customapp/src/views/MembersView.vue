@@ -291,9 +291,11 @@ const reassignCandidates = computed<Array<{ userId: string; fullName: string }>>
 const availableUsers = computed<SystemUserOption[]>(() => {
   const taken = new Set(store.members.map((m) => m.userId))
   const meId = auth.userId ?? ''
+  const pmId = store.projectManagerId
   return allUsers.value.filter((u) => {
     if (taken.has(u.id)) return false
     if (meId && u.id === meId) return false                  // PM can't add themselves
+    if (pmId && u.id === pmId) return false                  // project's PM is implicit
     if (u.isActive === false) return false                   // skip inactive (defensive)
     if (EXCLUDED_ROLES.has(u.role)) return false             // Admin / Viewer not addable
     return true
@@ -308,7 +310,11 @@ const usersLoadError = ref<string | null>(null)
 async function loadAllUsers(): Promise<void> {
   usersLoadError.value = null
   try {
-    const { data } = await api.get<SystemUser[] | { items: SystemUser[] }>('/pm/users')
+    // forMembers=true lets the backend filter out inactive + Admin/Viewer.
+    // Without that flag the endpoint returns every user (used elsewhere for
+    // assignee dropdowns), so we'd have to do the same filtering on the
+    // client and pull more data than needed.
+    const { data } = await api.get<SystemUser[] | { items: SystemUser[] }>('/pm/users?forMembers=true')
     const list = Array.isArray(data) ? data : (data.items ?? [])
     allUsers.value = list.map((u) => ({ ...u, fullName: `${u.firstName} ${u.lastName} (${u.email})` }))
   } catch (err: unknown) {

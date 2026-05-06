@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ProjectsService } from './projects.service.js';
 import { UsersService } from '../users/users.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -73,12 +73,23 @@ export class PmController {
     return result.value;
   }
 
-  /** Active users list — used by PM views like Members, assignee dropdowns, etc. */
+  /**
+   * Active users list — used by PM views like Members, assignee dropdowns, etc.
+   *
+   * `?forMembers=true` filters out inactive users + Admin / Viewer roles
+   * (system roles that should never be added as project members) so the
+   * Members page doesn't leak that list to the UI. Default behaviour
+   * (no flag) stays unchanged for legacy callers.
+   */
   @Get('users')
-  async getUsers() {
+  async getUsers(@Query('forMembers') forMembers?: string) {
     const result = await this.usersService.getAll(0, 500);
     if (result.isFailure) return [];
-    return (result.value as unknown as { items: unknown[] }).items;
+    const items = (result.value as unknown as { items: any[] }).items;
+    if (forMembers !== 'true') return items;
+    return items.filter(
+      (u) => u.isActive !== false && u.role !== 'Admin' && u.role !== 'Viewer',
+    );
   }
 
   /** All active projects — used by team-member roles who are not project managers */

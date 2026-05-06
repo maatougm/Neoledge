@@ -21,33 +21,49 @@ export interface MemberRow {
   }
 }
 
+export interface MembersListResponse {
+  members: MemberRow[]
+  /** Project's PM userId — the UI hides them from the "add" candidate
+   *  dropdown because they already have full access. */
+  projectManagerId: string | null
+}
+
 @Injectable()
 export class ProjectMembersService {
   private readonly logger = new Logger(ProjectMembersService.name)
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(projectId: string): Promise<Result<MemberRow[]>> {
-    const rows = await this.prisma.projectMember.findMany({
-      where: { projectId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            avatarPath: true,
-            role: true,
-            jobTitle: true,
-            lastLoginAt: true,
-            isActive: true,
+  async findAll(projectId: string): Promise<Result<MembersListResponse>> {
+    const [project, rows] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { projectManagerId: true },
+      }),
+      this.prisma.projectMember.findMany({
+        where: { projectId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatarPath: true,
+              role: true,
+              jobTitle: true,
+              lastLoginAt: true,
+              isActive: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ])
+    return Result.ok({
+      members: rows as MemberRow[],
+      projectManagerId: project?.projectManagerId ?? null,
     })
-    return Result.ok(rows as MemberRow[])
   }
 
   async add(projectId: string, userId: string, label: string): Promise<Result<{ id: string }>> {
