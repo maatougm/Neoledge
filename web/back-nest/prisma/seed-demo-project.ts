@@ -83,10 +83,13 @@ async function main() {
   }
 
   // ─── Project ────────────────────────────────────────────────────────────
+  // Status MUST match a key in the frontend's PROJECT_STATUS_LABELS map
+  // (project.types.ts) — otherwise the NeoTag in the projects list renders
+  // empty. 'Integration' is the closest semantic match for "active dev".
   await prisma.project.upsert({
     where: { id: PROJECT_ID },
     update: {
-      status: 'Realization',
+      status: 'Integration',
       priority: 'High',
       isDeleted: false,
     },
@@ -94,7 +97,7 @@ async function main() {
       id: PROJECT_ID,
       name: 'Refonte Portail Citoyen — Mairie de Tunis',
       clientName: 'Mairie de Tunis',
-      status: 'Realization',
+      status: 'Integration',
       priority: 'High',
       projectManagerId: U.pm,
       createdByAdminId: U.admin,
