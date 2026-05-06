@@ -59,18 +59,27 @@ async function main() {
     },
     select: { id: true, email: true },
   })
-  const id = (email: string): string => {
+  const id = (email: string, optional = false): string | null => {
     const u = users.find((x) => x.email === email)
-    if (!u) throw new Error(`Missing seed user ${email} — run prisma/seed.ts first`)
-    return u.id
+    if (!u && !optional) throw new Error(`Missing seed user ${email} — run prisma/seed.ts first`)
+    return u?.id ?? null
   }
+  // Required users — script aborts if any of these is missing.
+  const adminId   = id('admin@neoleadge.com')!
+  const pmId      = id('pm@neoleadge.com')!
+  const spec1Id   = id('spec@neoleadge.com')!
+  const devId     = id('realiz@neoleadge.com')!
+  const deployId  = id('deploy@neoleadge.com')!
+  // spec2 is nice-to-have. If absent, the second SpecTeam member just
+  // doesn't get added — everything else still works.
+  const spec2Id   = id('spec2@neoleadge.com', true)
   const U = {
-    admin:   id('admin@neoleadge.com'),
-    pm:      id('pm@neoleadge.com'),
-    spec1:   id('spec@neoleadge.com'),
-    spec2:   id('spec2@neoleadge.com'),
-    dev:     id('realiz@neoleadge.com'),
-    deploy:  id('deploy@neoleadge.com'),
+    admin:   adminId,
+    pm:      pmId,
+    spec1:   spec1Id,
+    spec2:   spec2Id,
+    dev:     devId,
+    deploy:  deployId,
   }
 
   // ─── Project ────────────────────────────────────────────────────────────
@@ -98,13 +107,13 @@ async function main() {
 
   // ─── Members ────────────────────────────────────────────────────────────
   // PM is implicit (projectManagerId). Add the rest as ProjectMembers with
-  // realistic role labels.
-  const members = [
+  // realistic role labels. spec2 is included only when seeded.
+  const members: Array<{ userId: string; label: string }> = [
     { userId: U.spec1,  label: 'Lead spécification' },
-    { userId: U.spec2,  label: 'Validation métier' },
     { userId: U.dev,    label: 'Développeur fullstack' },
     { userId: U.deploy, label: 'Ingénieur déploiement' },
   ]
+  if (U.spec2) members.splice(1, 0, { userId: U.spec2, label: 'Validation métier' })
   for (const m of members) {
     await prisma.projectMember.upsert({
       where: { project_member_uq: { projectId: PROJECT_ID, userId: m.userId } },
@@ -203,12 +212,13 @@ async function main() {
 
   // ─── Work packages ──────────────────────────────────────────────────────
   // Mix of types, statuses, priorities, sprints, assignees. Hours match
-  // sprint capacity reasonably.
+  // sprint capacity reasonably. specB falls back to spec1 if spec2 is unseeded.
+  const specB = U.spec2 ?? U.spec1
   const wps = [
     // Sprint 1 — closed
     { n:1,  title:'Atelier de recueil des besoins', type:'Task',    status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-56), due:days(-52), est:16, spent:18, pct:100 },
     { n:2,  title:'Maquettes Figma — espace citoyen', type:'Task',  status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-50), due:days(-46), est:24, spent:22, pct:100 },
-    { n:3,  title:'Validation maquettes par DGS',   type:'Task',    status:'Closed',    priority:'Normal',   assigneeId:U.spec2,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-46), due:days(-44), est:8,  spent:6,  pct:100 },
+    { n:3,  title:'Validation maquettes par DGS',   type:'Task',    status:'Closed',    priority:'Normal',   assigneeId:specB,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-46), due:days(-44), est:8,  spent:6,  pct:100 },
     { n:4,  title:'Rédaction cahier des charges',   type:'Task',    status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-44), due:days(-42), est:16, spent:14, pct:100 },
 
     // Sprint 2 — active
@@ -222,11 +232,11 @@ async function main() {
     // Sprint 3 — planning
     { n:11, title:'Formulaire demande d\'acte d\'état civil', type:'Feature', status:'New', priority:'High', assigneeId:U.dev,   sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(1),   due:days(8),   est:24, spent:0,  pct:0 },
     { n:12, title:'Intégration passerelle de paiement', type:'Feature', status:'New', priority:'High',     assigneeId:U.dev,    sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(3),   due:days(12),  est:30, spent:0,  pct:0 },
-    { n:13, title:'Validation des paiements côté trésorerie', type:'Task', status:'New', priority:'Normal', assigneeId:U.spec2,  sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(12),  due:days(15),  est:8,  spent:0,  pct:0 },
+    { n:13, title:'Validation des paiements côté trésorerie', type:'Task', status:'New', priority:'Normal', assigneeId:specB,  sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(12),  due:days(15),  est:8,  spent:0,  pct:0 },
 
     // Backlog (no sprint) — long-term planning
     { n:14, title:'Prise de rendez-vous en ligne',     type:'Feature', status:'New',  priority:'Normal',   assigneeId:null,     sprintId:null,           colId:COL_NEW,    start:null,      due:days(45),  est:36, spent:0,  pct:0 },
-    { n:15, title:'Audit RGPD pré-MEP',               type:'Task',    status:'New',   priority:'High',     assigneeId:U.spec2,  sprintId:null,           colId:COL_NEW,    start:days(80),  due:days(95),  est:16, spent:0,  pct:0 },
+    { n:15, title:'Audit RGPD pré-MEP',               type:'Task',    status:'New',   priority:'High',     assigneeId:specB,  sprintId:null,           colId:COL_NEW,    start:days(80),  due:days(95),  est:16, spent:0,  pct:0 },
     { n:16, title:'Plan de bascule production',       type:'Task',    status:'New',   priority:'Normal',   assigneeId:U.deploy, sprintId:null,           colId:COL_NEW,    start:days(100), due:days(115), est:20, spent:0,  pct:0 },
   ]
 
@@ -324,7 +334,7 @@ async function main() {
   const comments = [
     { userId: U.pm,    content: 'Lancement réussi, le sponsor est aligné sur les 4 modules majeurs.', daysAgo: 56 },
     { userId: U.spec1, content: 'Cahier des charges v1 partagé pour validation. Merci de retourner avant vendredi.', daysAgo: 44 },
-    { userId: U.spec2, content: 'Cahier OK de mon côté. Une remarque sur la section RGPD — j\'ai laissé un commentaire en ligne.', daysAgo: 43 },
+    ...(U.spec2 ? [{ userId: U.spec2, content: 'Cahier OK de mon côté. Une remarque sur la section RGPD — j\'ai laissé un commentaire en ligne.', daysAgo: 43 }] : []),
     { userId: U.dev,   content: 'POC SAML2 fonctionne avec l\'IdP de la mairie. On peut démarrer OAuth2 sereinement.', daysAgo: 11 },
     { userId: U.pm,    content: 'Sprint 2 démarre demain — focus sur l\'auth + espace citoyen. Daily à 9h30.', daysAgo: 14 },
     { userId: U.dev,   content: 'OAuth2 Google + Facebook OK. Je passe la PR en revue.', daysAgo: 4 },
