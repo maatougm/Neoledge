@@ -16,12 +16,11 @@ import { useConfigStore } from '@/stores/configStore'
 // ─── Axios instance ───────────────────────────────────────────────────────────
 
 // We authenticate with Bearer JWTs (not session cookies) and don't run any
-// CSRF-token-in-cookie scheme. Disabling XSRF cookie/header lookup stops
-// axios from reading `document.cookie` on every request — silences Chrome's
-// `PerformanceIssue: DocumentCookie` warnings and shaves a few ms off each call.
+// CSRF-token-in-cookie scheme. Disabling withXSRFToken bypasses the whole
+// xsrf branch in axios's xhr adapter — stops the per-request `document.cookie`
+// read that Chrome flags as PerformanceIssue:DocumentCookie.
 const api = axios.create({
-  xsrfCookieName: undefined,
-  xsrfHeaderName: undefined,
+  withXSRFToken: false,
 })
 
 // ─── Request interceptor ──────────────────────────────────────────────────────
