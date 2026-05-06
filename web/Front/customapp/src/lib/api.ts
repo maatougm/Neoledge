@@ -19,12 +19,16 @@ import { useConfigStore } from '@/stores/configStore'
 // CSRF-token-in-cookie scheme. Disable every code path in axios that pokes
 // at `document.cookie` to silence Chrome's PerformanceIssue:DocumentCookie
 // (47 events per page load otherwise) and shave a small amount off each
-// request. Setting on `defaults` after creation bypasses the mergeConfig
-// path that was treating `undefined` overrides as "keep the default".
+// request.
+//
+// We patch BOTH the global axios defaults (so bare `axios.post(...)` calls
+// in authStore / useApp also benefit) AND our wrapped instance.
+axios.defaults.withXSRFToken = false
+axios.defaults.xsrfCookieName = ''
+axios.defaults.xsrfHeaderName = ''
+
 const api = axios.create({ withXSRFToken: false })
 api.defaults.withXSRFToken = false
-// Empty strings are explicitly checked-falsy in axios's xhr adapter so the
-// `cookies.read(name)` call is skipped entirely.
 api.defaults.xsrfCookieName = ''
 api.defaults.xsrfHeaderName = ''
 
