@@ -6,10 +6,19 @@ import { GeminiProvider } from './providers/gemini.provider.js'
 import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
 import { BacklogService } from './backlog.service.js'
 import { BacklogController } from './backlog.controller.js'
+import { AgentRunnerService } from './agent/agent-runner.service.js'
 
 @Module({
   controllers: [BacklogController],
-  providers: [AiService, AiProviderFactory, OpenAiProvider, GeminiProvider, ZaiFallbackProvider, BacklogService],
-  exports: [AiService, ZaiFallbackProvider, BacklogService],
+  providers: [
+    AiService,
+    AiProviderFactory,
+    OpenAiProvider,
+    GeminiProvider,
+    ZaiFallbackProvider,
+    BacklogService,
+    AgentRunnerService,
+  ],
+  exports: [AiService, ZaiFallbackProvider, BacklogService, AgentRunnerService],
 })
 export class AiModule {}
