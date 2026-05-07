@@ -7,6 +7,16 @@
         <i class="pi pi-arrow-left" /> Mes projets
       </button>
       <div class="detail-header-right">
+        <!-- Cahier validation badge — only shown when in_review or validated.
+             Rejected goes back to "no badge" state per UX spec; the PM gets
+             the rejection details via the existing notification + the
+             reject banner inside the cahier tab. -->
+        <NeoTag
+          v-if="cahierBadge"
+          :value="cahierBadge.label"
+          :severity="cahierBadge.severity"
+          :icon="cahierBadge.icon"
+        />
         <NeoTag
           :value="PROJECT_STATUS_LABELS[project.status]"
           :severity="statusSeverity(project.status)"
@@ -122,6 +132,7 @@ import CahierDesChargesSection from '@/components/pm/CahierDesChargesSection.vue
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
 import { useAuthStore }      from '@/stores/authStore'
+import api                   from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
@@ -218,16 +229,62 @@ function shouldPoll(): boolean {
   if (activeTab.value === 'questionnaire') return false
   return true
 }
+
+// ─── Cahier validation status (drives the header badge) ───────────────────────
+//
+// Per UX spec: only show badge for `pending` (En validation) and `approved`
+// (Validé). `none` and `rejected` show no badge — when rejected, the cahier
+// is back to a draft-like state and the PM is expected to fix-and-resave.
+// The rejection feedback reaches the PM via:
+//   - the existing notification (cahier_rejected) triggered by saveFeedback()
+//   - the inline reject banner inside CahierDesChargesSection
+type CahierStatusValue = 'none' | 'pending' | 'approved' | 'rejected'
+const cahierStatus = ref<CahierStatusValue>('none')
+
+async function refreshCahierStatus(): Promise<void> {
+  const id = props.project?.id
+  if (!id) return
+  try {
+    const { data } = await api.get<{ status: CahierStatusValue }>(
+      `/pm/projects/${id}/cahier-des-charges/status`,
+    )
+    cahierStatus.value = data.status
+  } catch {
+    cahierStatus.value = 'none'
+  }
+}
+
+const cahierBadge = computed<{
+  label: string
+  severity: 'info' | 'success'
+  icon: string
+} | null>(() => {
+  if (cahierStatus.value === 'pending') {
+    return { label: 'Cahier en validation', severity: 'info', icon: 'pi pi-hourglass' }
+  }
+  if (cahierStatus.value === 'approved') {
+    return { label: 'Cahier validé', severity: 'success', icon: 'pi pi-check-circle' }
+  }
+  return null
+})
+
 onMounted(() => {
+  void refreshCahierStatus()
   _poll = window.setInterval(() => {
     if (!shouldPoll()) return
     const id = props.project?.id
     if (!id) return
     store.fetchProject(id)
+    void refreshCahierStatus()
   }, 15_000)
 })
 onUnmounted(() => {
   if (_poll !== null) clearInterval(_poll)
+})
+
+// Refetch the status when the project id changes (route navigation between projects).
+watch(() => props.project?.id, (id) => {
+  if (id) void refreshCahierStatus()
 })
 
 const statusSeverity = (s: ProjectStatus) =>
