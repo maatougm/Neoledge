@@ -261,7 +261,9 @@ export class WorkPackagesService {
           author: { select: USER_SELECT },
         },
       });
-      // Notify assignee (if different from author)
+      // Notify assignee (if different from author). Deep-link goes to the
+      // assignee's "Mes tâches" view — the PM workpackages page 403s for
+      // Member-role assignees.
       if (wp.assigneeId && wp.assigneeId !== authorId) {
         void this.notifications.notifyEnhanced({
           userId: wp.assigneeId,
@@ -273,7 +275,7 @@ export class WorkPackagesService {
           entityType: 'work_package',
           entityId: wp.id,
           actorId: authorId,
-          link: `/app/pm/projects/${projectId}/workpackages`,
+          link: `/app/team/my-tasks?projectId=${projectId}`,
         }).catch((e) => this.logger.error('notifyEnhanced (wp assignee create) failed', e));
       }
       void this.logActivity(projectId, authorId, 'work_package_created', `WP "${wp.title}" créé`);
@@ -346,7 +348,7 @@ export class WorkPackagesService {
             entityType: 'work_package',
             entityId: id,
             actorId,
-            link: `/app/pm/projects/${projectId}/workpackages`,
+            link: `/app/team/my-tasks?projectId=${projectId}`,
           }).catch((e) => this.logger.error('notifyEnhanced (wp reassign) failed', e));
         }
 
@@ -567,11 +569,15 @@ export class WorkPackagesService {
   }
 
   /** Bulk-assign multiple work packages to users in a single transaction.
-   *  `assigneeId === null` un-assigns the work package. */
+   *  `assigneeId === null` un-assigns the work package.
+   *  `sprintId` is optional context — when provided, the grouped
+   *  notification carries the sprint name and a deep-link to the
+   *  assignee's filtered "Mes tâches" view. */
   async bulkAssign(
     projectId: string,
     assignments: Array<{ wpId: string; assigneeId: string | null }>,
     actorId: string,
+    sprintId?: string,
   ): Promise<Result<{ updated: number }>> {
     if (assignments.length === 0) return Result.ok({ updated: 0 });
 
@@ -580,6 +586,19 @@ export class WorkPackagesService {
       select: { id: true, name: true },
     });
     if (!project) return Result.fail('Projet introuvable');
+
+    // Resolve sprint name once for the notification message + scope check.
+    let sprintName: string | null = null;
+    if (sprintId) {
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id: sprintId },
+        select: { name: true, board: { select: { projectId: true } } },
+      });
+      if (!sprint || sprint.board.projectId !== projectId) {
+        return Result.fail('Sprint introuvable ou hors projet.');
+      }
+      sprintName = sprint.name;
+    }
 
     // Validate all non-null assignees are real, active users.
     const uniqueAssignees = [
@@ -628,6 +647,10 @@ export class WorkPackagesService {
       byAssignee.set(a.assigneeId, (byAssignee.get(a.assigneeId) ?? 0) + 1);
     }
 
+    const myTasksLink = sprintId
+      ? `/app/team/my-tasks?projectId=${projectId}&sprintId=${sprintId}`
+      : `/app/team/my-tasks?projectId=${projectId}`;
+
     for (const [assigneeId, count] of byAssignee) {
       try {
         await this.notifications.notifyEnhanced({
@@ -636,11 +659,13 @@ export class WorkPackagesService {
           type: 'wp_bulk_assigned',
           reason: 'Assignee',
           title: 'Nouvelles tâches assignées',
-          message: `${count} tâche(s) vous ont été assignées sur « ${project.name} ».`,
+          message: sprintName
+            ? `${count} tâche(s) vous ont été assignées dans le sprint « ${sprintName} » sur « ${project.name} ».`
+            : `${count} tâche(s) vous ont été assignées sur « ${project.name} ».`,
           projectId,
           entityType: 'project',
           entityId: projectId,
-          link: `/app/pm/projects/${projectId}/workpackages`,
+          link: myTasksLink,
         });
       } catch (e) {
         this.logger.warn(`bulkAssign notify ${assigneeId} failed: ${e instanceof Error ? e.message : String(e)}`);

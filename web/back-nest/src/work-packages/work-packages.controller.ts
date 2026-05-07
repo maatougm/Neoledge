@@ -180,7 +180,7 @@ export class WorkPackagesController {
     @Body() dto: BulkAssignDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId);
+    const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId, dto.sprintId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

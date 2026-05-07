@@ -323,6 +323,21 @@ export class AgileService {
 
   async deleteSprint(id: string) {
     try {
+      // Refuse deletion when the sprint either holds work packages OR has
+      // already been started — in either case the user almost certainly does
+      // not mean to lose the data. WorkPackage.sprintId is `SetNull` so a
+      // forced delete would silently un-assign every WP; we reject instead.
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id },
+        select: { status: true, _count: { select: { workPackages: true } } },
+      });
+      if (!sprint) return Result.fail<void>('Sprint introuvable.');
+      if (sprint.status !== 'Planning') {
+        return Result.fail<void>('Seuls les sprints en planification peuvent être supprimés.');
+      }
+      if (sprint._count.workPackages > 0) {
+        return Result.fail<void>('Sprint non vide. Retirez les tâches avant la suppression.');
+      }
       await this.prisma.sprint.delete({ where: { id } });
       return Result.ok<void>();
     } catch (e) {
