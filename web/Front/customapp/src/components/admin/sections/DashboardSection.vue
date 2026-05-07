@@ -1,6 +1,6 @@
 <!--
   @file     DashboardSection.vue
-  @desc     Admin command-center dashboard — KPI cards, pipeline funnel, deadline radar
+  @desc     Admin command-center dashboard — KPI cards, projects dashboard, deadline radar
 -->
 <template>
   <div class="dash">
@@ -62,59 +62,80 @@
       </div>
     </div>
 
-    <!-- ── Pipeline funnel ───────────────────────────────────────────────────── -->
+    <!-- ── Projects dashboard ────────────────────────────────────────────────── -->
     <div class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">Pipeline des projets</h2>
-        <div class="completion-pill">
-          <svg class="mini-ring" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="13" class="mini-ring-bg" />
-            <circle cx="16" cy="16" r="13" class="mini-ring-prog"
-              :stroke-dasharray="`${(completionPct / 100) * 81.7} 81.7`"
-            />
-          </svg>
-          <span>{{ completionPct }}% complétés</span>
+      <div class="section-header pd-header">
+        <h2 class="section-title">Tableau de bord des projets</h2>
+        <div class="pd-filters">
+          <button
+            v-for="f in PROJECT_FILTERS"
+            :key="f.id"
+            type="button"
+            class="pd-filter"
+            :class="{ 'pd-filter--active': activeFilter === f.id }"
+            @click="activeFilter = f.id"
+          >
+            {{ f.label }}
+            <span class="pd-filter__count">{{ filterCount(f.id) }}</span>
+          </button>
         </div>
       </div>
 
-      <div class="pipeline">
-        <div
-          v-for="phase in PIPELINE_PHASES"
-          :key="phase"
-          class="pipeline-col"
-        >
-          <div class="pipeline-col__header">
-            <span class="pipeline-dot" :style="{ background: STATUS_COLORS[phase] }" />
-            <span class="pipeline-col__label">{{ PROJECT_STATUS_LABELS[phase] }}</span>
-            <span class="pipeline-col__count">{{ statusCount(phase) }}</span>
-          </div>
+      <div v-if="filteredProjects.length === 0" class="pd-empty">
+        <i class="pi pi-inbox pd-empty__icon" />
+        <span>Aucun projet ne correspond à ce filtre.</span>
+      </div>
 
-          <div class="pipeline-col__bar-wrap">
-            <div
-              class="pipeline-col__bar"
-              :style="{
-                height: barHeight(statusCount(phase)),
-                background: STATUS_COLORS[phase],
-              }"
-            />
-          </div>
-
-          <div class="pipeline-col__cards">
-            <div
-              v-for="p in projectsByStatus[phase]?.slice(0, 3)"
+      <div v-else class="pd-table-wrap">
+        <table class="pd-table">
+          <thead>
+            <tr>
+              <th>Projet</th>
+              <th>Statut</th>
+              <th>Chef de projet</th>
+              <th class="pd-progress-col">Avancement</th>
+              <th class="pd-due-col">Échéance</th>
+              <th aria-hidden="true" />
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="p in filteredProjects"
               :key="p.id"
-              class="pipeline-chip"
-              :title="p.name"
+              class="pd-row"
               @click="navigateToProject(p.id)"
             >
-              <span class="pipeline-chip__name">{{ p.name }}</span>
-              <span class="pipeline-chip__client">{{ p.clientName }}</span>
-            </div>
-            <span v-if="(projectsByStatus[phase]?.length ?? 0) > 3" class="pipeline-more">
-              +{{ projectsByStatus[phase].length - 3 }} autres
-            </span>
-          </div>
-        </div>
+              <td class="pd-name-cell">
+                <div class="pd-name">{{ p.name }}</div>
+                <div class="pd-client">{{ p.clientName }}</div>
+              </td>
+              <td>
+                <NeoTag
+                  :value="PROJECT_STATUS_LABELS[p.status] ?? p.status"
+                  :severity="statusSeverity(p.status)"
+                />
+              </td>
+              <td class="pd-pm-cell">{{ p.projectManagerName ?? '—' }}</td>
+              <td class="pd-progress-cell">
+                <div class="pd-progress-bar">
+                  <div
+                    class="pd-progress-fill"
+                    :class="progressFillClass(p)"
+                    :style="{ width: `${getProgress(p)}%` }"
+                  />
+                </div>
+                <span class="pd-progress-pct">{{ getProgress(p) }}%</span>
+              </td>
+              <td class="pd-due-cell">
+                <span v-if="p.endDate" class="pd-due" :class="dueClass(p.endDate, p.status)">
+                  {{ formatDate(p.endDate) }}
+                </span>
+                <span v-else class="pd-due pd-due--none">—</span>
+              </td>
+              <td class="pd-arrow-cell"><i class="pi pi-chevron-right" /></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -193,13 +214,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { NeoTag } from '@neolibrary/components'
 import { useProjectStore } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
-import type { ProjectStatus } from '@/types/project.types'
+import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
 
 const projectStore = useProjectStore()
 const userStore    = useUserStore()
@@ -210,24 +231,16 @@ onMounted(() => {
   if (userStore.users.length === 0) userStore.fetchAll()
 })
 
-// ── Pipeline config ────────────────────────────────────────────────────────────
-const PIPELINE_PHASES: ProjectStatus[] = [
-  'Draft', 'Kickoff', 'CadrageTechnique', 'Environnement',
-  'Parametrage', 'Integration', 'Recette', 'MEP', 'Cloture',
+// ── Projects dashboard config ─────────────────────────────────────────────────
+type FilterId = 'all' | 'active' | 'overdue' | 'pending' | 'completed'
+const PROJECT_FILTERS: { id: FilterId; label: string }[] = [
+  { id: 'all',       label: 'Tous'        },
+  { id: 'active',    label: 'Actifs'      },
+  { id: 'overdue',   label: 'En retard'   },
+  { id: 'pending',   label: 'En validation' },
+  { id: 'completed', label: 'Terminés'    },
 ]
-
-const STATUS_COLORS: Record<ProjectStatus, string> = {
-  Draft:            '#94a3b8',
-  Kickoff:          '#93c5fd',
-  CadrageTechnique: '#3b82f6',
-  Environnement:    '#1d4ed8',
-  Parametrage:      '#fbbf24',
-  Integration:      '#d97706',
-  Recette:          '#f97316',
-  MEP:              '#10b981',
-  Cloture:          '#0d9488',
-  Archived:         '#cbd5e1',
-}
+const activeFilter = ref<FilterId>('all')
 
 // ── KPI computeds ─────────────────────────────────────────────────────────────
 const TERMINAL_STATUSES: ProjectStatus[] = ['Cloture', 'Archived']
@@ -254,24 +267,64 @@ const completedCount = computed(() =>
   projectStore.projects.filter(p => p.status === 'Cloture').length
 )
 
-// ── Pipeline helpers ───────────────────────────────────────────────────────────
-const statusCount = (s: ProjectStatus) =>
-  projectStore.projects.filter(p => p.status === s).length
-
-const projectsByStatus = computed<Record<string, typeof projectStore.projects>>(() => {
-  const map: Record<string, typeof projectStore.projects> = {}
-  for (const phase of PIPELINE_PHASES) {
-    map[phase] = projectStore.projects.filter(p => p.status === phase)
+// ── Projects dashboard helpers ────────────────────────────────────────────────
+function matchesFilter(p: ProjectSummary, f: FilterId): boolean {
+  const isTerminal = TERMINAL_STATUSES.includes(p.status)
+  const isOverdue = !!p.endDate && !isTerminal && new Date(p.endDate).getTime() < Date.now()
+  switch (f) {
+    case 'all':       return true
+    case 'active':    return !isTerminal
+    case 'overdue':   return isOverdue
+    case 'pending':   return p.status === 'Parametrage' || p.status === 'MEP'
+    case 'completed': return p.status === 'Cloture'
   }
-  return map
+}
+
+const filterCount = (f: FilterId): number =>
+  projectStore.projects.filter((p) => matchesFilter(p, f)).length
+
+const filteredProjects = computed<ProjectSummary[]>(() => {
+  const list = projectStore.projects.filter((p) => matchesFilter(p, activeFilter.value))
+  // Active first, then by due-date ascending (most urgent first), then by name
+  return list.slice().sort((a, b) => {
+    const aTerm = TERMINAL_STATUSES.includes(a.status) ? 1 : 0
+    const bTerm = TERMINAL_STATUSES.includes(b.status) ? 1 : 0
+    if (aTerm !== bTerm) return aTerm - bTerm
+    const aMs = a.endDate ? new Date(a.endDate).getTime() : Number.POSITIVE_INFINITY
+    const bMs = b.endDate ? new Date(b.endDate).getTime() : Number.POSITIVE_INFINITY
+    if (aMs !== bMs) return aMs - bMs
+    return a.name.localeCompare(b.name)
+  })
 })
 
-const maxCount = computed(() =>
-  Math.max(1, ...PIPELINE_PHASES.map(s => statusCount(s)))
-)
+function getProgress(p: ProjectSummary): number {
+  // Backend supplies progressPct when work-package counts are available.
+  // Fall back to a status-based heuristic for legacy / empty projects.
+  if (typeof p.progressPct === 'number') return p.progressPct
+  const map: Record<ProjectStatus, number> = {
+    Draft: 0, Kickoff: 5, CadrageTechnique: 15, Environnement: 25,
+    Parametrage: 50, Integration: 65, Recette: 80, MEP: 95,
+    Cloture: 100, Archived: 100,
+  }
+  return map[p.status] ?? 0
+}
 
-function barHeight(count: number): string {
-  return `${Math.max(4, Math.round((count / maxCount.value) * 80))}px`
+function progressFillClass(p: ProjectSummary): string {
+  if (TERMINAL_STATUSES.includes(p.status)) return 'pd-progress-fill--done'
+  if (p.endDate && new Date(p.endDate).getTime() < Date.now()) return 'pd-progress-fill--late'
+  const pct = getProgress(p)
+  if (pct < 30) return 'pd-progress-fill--early'
+  if (pct < 70) return 'pd-progress-fill--mid'
+  return 'pd-progress-fill--almost'
+}
+
+function dueClass(iso: string, status: ProjectStatus): string {
+  if (TERMINAL_STATUSES.includes(status)) return 'pd-due--done'
+  const ms = new Date(iso).getTime() - Date.now()
+  if (ms < 0)              return 'pd-due--overdue'
+  if (ms < 7  * 86_400_000) return 'pd-due--critical'
+  if (ms < 14 * 86_400_000) return 'pd-due--warn'
+  return 'pd-due--ok'
 }
 
 // ── Completion ─────────────────────────────────────────────────────────────────
@@ -500,131 +553,173 @@ const todayLabel = computed(() =>
 }
 
 /* ── Completion pill ─────────────────────────────────────────────────────────── */
-.completion-pill {
+/* ── Projects dashboard (replaces the old pipeline funnel) ──────────────────── */
+.pd-header {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.pd-filters {
   display: flex;
-  align-items: center;
   gap: 0.375rem;
+  flex-wrap: wrap;
+}
+.pd-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--nl-border);
+  background: var(--nl-surface);
+  color: var(--nl-text-2);
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--nl-text-2);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-
-.mini-ring {
-  width: 20px;
-  height: 20px;
-  transform: rotate(-90deg);
-  overflow: visible;
+.pd-filter:hover { border-color: var(--nl-accent); color: var(--nl-accent); }
+.pd-filter--active {
+  background: var(--nl-accent);
+  border-color: var(--nl-accent);
+  color: #fff;
 }
-
-.mini-ring-bg   { fill: none; stroke: var(--nl-border); stroke-width: 4; }
-.mini-ring-prog { fill: none; stroke: var(--nl-accent); stroke-width: 4; stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
-
-/* ── Pipeline ────────────────────────────────────────────────────────────────── */
-.pipeline {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  align-items: end;
+.pd-filter__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 0.6875rem;
+  font-weight: 700;
 }
+.pd-filter--active .pd-filter__count { background: rgba(255, 255, 255, 0.25); }
 
-.pipeline-col {
+.pd-empty {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  color: var(--nl-text-3);
+  font-size: 0.875rem;
+}
+.pd-empty__icon { font-size: 2rem; opacity: 0.5; }
+
+.pd-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.pd-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  table-layout: fixed;
+}
+.pd-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nl-text-3);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--nl-border);
+  background: var(--nl-surface-2);
+}
+.pd-table td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--nl-border);
+  vertical-align: middle;
+}
+.pd-table .pd-progress-col { width: 200px; }
+.pd-table .pd-due-col      { width: 110px; }
+
+.pd-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.pd-row:hover td { background: var(--nl-surface-2); }
+
+.pd-name-cell { min-width: 0; }
+.pd-name {
+  font-weight: 600;
+  color: var(--nl-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pd-client {
+  font-size: 0.75rem;
+  color: var(--nl-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pd-pm-cell {
+  color: var(--nl-text-2);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-progress-cell {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
-
-.pipeline-col__header {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex-wrap: nowrap;
-}
-
-.pipeline-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.pipeline-col__label {
-  font-size: 0.675rem;
-  font-weight: 600;
-  color: var(--nl-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.pd-progress-bar {
   flex: 1;
-}
-
-.pipeline-col__count {
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: var(--nl-text-1);
-  flex-shrink: 0;
-}
-
-.pipeline-col__bar-wrap {
-  height: 80px;
-  background: var(--nl-surface-2);
-  border-radius: 6px;
-  display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-}
-
-.pipeline-col__bar {
-  width: 100%;
-  border-radius: 6px 6px 0 0;
-  transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 0.85;
-}
-
-.pipeline-col__cards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.pipeline-chip {
+  height: 6px;
   background: var(--nl-surface-2);
   border: 1px solid var(--nl-border);
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.pd-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+.pd-progress-fill--early   { background: #94a3b8; }
+.pd-progress-fill--mid     { background: #3b82f6; }
+.pd-progress-fill--almost  { background: #14b8a6; }
+.pd-progress-fill--done    { background: #10b981; }
+.pd-progress-fill--late    { background: #ef4444; }
+
+.pd-progress-pct {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--nl-text-2);
+  min-width: 36px;
+  text-align: right;
 }
 
-.pipeline-chip:hover {
-  background: var(--nl-accent-light);
-  border-color: var(--nl-accent);
-}
-
-.pipeline-chip__name {
-  font-size: 0.675rem;
+.pd-due {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--nl-text-1);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
+.pd-due--ok       { background: var(--nl-surface-2); color: var(--nl-text-2); }
+.pd-due--warn     { background: #fef3c7; color: #b45309; }
+.pd-due--critical { background: #fed7aa; color: #c2410c; }
+.pd-due--overdue  { background: #fee2e2; color: #b91c1c; }
+.pd-due--done     { background: #dcfce7; color: #047857; }
+.pd-due--none     { color: var(--nl-text-3); font-weight: 500; }
 
-.pipeline-chip__client {
-  font-size: 0.6rem;
+.pd-arrow-cell {
+  width: 24px;
   color: var(--nl-text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: right;
 }
-
-.pipeline-more {
-  font-size: 0.625rem;
-  color: var(--nl-text-3);
-  padding: 0.1rem 0.4rem;
-}
+.pd-row:hover .pd-arrow-cell { color: var(--nl-accent); }
 
 /* ── Bottom grid ─────────────────────────────────────────────────────────────── */
 .bottom-grid {
@@ -808,17 +903,19 @@ const todayLabel = computed(() =>
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────────── */
-@media (max-width: 1100px) {
-  .pipeline { grid-template-columns: repeat(3, 1fr); }
-}
-
 @media (max-width: 860px) {
   .kpi-grid   { grid-template-columns: repeat(2, 1fr); }
   .bottom-grid { grid-template-columns: 1fr; }
+  /* Compact the projects dashboard table on narrow screens */
+  .pd-table .pd-progress-col,
+  .pd-progress-cell { display: none; }
+  .pd-table .pd-due-col      { width: 90px; }
 }
 
 @media (max-width: 600px) {
   .kpi-grid { grid-template-columns: 1fr; }
-  .pipeline { grid-template-columns: repeat(2, 1fr); }
+  /* On phones, hide the PM column too — name + status + due is enough. */
+  .pd-pm-cell,
+  .pd-table th:nth-child(3) { display: none; }
 }
 </style>
