@@ -28,7 +28,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<ProjectTemplateSummary[]>('/admin/projecttemplate')
+      const { data } = await api.get<ProjectTemplateSummary[]>('/pm/templates')
       templates.value = [...data]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des modèles.'
@@ -42,7 +42,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<ProjectTemplate>(`/admin/projecttemplate/${id}`)
+      const { data } = await api.get<ProjectTemplate>(`/pm/templates/${id}`)
       currentTemplate.value = { ...data }
       return data
     } catch (e: unknown) {
@@ -57,7 +57,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.post<ProjectTemplateSummary>('/admin/projecttemplate', payload)
+      const { data } = await api.post<ProjectTemplateSummary>('/pm/templates', payload)
       await fetchTemplates()
       return data
     } catch (e: unknown) {
@@ -72,7 +72,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      await api.delete(`/admin/projecttemplate/${id}`)
+      await api.delete(`/pm/templates/${id}`)
       templates.value = templates.value.filter((t) => t.id !== id)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression du modèle.'
@@ -85,7 +85,7 @@ export const useTemplateStore = defineStore('templates', () => {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
+      await api.post(`/pm/templates/${templateId}/apply/${projectId}`, {})
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : "Erreur lors de l'application du modèle."
       throw e
@@ -102,7 +102,7 @@ export const useTemplateStore = defineStore('templates', () => {
     error.value = null
     try {
       const { data } = await api.post<ProjectTemplateSummary>(
-        `/admin/projecttemplate/from-project/${projectId}`,
+        `/pm/templates/from-project/${projectId}`,
         payload,
       )
       await fetchTemplates()

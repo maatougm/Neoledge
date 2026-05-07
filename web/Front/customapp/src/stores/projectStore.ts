@@ -445,7 +445,7 @@ export const useProjectStore = defineStore('projects', () => {
 
   const fetchTemplates = async () => {
     try {
-      const { data } = await api.get<ProjectTemplateSummary[]>('/admin/projecttemplate')
+      const { data } = await api.get<ProjectTemplateSummary[]>('/pm/templates')
       templates.value = [...data]
     } catch {
       templates.value = []
@@ -453,17 +453,17 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   const createTemplate = async (payload: CreateTemplatePayload) => {
-    await api.post('/admin/projecttemplate', payload)
+    await api.post('/pm/templates', payload)
     await fetchTemplates()
   }
 
   const deleteTemplate = async (id: string) => {
-    await api.delete(`/admin/projecttemplate/${id}`)
+    await api.delete(`/pm/templates/${id}`)
     templates.value = templates.value.filter((t) => t.id !== id)
   }
 
   const applyTemplate = async (templateId: string, projectId: string) => {
-    await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
+    await api.post(`/pm/templates/${templateId}/apply/${projectId}`, {})
   }
 
   // ─── Logout reset ────────────────────────────────────────────────────────────

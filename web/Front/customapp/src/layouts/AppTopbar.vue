@@ -82,7 +82,6 @@ const ROUTE_LABELS: Record<string, string> = {
   'pm-team-planner':           'Planification équipe',
   'pm-my-tasks':               'Mes tâches',
   'pm-templates':              'Modèles',
-  'admin-templates':           'Modèles',
   // Project module deep-links (the legacy tabbed view)
   'pm-project-questionnaire':  'Questionnaire',
   'pm-project-meetings':       'Réunions',
