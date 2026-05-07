@@ -190,6 +190,7 @@ import { Bar, Doughnut } from 'vue-chartjs'
 import {
   Chart as ChartJS, ArcElement, BarElement, CategoryScale, LinearScale, Legend, Tooltip,
 } from 'chart.js'
+import type { TooltipItem } from 'chart.js'
 import { useProjectStore } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
 import { PROJECT_STATUS_LABELS } from '@/types/project.types'
@@ -261,9 +262,11 @@ const donutOptions = {
     },
     tooltip: {
       callbacks: {
-        label: (ctx: { label?: string; parsed?: number; chart: { data: { datasets: { data: number[] }[] } } }) => {
-          const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0)
-          const v = ctx.parsed ?? 0
+        label: (ctx: TooltipItem<'doughnut'>) => {
+          // Cast to number — datasets here only ever contain numeric counts.
+          const data = ctx.chart.data.datasets[0].data as number[]
+          const total = data.reduce((a, b) => a + (b ?? 0), 0)
+          const v = (ctx.parsed as unknown as number) ?? 0
           const pct = total ? Math.round((v / total) * 100) : 0
           return `${ctx.label}: ${v} (${pct}%)`
         },
