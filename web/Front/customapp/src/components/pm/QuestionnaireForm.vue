@@ -215,6 +215,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { NeoInputText, NeoSelect, NeoDatePicker, NeoButton, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Checkbox from 'primevue/checkbox'
 import { usePmStore } from '@/stores/pmStore'
@@ -314,11 +315,52 @@ onMounted(() => {
       collab.joinProject(props.project.id)
     }, 300)
   }
+
+  // Block hard browser close / refresh / back when the form is dirty.
+  // Modern browsers ignore the custom message and show a generic
+  // "Leave site?" prompt — that's fine, the prompt itself is the goal.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', handleBeforeUnload)
+  }
 })
 
 onUnmounted(() => {
   debouncedSendUpdate.flush()
   collab.leaveProject(props.project.id)
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  }
+})
+
+function handleBeforeUnload(e: BeforeUnloadEvent): void {
+  if (!dirty.value) return
+  e.preventDefault()
+  // Required for Chrome — even though the message is ignored.
+  e.returnValue = ''
+}
+
+// Vue Router intra-app navigation guard. useNeoConfirm.require() returns
+// void; pass `accept`/`reject` callbacks that resolve `next()`. Calling
+// next(false) cancels the navigation and the user stays on the form.
+//
+// Logout path note: when the user logs out, authStore.logout() clears the
+// JWT BEFORE router.push('/login') runs. Blocking that navigation here
+// would leave the user on /questionnaire with no auth — a deadlock.
+// We detect the unauthenticated state and let navigation through.
+onBeforeRouteLeave((_to, _from, next) => {
+  if (!dirty.value || !auth.isAuthenticated) {
+    next()
+    return
+  }
+  confirm.require({
+    message: 'Vous avez des modifications non enregistrées. Voulez-vous vraiment quitter le questionnaire ?',
+    header: 'Modifications non enregistrées',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Quitter sans enregistrer',
+    rejectLabel: 'Rester',
+    accept: () => next(),
+    reject: () => next(false),
+  })
 })
 
 // ─── Watch remote field changes ───────────────────────────────────────────────
