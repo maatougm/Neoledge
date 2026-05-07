@@ -2,6 +2,9 @@ import { Injectable, Logger, NotFoundException, BadRequestException, HttpExcepti
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
+import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
+import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
+import { runCahierAgent } from './cahier-agent.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
 import { redactPii } from '../common/pii-redact.js'
 import type {
@@ -39,7 +42,14 @@ export class CahierDesChargesService {
     private readonly config: ConfigService,
     private readonly zaiFallback: ZaiFallbackProvider,
     private readonly aiUsage: AiUsageService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
+
+  /** True when the cahier agent loop should run instead of single-shot. */
+  private isAgentModeEnabled(): boolean {
+    const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    return raw === 'all' || raw.split(/[,\s]+/).includes('cahier')
+  }
 
   // ─── 1. Gather all project data ────────────────────────────────────────────
 
@@ -632,6 +642,33 @@ export class CahierDesChargesService {
     transcripts: CahierTranscriptInput[],
     projectId?: string,
   ): Promise<CahierAiResult> {
+    // Agent mode — model fetches questionnaire/meetings/feedback via tools.
+    // Fall through to single-shot only on AgentEmitMissedError. Other agent
+    // errors propagate (cost / token / network issues) — same shape the
+    // single-shot path produces today.
+    if (projectId && this.isAgentModeEnabled()) {
+      const startedAt = Date.now()
+      const agentModel = this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air'
+      try {
+        const out = await runCahierAgent(this.agentRunner, this.logger, projectId)
+        void this.aiUsage.log({
+          projectId,
+          provider: 'agent',
+          model: agentModel,
+          feature: 'cahier',
+          durationMs: Date.now() - startedAt,
+          success: true,
+        })
+        return out
+      } catch (e: unknown) {
+        if (e instanceof AgentEmitMissedError) {
+          this.logger.warn(`cahier agent emit missed; falling through to single-shot: ${e.message}`)
+        } else {
+          throw e
+        }
+      }
+    }
+
     // All AI features default to Z.AI primary (cheap + supports tool-use).
     // AI_FALLBACK_PROVIDER (default 'openai') auto-engages on Z.AI failure.
     const provider = (this.config.get<string>('AI_PROVIDER') ?? 'zai').toLowerCase()
