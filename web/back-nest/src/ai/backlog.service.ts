@@ -7,6 +7,9 @@ import {
   type ProposedBacklog,
   type ProposedEpic,
 } from './backlog-generator.js';
+import { AgentRunnerService } from './agent/agent-runner.service.js';
+import { runBacklogAgent } from './backlog-agent.js';
+import { AgentEmitMissedError } from './agent/agent-errors.js';
 
 const AI_GENERATED_TAG = 'questionnaire+cahier+meeting';
 
@@ -26,7 +29,14 @@ export class BacklogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
+
+  /** True when the backlog agent loop should run instead of the legacy single-shot path. */
+  private isAgentModeEnabled(): boolean {
+    const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    return raw === 'all' || raw.split(/[,\s]+/).includes('backlog')
+  }
 
   /**
    * Assemble the context from (a) backlog-driver field answers, (b) latest
@@ -55,6 +65,22 @@ export class BacklogService {
     // "alimente l'IA" has no answer. The PM gets a clear list of what's
     // missing instead of a degraded AI output.
     await this.assertDriverFieldsFilled(projectId);
+
+    // Agent mode — model fetches what it needs via tools, no pre-built context.
+    if (this.isAgentModeEnabled()) {
+      try {
+        return await runBacklogAgent(this.agentRunner, this.logger, projectId);
+      } catch (e) {
+        // AgentEmitMissedError → fall through to single-shot. Other errors
+        // surface as 502 like before.
+        if (e instanceof AgentEmitMissedError) {
+          this.logger.warn(`backlog agent emit missed; falling back to single-shot: ${e.message}`);
+        } else {
+          this.logger.error(`backlog agent failed: ${e instanceof Error ? e.message : String(e)}`);
+          throw new BadGatewayException('La génération IA a échoué. Réessayez dans un instant.');
+        }
+      }
+    }
 
     const context = await this.buildContext(projectId, project.name, project.aiOutput);
     if (context.length < 40) {
