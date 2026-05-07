@@ -2,10 +2,10 @@ import { Controller, Get, Post, Patch, Delete, Put, Param, Body, Query, UseGuard
 import { WorkPackagesService } from './work-packages.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto } from './dto/work-package.dto.js';
 
 interface AuthUser { userId: string; role: string }
@@ -34,13 +34,13 @@ export class MyTasksController {
 }
 
 @Controller('pm/projects/:projectId/work-packages')
-@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
 @ProjectAccess('projectId')
 export class WorkPackagesController {
   constructor(private readonly service: WorkPackagesService) {}
 
   @Get()
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async findAll(
     @Param('projectId') projectId: string,
     @Query('status') status?: string,
@@ -67,7 +67,7 @@ export class WorkPackagesController {
   }
 
   @Get(':id')
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async findOne(@Param('projectId') projectId: string, @Param('id') id: string) {
     const r = await this.service.findOne(id, projectId);
     if (r.isFailure) throw new NotFoundException(r.error);
@@ -76,7 +76,7 @@ export class WorkPackagesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @RequirePermission('wp.create')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async create(
     @Param('projectId') projectId: string,
     @Body() dto: CreateWorkPackageDto,
@@ -88,7 +88,7 @@ export class WorkPackagesController {
   }
 
   @Patch(':id')
-  @RequirePermission('wp.edit')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async update(
     @Param('projectId') projectId: string,
     @Param('id') id: string,
@@ -102,7 +102,7 @@ export class WorkPackagesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission('wp.delete')
+  @Roles('Admin', 'ProjectManager')
   async remove(@Param('projectId') projectId: string, @Param('id') id: string) {
     const r = await this.service.softDelete(id, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -174,7 +174,7 @@ export class WorkPackagesController {
   }
 
   @Post('bulk-assign')
-  @RequirePermission('wp.assign')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async bulkAssign(
     @Param('projectId') projectId: string,
     @Body() dto: BulkAssignDto,

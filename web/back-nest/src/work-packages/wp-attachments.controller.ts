@@ -14,26 +14,26 @@ import {
 import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { WpAttachmentsService, ALLOWED_ATTACHMENT_MIMES } from './wp-attachments.service.js';
 import { promises as fs } from 'fs';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 @Controller('pm/work-packages/:wpId/attachments')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class WpAttachmentsController {
   constructor(private readonly service: WpAttachmentsService) {}
 
   @Get()
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async list(@Param('wpId') wpId: string) {
     return this.service.list(wpId);
   }
 
   @Post()
-  @RequirePermission('attachment.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_FILE_BYTES },
@@ -61,7 +61,7 @@ export class WpAttachmentsController {
   }
 
   @Get(':attachmentId/download')
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async download(
     @Param('attachmentId') attachmentId: string,
     @Res() res: Response,
@@ -81,7 +81,7 @@ export class WpAttachmentsController {
   // attachment.upload (not wp.edit) — Spec/Member/Deploy all have it.
   // Ownership is enforced inside the service: only uploader or project PM
   // may delete; otherwise a 403 ForbiddenException is thrown.
-  @RequirePermission('attachment.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async remove(
     @Param('attachmentId') attachmentId: string,
     @Req() req: Request,

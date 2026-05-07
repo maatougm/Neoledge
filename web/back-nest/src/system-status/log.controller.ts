@@ -1,8 +1,8 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 interface JwtUser {
@@ -11,8 +11,8 @@ interface JwtUser {
 }
 
 @Controller('admin/Log')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
-@RequirePermission('system.logs')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Admin')
 export class LogController {
   constructor(private readonly prisma: PrismaService) {}
 

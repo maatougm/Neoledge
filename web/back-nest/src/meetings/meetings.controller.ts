@@ -22,16 +22,16 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { MeetingsService } from './meetings.service.js'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
-import { PermissionsGuard } from '../common/guards/permissions.guard.js'
+import { RolesGuard } from '../common/guards/roles.guard.js'
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js'
+import { Roles } from '../common/decorators/roles.decorator.js'
 import { CurrentUser } from '../common/decorators/current-user.decorator.js'
 import { isAudioBuffer } from './audio-signature.js'
 
 interface AuthUser { userId: string }
 
 @Controller('pm/projects/:projectId/meetings')
-@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
 @ProjectAccess('projectId')
 export class MeetingsController {
   constructor(private readonly service: MeetingsService) {}
@@ -104,7 +104,7 @@ export class MeetingsController {
 
   @Patch(':id/rename-speaker')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission('meeting.manage', { projectParam: 'projectId' })
+  @Roles('Admin', 'ProjectManager')
   async renameSpeaker(
     @Param('id') id: string,
     @Body() body: { oldName: string; newName: string },
@@ -140,7 +140,7 @@ export class MeetingsController {
    * the validation team can re-listen. Multipart field: 'audio'.
    */
   @Post(':id/audio')
-  @RequirePermission('meeting.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam')
   @UseInterceptors(
     FileInterceptor('audio', { limits: { fileSize: 200 * 1024 * 1024 } }),
   )
@@ -173,7 +173,7 @@ export class MeetingsController {
    * cron will skip it.
    */
   @Patch(':id/preserve')
-  @RequirePermission('meeting.manage', { projectParam: 'projectId' })
+  @Roles('Admin', 'ProjectManager')
   async setPreserve(
     @Param('id') id: string,
     @Body() body: { preserved?: boolean },

@@ -11,9 +11,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import {
   LiveMeetingService,
   type ChecklistItem,
@@ -21,7 +21,7 @@ import {
 } from './live-meeting.service.js';
 
 @Controller('pm/projects/:projectId/meetings/live')
-@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
 @ProjectAccess('projectId')
 export class LiveMeetingController {
   constructor(private readonly service: LiveMeetingService) {}
@@ -32,7 +32,7 @@ export class LiveMeetingController {
    * Returns the updated checklist + readiness flag.
    */
   @Post('checklist')
-  @RequirePermission('meeting.ai_analyze')
+  @Roles('Admin', 'ProjectManager')
   async checklist(
     @Param('projectId') projectId: string,
     @Body() body: { transcript?: string; previousChecklist?: ChecklistItem[] },
@@ -48,7 +48,7 @@ export class LiveMeetingController {
    * Returns { text }.
    */
   @Post('transcribe-chunk')
-  @RequirePermission('meeting.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam')
   @UseInterceptors(
     FileInterceptor('audio', {
       limits: { fileSize: 25 * 1024 * 1024 },
@@ -66,7 +66,7 @@ export class LiveMeetingController {
    * Persist the live transcript as a regular MeetingTranscript.
    */
   @Post('save')
-  @RequirePermission('meeting.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam')
   async save(
     @Param('projectId') projectId: string,
     @Body() body: { title?: string; transcript?: string; durationSeconds?: number },

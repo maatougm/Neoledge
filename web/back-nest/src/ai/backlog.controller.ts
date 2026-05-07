@@ -1,13 +1,13 @@
 import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { BacklogService } from './backlog.service.js';
 import type { ProposedBacklog } from './backlog.service.js';
 
 @Controller('pm/projects/:projectId/ai')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class BacklogController {
   constructor(private readonly service: BacklogService) {}
 
@@ -16,7 +16,7 @@ export class BacklogController {
    * Returns a proposed backlog — does NOT write to the DB.
    */
   @Post('generate-backlog')
-  @RequirePermission('wp.create')
+  @Roles('Admin', 'ProjectManager')
   async preview(@Param('projectId') projectId: string): Promise<ProposedBacklog> {
     return this.service.preview(projectId);
   }
@@ -27,7 +27,7 @@ export class BacklogController {
    * Writes Epics + Tasks as WorkPackages in one transaction.
    */
   @Post('accept-backlog')
-  @RequirePermission('wp.create')
+  @Roles('Admin', 'ProjectManager')
   async accept(
     @Param('projectId') projectId: string,
     @Body() backlog: unknown,
