@@ -37,7 +37,6 @@ const mkPrisma = () => {
 describe('WorkPackagesService', () => {
   let prisma: ReturnType<typeof mkPrisma>;
   let notifications: { notifyEnhanced: jest.Mock };
-  let automation: { executeRulesForEvent: jest.Mock };
   let projectActivity: unknown;
   let analyticsCache: { invalidate: jest.Mock };
   let svc: WorkPackagesService;
@@ -45,13 +44,12 @@ describe('WorkPackagesService', () => {
   beforeEach(() => {
     prisma = mkPrisma();
     notifications = { notifyEnhanced: jest.fn(async () => undefined) };
-    automation = { executeRulesForEvent: jest.fn(async () => undefined) };
     projectActivity = { create: jest.fn(async () => ({})) };
     analyticsCache = { invalidate: jest.fn(async () => undefined) };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (prisma as any).projectActivity = projectActivity;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc = new WorkPackagesService(prisma as any, notifications as any, automation as any, analyticsCache as any);
+    svc = new WorkPackagesService(prisma as any, notifications as any, analyticsCache as any);
   });
 
   it('rejects empty title', async () => {
@@ -76,33 +74,6 @@ describe('WorkPackagesService', () => {
   it('does NOT notify when assignee equals author', async () => {
     await svc.create('p1', { title: 'Task', assigneeId: 'u-author' }, 'u-author');
     expect(notifications.notifyEnhanced).not.toHaveBeenCalled();
-  });
-
-  it('fires automation on work_package_created', async () => {
-    await svc.create('p1', { title: 'Task' }, 'u-author');
-    expect(automation.executeRulesForEvent).toHaveBeenCalledWith(
-      'p1', 'work_package_created', expect.objectContaining({ title: 'Task' }),
-    );
-  });
-
-  it('fires automation on status change during update', async () => {
-    const created = await svc.create('p1', { title: 'Task' }, 'u-author');
-    const wpId = (created.value as { id: string }).id;
-    await svc.update(wpId, 'p1', { status: 'InProgress' }, 'u-author');
-    expect(automation.executeRulesForEvent).toHaveBeenCalledWith(
-      'p1', 'work_package_status_changed',
-      expect.objectContaining({ fromStatus: 'New', toStatus: 'InProgress' }),
-    );
-  });
-
-  it('does NOT fire status-change automation when status unchanged', async () => {
-    const created = await svc.create('p1', { title: 'Task' }, 'u-author');
-    const wpId = (created.value as { id: string }).id;
-    automation.executeRulesForEvent.mockClear();
-    await svc.update(wpId, 'p1', { title: 'Renamed' }, 'u-author');
-    expect(automation.executeRulesForEvent).not.toHaveBeenCalledWith(
-      expect.anything(), 'work_package_status_changed', expect.anything(),
-    );
   });
 
   it('softDelete marks isDeleted=true', async () => {

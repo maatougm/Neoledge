@@ -166,9 +166,9 @@ const router = createRouter({
               component: () => import('@/views/PMProjectDetailView.vue'),
               props: true,
             },
-            // 5 deep-links into the legacy tabbed PMProjectDetail for the
-            // questionnaire / cahier / meeting / validation / automation
-            // workflow. Each route mounts the same wrapper but passes a
+            // Deep-links into the legacy tabbed PMProjectDetail for the
+            // questionnaire / cahier / meeting / validation workflow.
+            // Each route mounts the same wrapper but passes a
             // different ?tab= via the path so the sidebar nav can highlight
             // the active item.
             {

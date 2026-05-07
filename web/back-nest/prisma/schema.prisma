@@ -137,7 +137,6 @@ model Project {
   transcripts    MeetingTranscript[]
   notifications  Notification[]
   checklists      PhaseChecklist[]
-  automationRules AutomationRule[]
   cahierVersions  CahierVersion[]
   aiUsages        AiUsage[]
 
@@ -525,42 +524,11 @@ model AnalyticsCache {
   @@map("AnalyticsCache")
 }
 
-model AutomationRule {
-  id               String    @id @default(uuid())
-  projectId        String
-  name             String    @db.VarChar(200)
-  triggerEvent     String    @db.VarChar(100)
-  triggerCondition String?   @db.Text
-  actionType       String    @db.VarChar(100)
-  actionConfig     String    @db.Text
-  isActive         Boolean   @default(true)
-  executionCount   Int       @default(0)
-  lastExecutedAt   DateTime?
-  createdAt        DateTime  @default(now())
-
-  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  logs    AutomationLog[]
-
-  @@index([projectId])
-  @@index([triggerEvent])
-  @@map("AutomationRules")
-}
-
-model AutomationLog {
-  id         String   @id @default(uuid())
-  ruleId     String
-  projectId  String
-  status     String   @db.VarChar(20)
-  detail     String?  @db.VarChar(500)
-  executedAt DateTime @default(now())
-
-  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-
-  @@index([ruleId])
-  @@index([projectId])
-  @@index([executedAt])
-  @@map("AutomationLog")
-}
+// Note: the dynamic automation rules engine (AutomationRule + AutomationLog)
+// was removed in May 2026 — see migration 20260507020000_drop_automation.
+// The hardcoded notification flows (cahier_generated → notifyReviewTeams,
+// validation_submitted → DeploymentTeam, work_package_assigned, etc.) live
+// directly in their respective services now.
 
 // ─── Sprint 0+ new models (OpenProject parity) ───────────────────────────────
 

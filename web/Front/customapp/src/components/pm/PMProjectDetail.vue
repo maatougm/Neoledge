@@ -102,10 +102,6 @@
         v-else-if="activeTab === 'comments'"
         :project-id="project.id"
       />
-      <AutomationSection
-        v-else-if="activeTab === 'automation'"
-        :project-id="project.id"
-      />
       <CahierDesChargesSection
         v-else-if="activeTab === 'cahier'"
         :project-id="project.id"
@@ -127,7 +123,6 @@ import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
 import MeetingSection        from '@/components/pm/MeetingSection.vue'
 import CommentsSection       from '@/components/pm/CommentsSection.vue'
 import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
-import AutomationSection     from '@/components/pm/AutomationSection.vue'
 import CahierDesChargesSection from '@/components/pm/CahierDesChargesSection.vue'
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
@@ -149,8 +144,8 @@ const store = usePmStore()
 const commentStore = useCommentStore()
 const authStore = useAuthStore()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation' | 'cahier'
-const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'automation', 'cahier']
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'cahier'
+const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'cahier']
 const activeTab = ref<TabId>(
   (VALID_TABS as string[]).includes(props.initialTab ?? '')
     ? (props.initialTab as TabId)
@@ -171,10 +166,7 @@ watch(activeTab, (tab) => {
 // Ordre aligné sur le flux de travail réel du chef de projet :
 // 1. Remplir le questionnaire → 2. Faire les réunions → 3. Générer l'analyse IA
 // → 4. Finaliser le cahier des charges → 5. Validation par les équipes
-// → 6. Consulter l'historique → 7. Échanger en commentaires
-// → 8. Consulter l'activité → 9. Configurer les automatisations
-// Order matches the workflow narrative: Questionnaire → Réunions → IA → Cahier
-// → Validation → Historique → Commentaires → Activité → Automatisations.
+// → 6. Consulter l'historique → 7. Échanger en commentaires → 8. Activité.
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'questionnaire', label: 'Questionnaire',           icon: 'pi-list-check' },
   { id: 'meetings',      label: 'Réunions',                icon: 'pi-microphone' },
@@ -184,7 +176,6 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'history',       label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'comments',      label: 'Commentaires',            icon: 'pi-comments' },
   { id: 'activity',      label: 'Activité',                icon: 'pi-history' },
-  { id: 'automation',    label: 'Automatisations',         icon: 'pi-bolt' },
 ]
 
 // Per-role tab visibility.
@@ -195,7 +186,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 // - SpecificationTeam: focused on validation
 // - Member: read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
-  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity', 'automation'],
+  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity'],
   // Validation team needs full read context to review the cahier:
   // questionnaire (formulaire), meetings (transcripts), the cahier itself
   // (which they can edit), and the validation actions.
@@ -217,7 +208,7 @@ watch(visibleTabs, (list) => {
   }
 }, { immediate: true })
 
-// ── Live stepper polling — phase changes propagate when another user / automation
+// ── Live stepper polling — phase changes propagate when another user
 // bumps the status. Two safeguards:
 //  1. Pause polling when the document is hidden (browser tab in background) — no
 //     point burning bandwidth or hammering the API.

@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway.js';
 
 // Prisma unique-constraint violation.
@@ -28,18 +27,8 @@ export class AgileService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly automation: AutomationService,
     private readonly collab: CollaborationGateway,
   ) {}
-
-  private async triggerAutomation(boardId: string, event: string, context: Record<string, unknown>): Promise<void> {
-    try {
-      const board = await this.prisma.board.findUnique({ where: { id: boardId }, select: { projectId: true } });
-      if (board) void this.automation.executeRulesForEvent(board.projectId, event, context).catch((e) => this.logger.error('triggerAutomation executeRulesForEvent failed', e));
-    } catch (e) {
-      this.logger.error('triggerAutomation failed', e);
-    }
-  }
 
   /**
    * Cold-start idempotency: wraps the check-then-create of the default board
@@ -358,7 +347,6 @@ export class AgileService {
       const err = this.assertTransition(existing.status, 'Active');
       if (err) return Result.fail(err);
       const s = await this.prisma.sprint.update({ where: { id }, data: { status: 'Active' } });
-      void this.triggerAutomation(s.boardId, 'sprint_started', { sprintId: id, name: s.name });
       return Result.ok(s);
     } catch (e) {
       this.logger.error('startSprint failed', e);
@@ -373,7 +361,6 @@ export class AgileService {
       const err = this.assertTransition(existing.status, 'Closed');
       if (err) return Result.fail(err);
       const s = await this.prisma.sprint.update({ where: { id }, data: { status: 'Closed' } });
-      void this.triggerAutomation(s.boardId, 'sprint_closed', { sprintId: id, name: s.name });
       return Result.ok(s);
     } catch (e) {
       this.logger.error('closeSprint failed', e);

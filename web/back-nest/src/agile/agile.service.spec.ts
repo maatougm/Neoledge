@@ -16,10 +16,9 @@ describe('AgileService.getBurndown', () => {
       workPackage: { update: jest.fn(async () => ({ id: 'wp1', projectId: 'p1', boardColumnId: 'c1', status: 'InProgress' })) },
       boardColumn: { findUnique: jest.fn(async () => ({ mapStatus: 'InProgress' })) },
     };
-    const automation = { executeRulesForEvent: jest.fn(async () => undefined) };
     const collab = { broadcastCardMoved: jest.fn() };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc = new AgileService(prisma as any, automation as any, collab as any);
+    svc = new AgileService(prisma as any, collab as any);
   });
 
   it('fails when sprint not found', async () => {
@@ -48,7 +47,7 @@ describe('AgileService.getBurndown', () => {
   it('moveCard broadcasts the move via collaboration gateway', async () => {
     const collab = { broadcastCardMoved: jest.fn() };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const s = new AgileService(prisma as any, { executeRulesForEvent: jest.fn() } as any, collab as any);
+    const s = new AgileService(prisma as any, collab as any);
     await s.moveCard('wp1', 'c1', 0);
     expect(collab.broadcastCardMoved).toHaveBeenCalledWith('p1', expect.objectContaining({
       workPackageId: 'wp1', boardColumnId: 'c1', status: 'InProgress',

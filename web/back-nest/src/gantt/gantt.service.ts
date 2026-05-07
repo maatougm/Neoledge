@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
-import { AutomationService } from '../automation/automation.service.js';
 
 // Prisma unique-constraint violation (e.g. duplicate snapshot re-capture).
 const PRISMA_UNIQUE_VIOLATION = 'P2002';
@@ -12,7 +11,6 @@ export class GanttService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly automation: AutomationService,
   ) {}
 
   async getGanttPayload(projectId: string) {
@@ -122,7 +120,7 @@ export class GanttService {
   /**
    * Atomic transition: the WHERE clause scopes to isReached=false, so two
    * concurrent /reach calls produce exactly one successful transition and one
-   * no-op. Automation fires only on the real transition.
+   * no-op.
    *
    * Defense-in-depth projectId check: verifies the milestone belongs to the
    * URL's project even though ProjectAccessGuard already passed.
@@ -138,7 +136,6 @@ export class GanttService {
         return Result.fail('Jalon hors projet.');
       }
       if (existing.isReached) {
-        // Already reached — do not re-fire automation. Return the current row.
         const ms = await this.prisma.milestone.findUnique({ where: { id } });
         return Result.ok(ms);
       }
@@ -149,20 +146,11 @@ export class GanttService {
         data: { isReached: true },
       });
       if (count === 0) {
-        // Lost the race — another concurrent call flipped it. Return the row
-        // without firing automation again.
         const ms = await this.prisma.milestone.findUnique({ where: { id } });
         return Result.ok(ms);
       }
 
       const ms = await this.prisma.milestone.findUnique({ where: { id } });
-      if (ms) {
-        void this.automation.executeRulesForEvent(ms.projectId, 'milestone_reached', {
-          milestoneId: id,
-          title: ms.title,
-          date: ms.date,
-        }).catch((e) => this.logger.error('automation milestone_reached failed', e));
-      }
       return Result.ok(ms);
     } catch (e) {
       this.logger.error('markMilestoneReached failed', e);

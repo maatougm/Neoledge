@@ -1,7 +1,7 @@
 <!-- @file src/views/PMProjectFullView.vue
      Wrapper for the full tabbed PMProjectDetail view (questionnaire,
-     meetings, AI, cahier des charges, validations, automation).
-     Used as the single mount point for 5 nav entries that deep-link
+     meetings, AI, cahier des charges, validations).
+     Used as the single mount point for nav entries that deep-link
      into a specific tab via the ?tab= query param. -->
 <template>
   <ProjectModuleShell :project-id="id" :title="project?.name || 'Chargement…'" :status="project?.status" status-severity="info">
@@ -38,7 +38,6 @@ const PATH_TO_TAB: Record<string, string> = {
   'pm-project-meetings':      'meetings',
   'pm-project-cahier':        'cahier',
   'pm-project-validations':   'validation',
-  'pm-project-automation':    'automation',
   // Team / spec reviewer enters via the queue — default to the cahier review.
   'team-project-detail':      'cahier',
 }

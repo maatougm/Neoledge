@@ -2,7 +2,6 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 
@@ -28,7 +27,6 @@ export class WorkPackagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly automation: AutomationService,
     private readonly analyticsCache: AnalyticsCacheService,
   ) {}
 
@@ -279,9 +277,6 @@ export class WorkPackagesService {
         }).catch((e) => this.logger.error('notifyEnhanced (wp assignee create) failed', e));
       }
       void this.logActivity(projectId, authorId, 'work_package_created', `WP "${wp.title}" créé`);
-      void this.automation.executeRulesForEvent(projectId, 'work_package_created', {
-        workPackageId: wp.id, title: wp.title, type: wp.type, status: wp.status, assigneeId: wp.assigneeId,
-      }).catch((e) => this.logger.error('automation work_package_created failed', e));
       void this.analyticsCache.invalidate('team_workload');
       return Result.ok(wp);
     } catch (e) {
@@ -368,9 +363,6 @@ export class WorkPackagesService {
             assigneeChanged ? (newAssignee as string) : undefined,
           );
           void this.logActivity(projectId, actorId, 'work_package_status_changed', `"${wp.title}" : ${existing.status} → ${dto.status}`);
-          void this.automation.executeRulesForEvent(projectId, 'work_package_status_changed', {
-            workPackageId: id, title: wp.title, fromStatus: existing.status, toStatus: dto.status,
-          }).catch((e) => this.logger.error('automation work_package_status_changed failed', e));
           void this.analyticsCache.invalidate('team_workload');
 
           // When a Member pushes a WP into AwaitingReview, notify the project's PM

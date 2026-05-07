@@ -4,7 +4,6 @@ import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PhaseGateService } from './phase-gate.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { BULK_MAX } from './dto/bulk.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { TERMINAL_WP_STATUSES } from '../work-packages/wp-status.constants.js';
@@ -26,7 +25,6 @@ export class ProjectsService {
     private readonly notifications: NotificationsService,
     private readonly phaseGate: PhaseGateService,
     private readonly audit: AuditService,
-    private readonly automation: AutomationService,
     private readonly analyticsCache: AnalyticsCacheService,
   ) {}
 
@@ -410,8 +408,6 @@ export class ProjectsService {
     await this.logActivity(projectId, actorId ?? null, 'status_change', `Statut changé: ${project.status} → ${status}`);
     void this.audit.log('Project', projectId, 'STATUS_CHANGE', actorId, { status: { before: project.status, after: status } })
       .catch((e) => this.logger.error('audit updateStatus failed', e));
-    void this.automation.executeRulesForEvent(projectId, 'status_changed', { newStatus: status, oldStatus: project.status })
-      .catch((e) => this.logger.error('automation updateStatus failed', e));
     // Bust analytics cache — phase velocity, deadline risk, team workload all depend on project status.
     void this.analyticsCache.invalidate();
     return Result.ok();
@@ -764,11 +760,6 @@ export class ProjectsService {
       },
       include: { validatedBy: { select: { firstName: true, lastName: true } } },
     });
-
-    void this.automation.executeRulesForEvent(projectId, 'validation_submitted', {
-      phase: validation.phase,
-      isApproved: validation.isApproved,
-    }).catch((e) => this.logger.error('automation validation_submitted failed', e));
 
     void this.logActivity(
       projectId,

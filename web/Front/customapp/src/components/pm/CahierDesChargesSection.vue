@@ -482,7 +482,7 @@ async function handleGenerate() {
     }>(`/pm/projects/${props.projectId}/cahier-des-charges/preview`)
 
     // 2. Persist to Project.aiOutput so the Cahier tab keeps showing it next time,
-    //    and so SpecificationTeam + automation rules get notified on the backend.
+    //    and so SpecificationTeam reviewers get notified on the backend.
     await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, {
       aiContent: data.aiContent,
     })

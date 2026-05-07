@@ -24,7 +24,6 @@ import { SystemStatusModule } from './system-status/system-status.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { CollaborationModule } from './collaboration/collaboration.module.js';
-import { AutomationModule } from './automation/automation.module.js';
 import { WorkPackagesModule } from './work-packages/work-packages.module.js';
 import { GanttModule } from './gantt/gantt.module.js';
 import { AgileModule } from './agile/agile.module.js';
@@ -145,7 +144,6 @@ import { RetentionModule } from './retention/retention.module.js';
     AnalyticsModule,
     AiModule,
     CollaborationModule,
-    AutomationModule,
     WorkPackagesModule,
     GanttModule,
     AgileModule,

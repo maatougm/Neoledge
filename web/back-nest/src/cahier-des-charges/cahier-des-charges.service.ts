@@ -2,7 +2,6 @@ import { Injectable, Logger, NotFoundException, BadRequestException, HttpExcepti
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
-import { AutomationService } from '../automation/automation.service.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
 import { redactPii } from '../common/pii-redact.js'
 import type {
@@ -39,7 +38,6 @@ export class CahierDesChargesService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly zaiFallback: ZaiFallbackProvider,
-    private readonly automationService: AutomationService,
     private readonly aiUsage: AiUsageService,
   ) {}
 
@@ -311,20 +309,6 @@ export class CahierDesChargesService {
     void this.notifyReviewTeams(project.id, project.name).catch((e) =>
       this.logger.warn(`notifyReviewTeams failed: ${e instanceof Error ? e.message : String(e)}`),
     )
-
-    // Fire any admin-defined automation rules for the `cahier_generated` event.
-    // This is what targets the "validation team selected in automation" — the rule's
-    // actionConfig.userId points at the chosen approver, and `send_notification`
-    // creates the notification row.
-    void this.automationService
-      .executeRulesForEvent(projectId, 'cahier_generated', {
-        projectId,
-        projectName: project.name,
-        cahierBytes: payload.length,
-      })
-      .catch((e) =>
-        this.logger.warn(`cahier_generated automation rules failed: ${e instanceof Error ? e.message : String(e)}`),
-      )
   }
 
   /**
