@@ -1,6 +1,8 @@
 <!--
   @file     DashboardSection.vue
-  @desc     Admin command-center dashboard — KPI cards, projects dashboard, deadline radar
+  @desc     Admin command-center dashboard — KPIs + analytical charts.
+            The full project list lives at /app/admin/projects; this
+            page is for at-a-glance insight, not row-by-row management.
 -->
 <template>
   <div class="dash">
@@ -62,91 +64,47 @@
       </div>
     </div>
 
-    <!-- ── Projects dashboard ────────────────────────────────────────────────── -->
-    <div class="section-card">
-      <div class="section-header pd-header">
-        <h2 class="section-title">Tableau de bord des projets</h2>
-        <div class="pd-filters">
-          <button
-            v-for="f in PROJECT_FILTERS"
-            :key="f.id"
-            type="button"
-            class="pd-filter"
-            :class="{ 'pd-filter--active': activeFilter === f.id }"
-            @click="activeFilter = f.id"
-          >
-            {{ f.label }}
-            <span class="pd-filter__count">{{ filterCount(f.id) }}</span>
-          </button>
+    <!-- ── Charts row: status donut + PM workload ────────────────────────────── -->
+    <div class="charts-grid">
+      <!-- Status distribution donut -->
+      <div class="section-card chart-card">
+        <div class="section-header">
+          <h2 class="section-title">Répartition par statut</h2>
+          <span class="chart-meta">{{ projectStore.projects.length }} projets</span>
+        </div>
+        <div v-if="statusChartData.labels.length === 0" class="chart-empty">
+          <i class="pi pi-chart-pie" />
+          <span>Aucun projet à afficher.</span>
+        </div>
+        <div v-else class="donut-wrap">
+          <Doughnut :data="statusChartData" :options="donutOptions" />
         </div>
       </div>
 
-      <div v-if="filteredProjects.length === 0" class="pd-empty">
-        <i class="pi pi-inbox pd-empty__icon" />
-        <span>Aucun projet ne correspond à ce filtre.</span>
-      </div>
-
-      <div v-else class="pd-table-wrap">
-        <table class="pd-table">
-          <thead>
-            <tr>
-              <th>Projet</th>
-              <th>Statut</th>
-              <th>Chef de projet</th>
-              <th class="pd-progress-col">Avancement</th>
-              <th class="pd-due-col">Échéance</th>
-              <th aria-hidden="true" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="p in filteredProjects"
-              :key="p.id"
-              class="pd-row"
-              @click="navigateToProject(p.id)"
-            >
-              <td class="pd-name-cell">
-                <div class="pd-name">{{ p.name }}</div>
-                <div class="pd-client">{{ p.clientName }}</div>
-              </td>
-              <td>
-                <NeoTag
-                  :value="PROJECT_STATUS_LABELS[p.status] ?? p.status"
-                  :severity="statusSeverity(p.status)"
-                />
-              </td>
-              <td class="pd-pm-cell">{{ p.projectManagerName ?? '—' }}</td>
-              <td class="pd-progress-cell">
-                <div class="pd-progress-bar">
-                  <div
-                    class="pd-progress-fill"
-                    :class="progressFillClass(p)"
-                    :style="{ width: `${getProgress(p)}%` }"
-                  />
-                </div>
-                <span class="pd-progress-pct">{{ getProgress(p) }}%</span>
-              </td>
-              <td class="pd-due-cell">
-                <span v-if="p.endDate" class="pd-due" :class="dueClass(p.endDate, p.status)">
-                  {{ formatDate(p.endDate) }}
-                </span>
-                <span v-else class="pd-due pd-due--none">—</span>
-              </td>
-              <td class="pd-arrow-cell"><i class="pi pi-chevron-right" /></td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- PM workload stacked bars -->
+      <div class="section-card chart-card">
+        <div class="section-header">
+          <h2 class="section-title">Charge par chef de projet</h2>
+          <span class="chart-meta">{{ workloads.length }} CPs</span>
+        </div>
+        <div v-if="workloads.length === 0" class="chart-empty">
+          <i class="pi pi-users" />
+          <span>Aucun chef de projet actif.</span>
+        </div>
+        <div v-else class="bar-wrap">
+          <Bar :data="workloadChartData" :options="barOptions" />
+        </div>
       </div>
     </div>
 
-    <!-- ── Deadline radar ────────────────────────────────────────────────────
-         (Status-breakdown lives on the Projects-dashboard filter chips above.) -->
+    <!-- ── Bottom row: deadlines + activity ──────────────────────────────────── -->
     <div class="bottom-grid">
+      <!-- Deadline radar -->
       <div class="section-card deadline-card">
         <div class="section-header">
           <h2 class="section-title">
             <i class="pi pi-clock" style="color: var(--nl-warning)" />
-            Échéances à venir
+            Échéances à venir (14 j)
           </h2>
           <NeoTag
             v-if="upcomingDeadlines.length"
@@ -180,6 +138,46 @@
         </div>
       </div>
 
+      <!-- Recent cross-project activity -->
+      <div class="section-card activity-card">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="pi pi-history" style="color: var(--nl-accent)" />
+            Activité récente
+          </h2>
+          <RouterLink :to="{ name: 'admin-audit' }" class="chart-link">
+            Tout voir <i class="pi pi-arrow-right" />
+          </RouterLink>
+        </div>
+
+        <div v-if="activityLoading" class="empty-state">
+          <i class="pi pi-spin pi-spinner empty-icon" />
+          <span>Chargement…</span>
+        </div>
+        <div v-else-if="recentActivity.length === 0" class="empty-state">
+          <i class="pi pi-inbox empty-icon" />
+          <span>Aucune activité récente.</span>
+        </div>
+        <ul v-else class="activity-list">
+          <li
+            v-for="a in recentActivity"
+            :key="a.id"
+            class="activity-row"
+            :class="{ 'activity-row--clickable': !!a.projectId }"
+            @click="a.projectId && navigateToProject(a.projectId)"
+          >
+            <i class="pi activity-icon" :class="actionIcon(a.action)" />
+            <div class="activity-body">
+              <div class="activity-text">
+                <strong>{{ a.userName ?? 'Système' }}</strong>
+                {{ actionLabel(a.action) }}
+                <span v-if="a.projectName" class="activity-project">« {{ a.projectName }} »</span>
+              </div>
+              <div class="activity-meta">{{ relTime(a.timestamp) }}</div>
+            </div>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
@@ -188,38 +186,28 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { NeoTag } from '@neolibrary/components'
+import { Bar, Doughnut } from 'vue-chartjs'
+import {
+  Chart as ChartJS, ArcElement, BarElement, CategoryScale, LinearScale, Legend, Tooltip,
+} from 'chart.js'
 import { useProjectStore } from '@/stores/projectStore'
 import { useUserStore } from '@/stores/userStore'
-import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
-import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
+import { PROJECT_STATUS_LABELS } from '@/types/project.types'
+import type { ProjectStatus } from '@/types/project.types'
+import api from '@/lib/api'
+
+ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Legend, Tooltip)
 
 const projectStore = useProjectStore()
 const userStore    = useUserStore()
 const router       = useRouter()
 
-onMounted(() => {
-  if (projectStore.projects.length === 0) projectStore.fetchAll()
-  if (userStore.users.length === 0) userStore.fetchAll()
-})
-
-// ── Projects dashboard config ─────────────────────────────────────────────────
-type FilterId = 'all' | 'active' | 'overdue' | 'pending' | 'completed'
-const PROJECT_FILTERS: { id: FilterId; label: string }[] = [
-  { id: 'all',       label: 'Tous'        },
-  { id: 'active',    label: 'Actifs'      },
-  { id: 'overdue',   label: 'En retard'   },
-  { id: 'pending',   label: 'En validation' },
-  { id: 'completed', label: 'Terminés'    },
-]
-const activeFilter = ref<FilterId>('all')
-
-// ── KPI computeds ─────────────────────────────────────────────────────────────
+// ── KPIs ─────────────────────────────────────────────────────────────────
 const TERMINAL_STATUSES: ProjectStatus[] = ['Cloture', 'Archived']
 
 const activeCount = computed(() =>
-  projectStore.projects.filter(p => !TERMINAL_STATUSES.includes(p.status)).length
+  projectStore.projects.filter(p => !TERMINAL_STATUSES.includes(p.status)).length,
 )
-
 const overdueCount = computed(() => {
   const now = Date.now()
   return projectStore.projects.filter(p => {
@@ -227,74 +215,168 @@ const overdueCount = computed(() => {
     return new Date(p.endDate).getTime() < now
   }).length
 })
-
 const pendingValidationCount = computed(() =>
-  projectStore.projects.filter(
-    p => p.status === 'Parametrage' || p.status === 'MEP'
-  ).length
+  projectStore.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP').length,
 )
 
-// ── Projects dashboard helpers ────────────────────────────────────────────────
-function matchesFilter(p: ProjectSummary, f: FilterId): boolean {
-  const isTerminal = TERMINAL_STATUSES.includes(p.status)
-  const isOverdue = !!p.endDate && !isTerminal && new Date(p.endDate).getTime() < Date.now()
-  switch (f) {
-    case 'all':       return true
-    case 'active':    return !isTerminal
-    case 'overdue':   return isOverdue
-    case 'pending':   return p.status === 'Parametrage' || p.status === 'MEP'
-    case 'completed': return p.status === 'Cloture'
-  }
+// ── Status colours — keep aligned with the table chips elsewhere. ─────────
+const STATUS_COLORS: Record<ProjectStatus, string> = {
+  Draft:            '#94a3b8',
+  Kickoff:          '#93c5fd',
+  CadrageTechnique: '#3b82f6',
+  Environnement:    '#1d4ed8',
+  Parametrage:      '#fbbf24',
+  Integration:      '#d97706',
+  Recette:          '#f97316',
+  MEP:              '#10b981',
+  Cloture:          '#0d9488',
+  Archived:         '#cbd5e1',
 }
 
-const filterCount = (f: FilterId): number =>
-  projectStore.projects.filter((p) => matchesFilter(p, f)).length
+// ── Status donut data ────────────────────────────────────────────────────
+const statusChartData = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const p of projectStore.projects) counts[p.status] = (counts[p.status] ?? 0) + 1
+  const orderedStatuses = (Object.keys(STATUS_COLORS) as ProjectStatus[])
+    .filter((s) => (counts[s] ?? 0) > 0)
+  return {
+    labels: orderedStatuses.map((s) => PROJECT_STATUS_LABELS[s] ?? s),
+    datasets: [{
+      data: orderedStatuses.map((s) => counts[s]),
+      backgroundColor: orderedStatuses.map((s) => STATUS_COLORS[s]),
+      borderColor: '#fff',
+      borderWidth: 2,
+      hoverOffset: 6,
+    }],
+  }
+})
+const donutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '62%',
+  plugins: {
+    legend: {
+      position: 'right' as const,
+      labels: { boxWidth: 12, padding: 10, font: { size: 12 } },
+    },
+    tooltip: {
+      callbacks: {
+        label: (ctx: { label?: string; parsed?: number; chart: { data: { datasets: { data: number[] }[] } } }) => {
+          const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0)
+          const v = ctx.parsed ?? 0
+          const pct = total ? Math.round((v / total) * 100) : 0
+          return `${ctx.label}: ${v} (${pct}%)`
+        },
+      },
+    },
+  },
+}
 
-const filteredProjects = computed<ProjectSummary[]>(() => {
-  const list = projectStore.projects.filter((p) => matchesFilter(p, activeFilter.value))
-  // Active first, then by due-date ascending (most urgent first), then by name
-  return list.slice().sort((a, b) => {
-    const aTerm = TERMINAL_STATUSES.includes(a.status) ? 1 : 0
-    const bTerm = TERMINAL_STATUSES.includes(b.status) ? 1 : 0
-    if (aTerm !== bTerm) return aTerm - bTerm
-    const aMs = a.endDate ? new Date(a.endDate).getTime() : Number.POSITIVE_INFINITY
-    const bMs = b.endDate ? new Date(b.endDate).getTime() : Number.POSITIVE_INFINITY
-    if (aMs !== bMs) return aMs - bMs
-    return a.name.localeCompare(b.name)
-  })
+// ── PM workload — fetched from /api/dashboard/pm-workloads ─────────────────
+interface Workload {
+  managerName: string
+  inProgressProjects: number
+  completedProjects: number
+  overdueProjects: number
+  totalProjects: number
+}
+const workloads = ref<Workload[]>([])
+
+const workloadChartData = computed(() => ({
+  labels: workloads.value.map((w) => w.managerName),
+  datasets: [
+    { label: 'En cours',  data: workloads.value.map((w) => w.inProgressProjects), backgroundColor: '#3b82f6', stack: 'wp', borderRadius: 4 },
+    { label: 'En retard', data: workloads.value.map((w) => w.overdueProjects),    backgroundColor: '#e11d48', stack: 'wp', borderRadius: 4 },
+    { label: 'Terminés',  data: workloads.value.map((w) => w.completedProjects),  backgroundColor: '#10b981', stack: 'wp', borderRadius: 4 },
+  ],
+}))
+const barOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  indexAxis: 'y' as const,
+  scales: {
+    x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+    y: { stacked: true, ticks: { font: { size: 12 } } },
+  },
+  plugins: {
+    legend: { position: 'top' as const, labels: { boxWidth: 12, padding: 10, font: { size: 12 } } },
+    tooltip: { mode: 'index' as const, intersect: false },
+  },
+}
+
+// ── Recent activity ────────────────────────────────────────────────────────
+interface Activity {
+  id: string
+  action: string
+  detail: string | null
+  timestamp: string
+  userName: string | null
+  projectId: string | null
+  projectName: string | null
+}
+const recentActivity = ref<Activity[]>([])
+const activityLoading = ref(true)
+
+const ACTION_LABELS: Record<string, string> = {
+  create: 'a créé', created: 'a créé',
+  update: 'a modifié', updated: 'a modifié',
+  delete: 'a supprimé', deleted: 'a supprimé',
+  status_change: 'a changé le statut de',
+  assign: 'a assigné',
+  validate: 'a validé',
+  cahier_generated: 'a généré le cahier de',
+  cahier_edited: 'a modifié le cahier de',
+}
+function actionLabel(a: string): string {
+  const lower = (a || '').toLowerCase()
+  for (const [k, v] of Object.entries(ACTION_LABELS)) {
+    if (lower.includes(k)) return v
+  }
+  return 'a agi sur'
+}
+function actionIcon(a: string): string {
+  const lower = (a || '').toLowerCase()
+  if (lower.includes('creat'))  return 'pi-plus-circle'
+  if (lower.includes('updat'))  return 'pi-pencil'
+  if (lower.includes('delet'))  return 'pi-trash'
+  if (lower.includes('valid'))  return 'pi-check-circle'
+  if (lower.includes('cahier')) return 'pi-file-word'
+  if (lower.includes('status')) return 'pi-flag'
+  return 'pi-info-circle'
+}
+
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 60_000) return 'à l\'instant'
+  if (ms < 3_600_000)   return `il y a ${Math.floor(ms / 60_000)} min`
+  if (ms < 86_400_000)  return `il y a ${Math.floor(ms / 3_600_000)} h`
+  return `il y a ${Math.floor(ms / 86_400_000)} j`
+}
+
+async function loadDashboardData(): Promise<void> {
+  // Pull workloads + recent activity in parallel.
+  const [wlRes, actRes] = await Promise.allSettled([
+    api.get<Workload[]>('/api/dashboard/pm-workloads'),
+    api.get<Activity[]>('/api/dashboard/recent-activity?count=10'),
+  ])
+  if (wlRes.status === 'fulfilled' && Array.isArray(wlRes.value.data)) {
+    workloads.value = wlRes.value.data
+      .filter((w) => w.totalProjects > 0)
+      .sort((a, b) => b.totalProjects - a.totalProjects)
+  }
+  if (actRes.status === 'fulfilled' && Array.isArray(actRes.value.data)) {
+    recentActivity.value = actRes.value.data
+  }
+  activityLoading.value = false
+}
+
+onMounted(() => {
+  if (projectStore.projects.length === 0) projectStore.fetchAll()
+  if (userStore.users.length === 0) userStore.fetchAll()
+  void loadDashboardData()
 })
 
-function getProgress(p: ProjectSummary): number {
-  // Backend supplies progressPct when work-package counts are available.
-  // Fall back to a status-based heuristic for legacy / empty projects.
-  if (typeof p.progressPct === 'number') return p.progressPct
-  const map: Record<ProjectStatus, number> = {
-    Draft: 0, Kickoff: 5, CadrageTechnique: 15, Environnement: 25,
-    Parametrage: 50, Integration: 65, Recette: 80, MEP: 95,
-    Cloture: 100, Archived: 100,
-  }
-  return map[p.status] ?? 0
-}
-
-function progressFillClass(p: ProjectSummary): string {
-  if (TERMINAL_STATUSES.includes(p.status)) return 'pd-progress-fill--done'
-  if (p.endDate && new Date(p.endDate).getTime() < Date.now()) return 'pd-progress-fill--late'
-  const pct = getProgress(p)
-  if (pct < 30) return 'pd-progress-fill--early'
-  if (pct < 70) return 'pd-progress-fill--mid'
-  return 'pd-progress-fill--almost'
-}
-
-function dueClass(iso: string, status: ProjectStatus): string {
-  if (TERMINAL_STATUSES.includes(status)) return 'pd-due--done'
-  const ms = new Date(iso).getTime() - Date.now()
-  if (ms < 0)              return 'pd-due--overdue'
-  if (ms < 7  * 86_400_000) return 'pd-due--critical'
-  if (ms < 14 * 86_400_000) return 'pd-due--warn'
-  return 'pd-due--ok'
-}
-
-// ── Deadline helpers ───────────────────────────────────────────────────────────
+// ── Deadline radar ─────────────────────────────────────────────────────────
 const upcomingDeadlines = computed(() => {
   const now    = Date.now()
   const cutoff = now + 14 * 24 * 60 * 60 * 1000
@@ -324,14 +406,11 @@ function navigateToProject(id: string): void {
   router.push({ name: 'admin-project-detail', params: { id } })
 }
 
-const statusSeverity = (s: ProjectStatus) =>
-  PROJECT_STATUS_SEVERITY[s] as 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast'
-
 const formatDate = (iso: string) =>
   iso ? new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'
 
 const todayLabel = computed(() =>
-  new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
 )
 </script>
 
@@ -343,453 +422,207 @@ const todayLabel = computed(() =>
   font-family: var(--nl-font);
   max-width: 100%;
   min-width: 0;
-  overflow-x: hidden;
+  padding: 1.5rem;
 }
-.dash > * { min-width: 0; }
 
-/* ── Heading ─────────────────────────────────────────────────────────────────── */
+/* ── Heading ─────────────────────────────────────────────────────────────── */
 .dash-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
 }
-
-.dash-title {
-  font-size: 1.375rem;
-  font-weight: 800;
-  color: var(--nl-text-1);
-  letter-spacing: -0.3px;
-  margin: 0;
-}
-
-.dash-date {
-  font-size: 0.8125rem;
-  color: var(--nl-text-3);
-  margin: 0.2rem 0 0;
-  text-transform: capitalize;
-}
-
+.dash-title { font-size: 1.5rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
+.dash-date  { font-size: 0.875rem; color: var(--nl-text-3); margin: 0.25rem 0 0; text-transform: capitalize; }
 .view-all-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.4rem 1rem;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 0.875rem;
   border-radius: 8px;
-  border: 1px solid var(--nl-border);
-  background: var(--nl-surface);
-  color: var(--nl-text-2);
-  font-size: 0.8125rem;
-  font-weight: 500;
+  background: var(--nl-accent);
+  color: #fff; font-size: 0.8125rem; font-weight: 600;
   text-decoration: none;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  white-space: nowrap;
+  transition: background 0.15s;
 }
+.view-all-btn:hover { background: var(--nl-accent-strong, #0d4f5e); }
 
-.view-all-btn:hover {
-  border-color: var(--nl-accent);
-  color: var(--nl-accent);
-}
-
-/* ── KPI grid ────────────────────────────────────────────────────────────────── */
+/* ── KPI cards ───────────────────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
 }
-
 .kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1rem 1.25rem;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: 10px;
+  transition: box-shadow 0.15s;
+}
+.kpi-card:hover { box-shadow: var(--nl-shadow-md, 0 2px 8px rgba(0,0,0,0.05)); }
+.kpi-card--alert { border-color: #fecaca; background: #fef2f2; }
+.kpi-card--warn  { border-color: #fde68a; background: #fffbeb; }
+
+.kpi-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 10px;
+  font-size: 1rem; flex-shrink: 0;
+}
+.kpi-icon--blue    { background: #dbeafe; color: #1d4ed8; }
+.kpi-icon--green   { background: #dcfce7; color: #047857; }
+.kpi-icon--danger  { background: #fee2e2; color: #b91c1c; }
+.kpi-icon--warn    { background: #fef3c7; color: #b45309; }
+.kpi-icon--purple  { background: #ede9fe; color: #6d28d9; }
+.kpi-icon--neutral { background: var(--nl-surface-2); color: var(--nl-text-3); }
+
+.kpi-info { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; }
+.kpi-num  { font-size: 1.4rem; font-weight: 800; color: var(--nl-text-1); line-height: 1; }
+.kpi-num.text-danger  { color: #b91c1c; }
+.kpi-num.text-warning { color: #b45309; }
+.kpi-lbl  { font-size: 0.75rem; color: var(--nl-text-3); }
+
+.kpi-badge {
+  font-size: 0.6875rem; font-weight: 600;
+  padding: 0.2rem 0.5rem; border-radius: 999px;
+  white-space: nowrap;
+}
+.kpi-badge--blue    { background: #eff6ff; color: #1d4ed8; }
+.kpi-badge--green   { background: #ecfdf5; color: #047857; }
+.kpi-badge--danger  { background: #fee2e2; color: #b91c1c; }
+.kpi-badge--warn    { background: #fef3c7; color: #b45309; }
+.kpi-badge--neutral { background: var(--nl-surface-2); color: var(--nl-text-3); }
+
+/* ── Section / chart cards ───────────────────────────────────────────────── */
+.section-card {
   background: var(--nl-surface);
   border: 1px solid var(--nl-border);
   border-radius: 12px;
   padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  transition: box-shadow 0.15s;
 }
-
-.kpi-card:hover { box-shadow: var(--nl-shadow); }
-
-.kpi-card--alert { border-color: rgba(225, 29, 72, 0.3); background: rgba(225, 29, 72, 0.03); }
-.kpi-card--warn  { border-color: rgba(217, 119, 6, 0.3); background: rgba(217, 119, 6, 0.03); }
-
-:global(.dark) .kpi-card--alert { background: rgba(225, 29, 72, 0.06); }
-:global(.dark) .kpi-card--warn  { background: rgba(217, 119, 6, 0.06); }
-
-.kpi-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-}
-
-.kpi-icon--blue    { background: rgba(59,130,246,0.12);  color: #3b82f6; }
-.kpi-icon--green   { background: rgba(16,185,129,0.12);  color: #10b981; }
-.kpi-icon--danger  { background: rgba(225,29,72,0.12);   color: var(--nl-danger); }
-.kpi-icon--warn    { background: rgba(217,119,6,0.12);   color: var(--nl-warning); }
-.kpi-icon--purple  { background: rgba(99,102,241,0.12);  color: #6366f1; }
-.kpi-icon--neutral { background: var(--nl-surface-2);    color: var(--nl-text-3); }
-
-.kpi-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  margin-top: 0.25rem;
-}
-
-.kpi-num {
-  font-size: 2rem;
-  font-weight: 800;
-  color: var(--nl-text-1);
-  letter-spacing: -1px;
-  line-height: 1;
-}
-
-.kpi-lbl {
-  font-size: 0.75rem;
-  color: var(--nl-text-3);
-  font-weight: 500;
-}
-
-.text-danger  { color: var(--nl-danger) !important; }
-.text-warning { color: var(--nl-warning) !important; }
-
-.kpi-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  border-radius: 20px;
-  font-size: 0.65rem;
-  font-weight: 600;
-  width: fit-content;
-}
-
-.kpi-badge--blue    { background: rgba(59,130,246,0.1);  color: #3b82f6; }
-.kpi-badge--green   { background: rgba(16,185,129,0.12); color: #059669; }
-.kpi-badge--danger  { background: #FEE2E2; color: #DC2626; }
-.kpi-badge--warn    { background: #FEF3C7; color: #B45309; }
-.kpi-badge--purple  { background: rgba(99,102,241,0.1);  color: #6366f1; }
-.kpi-badge--neutral { background: var(--nl-border); color: var(--nl-text-3); }
-
-:global(.dark) .kpi-badge--green  { background: rgba(5,150,105,0.18);  color: #34d399; }
-:global(.dark) .kpi-badge--danger { background: rgba(220,38,38,0.18);  color: #fb7185; }
-:global(.dark) .kpi-badge--warn   { background: rgba(217,119,6,0.18);  color: #fcd34d; }
-
-/* ── Section card ────────────────────────────────────────────────────────────── */
-.section-card {
-  background: var(--nl-surface);
-  border: 1px solid var(--nl-border);
-  border-radius: 16px;
-  padding: 1.25rem 1.5rem;
-}
-
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  margin-bottom: 1rem;
 }
-
 .section-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--nl-text-1);
-  margin: 0;
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1rem; font-weight: 700; color: var(--nl-text-1); margin: 0;
 }
 
-/* ── Completion pill ─────────────────────────────────────────────────────────── */
-/* ── Projects dashboard (replaces the old pipeline funnel) ──────────────────── */
-.pd-header {
-  flex-wrap: wrap;
-  gap: 0.75rem;
+.chart-meta { font-size: 0.75rem; color: var(--nl-text-3); font-weight: 500; }
+.chart-link {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.75rem; color: var(--nl-accent); font-weight: 500;
+  text-decoration: none;
 }
-.pd-filters {
-  display: flex;
-  gap: 0.375rem;
-  flex-wrap: wrap;
-}
-.pd-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid var(--nl-border);
-  background: var(--nl-surface);
-  color: var(--nl-text-2);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-.pd-filter:hover { border-color: var(--nl-accent); color: var(--nl-accent); }
-.pd-filter--active {
-  background: var(--nl-accent);
-  border-color: var(--nl-accent);
-  color: #fff;
-}
-.pd-filter__count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.08);
-  font-size: 0.6875rem;
-  font-weight: 700;
-}
-.pd-filter--active .pd-filter__count { background: rgba(255, 255, 255, 0.25); }
+.chart-link:hover { text-decoration: underline; }
 
-.pd-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 2rem;
-  color: var(--nl-text-3);
-  font-size: 0.875rem;
+.chart-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  padding: 2.5rem 1rem;
+  color: var(--nl-text-3); font-size: 0.875rem;
 }
-.pd-empty__icon { font-size: 2rem; opacity: 0.5; }
+.chart-empty .pi { font-size: 2rem; opacity: 0.5; }
 
-.pd-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-}
-.pd-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 0.875rem;
-  table-layout: fixed;
-}
-.pd-table th {
-  text-align: left;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--nl-text-3);
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--nl-border);
-  background: var(--nl-surface-2);
-}
-.pd-table td {
-  padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid var(--nl-border);
-  vertical-align: middle;
-}
-.pd-table .pd-progress-col { width: 200px; }
-.pd-table .pd-due-col      { width: 110px; }
-
-.pd-row {
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.pd-row:hover td { background: var(--nl-surface-2); }
-
-.pd-name-cell { min-width: 0; }
-.pd-name {
-  font-weight: 600;
-  color: var(--nl-text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pd-client {
-  font-size: 0.75rem;
-  color: var(--nl-text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pd-pm-cell {
-  color: var(--nl-text-2);
-  font-size: 0.8125rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pd-progress-cell {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.pd-progress-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--nl-surface-2);
-  border: 1px solid var(--nl-border);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.pd-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  transition: width 0.4s ease;
-}
-.pd-progress-fill--early   { background: #94a3b8; }
-.pd-progress-fill--mid     { background: #3b82f6; }
-.pd-progress-fill--almost  { background: #14b8a6; }
-.pd-progress-fill--done    { background: #10b981; }
-.pd-progress-fill--late    { background: #ef4444; }
-
-.pd-progress-pct {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--nl-text-2);
-  min-width: 36px;
-  text-align: right;
-}
-
-.pd-due {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.pd-due--ok       { background: var(--nl-surface-2); color: var(--nl-text-2); }
-.pd-due--warn     { background: #fef3c7; color: #b45309; }
-.pd-due--critical { background: #fed7aa; color: #c2410c; }
-.pd-due--overdue  { background: #fee2e2; color: #b91c1c; }
-.pd-due--done     { background: #dcfce7; color: #047857; }
-.pd-due--none     { color: var(--nl-text-3); font-weight: 500; }
-
-.pd-arrow-cell {
-  width: 24px;
-  color: var(--nl-text-3);
-  text-align: right;
-}
-.pd-row:hover .pd-arrow-cell { color: var(--nl-accent); }
-
-/* ── Bottom grid (deadline radar — single column now) ──────────────────────── */
-.bottom-grid {
+/* ── Charts grid ─────────────────────────────────────────────────────────── */
+.charts-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 1rem;
 }
 
-/* ── Deadline list ───────────────────────────────────────────────────────────── */
-.empty-state {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 1.5rem 0;
-  font-size: 0.875rem;
-  color: var(--nl-text-3);
-  justify-content: center;
+.donut-wrap, .bar-wrap {
+  position: relative;
+  height: 280px;
+  width: 100%;
 }
 
-.empty-icon { font-size: 1.25rem; color: var(--nl-success); }
+/* ── Bottom grid: deadlines + activity ───────────────────────────────────── */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+}
 
 .deadline-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  display: flex; flex-direction: column;
+  max-height: 360px; overflow-y: auto;
 }
-
 .deadline-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.5rem;
-  border-radius: 8px;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--nl-border);
   cursor: pointer;
   transition: background 0.12s;
 }
-
 .deadline-row:hover { background: var(--nl-surface-2); }
+.deadline-row:last-child { border-bottom: none; }
 
 .urgency-bar {
-  width: 3px;
-  height: 36px;
-  border-radius: 2px;
-  flex-shrink: 0;
+  height: 32px; width: 4px; border-radius: 2px;
 }
+.urgency--overdue  { background: #dc2626; }
+.urgency--critical { background: #f97316; }
+.urgency--warn     { background: #f59e0b; }
 
-.urgency-bar.urgency--overdue  { background: var(--nl-danger); }
-.urgency-bar.urgency--critical { background: var(--nl-warning); }
-.urgency-bar.urgency--warn     { background: var(--nl-success); }
+.deadline-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.deadline-name { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deadline-meta { font-size: 0.75rem; color: var(--nl-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.deadline-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.deadline-name {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--nl-text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.deadline-meta {
-  font-size: 0.7rem;
-  color: var(--nl-text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.deadline-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.15rem;
-  flex-shrink: 0;
-}
-
+.deadline-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
 .deadline-badge {
-  padding: 0.15rem 0.45rem;
-  border-radius: 10px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  white-space: nowrap;
+  font-size: 0.6875rem; font-weight: 700;
+  padding: 0.15rem 0.5rem; border-radius: 999px;
 }
+.deadline-badge.urgency--overdue  { background: #fee2e2; color: #b91c1c; }
+.deadline-badge.urgency--critical { background: #ffedd5; color: #c2410c; }
+.deadline-badge.urgency--warn     { background: #fef3c7; color: #b45309; }
+.deadline-date { font-size: 0.6875rem; color: var(--nl-text-3); }
 
-.urgency--overdue  { background: #FEE2E2; color: #DC2626; }
-.urgency--critical { background: #FEF3C7; color: #B45309; }
-.urgency--warn     { background: #ECFDF5; color: #15803D; }
-
-:global(.dark) .urgency--overdue  { background: rgba(220,38,38,0.2);  color: #fb7185; }
-:global(.dark) .urgency--critical { background: rgba(217,119,6,0.2);  color: #fcd34d; }
-:global(.dark) .urgency--warn     { background: rgba(5,150,105,0.2);  color: #34d399; }
-
-.deadline-date {
-  font-size: 0.625rem;
-  color: var(--nl-text-3);
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  padding: 2rem 1rem; color: var(--nl-text-3); font-size: 0.875rem;
 }
+.empty-icon { font-size: 1.75rem; opacity: 0.55; }
 
-/* ── Responsive ──────────────────────────────────────────────────────────────── */
+/* ── Activity feed ───────────────────────────────────────────────────────── */
+.activity-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
+.activity-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--nl-border);
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-row--clickable { cursor: pointer; transition: background 0.12s; }
+.activity-row--clickable:hover { background: var(--nl-surface-2); }
+.activity-icon {
+  font-size: 0.875rem; color: var(--nl-text-3); padding-top: 4px;
+}
+.activity-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.activity-text {
+  font-size: 0.8125rem; color: var(--nl-text-2); line-height: 1.45;
+}
+.activity-text strong { color: var(--nl-text-1); font-weight: 600; }
+.activity-project { color: var(--nl-text-1); font-weight: 500; }
+.activity-meta { font-size: 0.6875rem; color: var(--nl-text-3); }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .charts-grid { grid-template-columns: 1fr; }
+  .bottom-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 860px) {
-  .kpi-grid   { grid-template-columns: repeat(2, 1fr); }
-  /* Compact the projects dashboard table on narrow screens */
-  .pd-table .pd-progress-col,
-  .pd-progress-cell { display: none; }
-  .pd-table .pd-due-col      { width: 90px; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
-
 @media (max-width: 600px) {
   .kpi-grid { grid-template-columns: 1fr; }
-  /* On phones, hide the PM column too — name + status + due is enough. */
-  .pd-pm-cell,
-  .pd-table th:nth-child(3) { display: none; }
+  .donut-wrap, .bar-wrap { height: 240px; }
 }
 </style>
