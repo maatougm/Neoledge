@@ -1,9 +1,9 @@
 <!--
   @file     ProjectDetailPanel.vue
   @module   NeoLeadge — Deployment Manager
-  @author   [dev]
-  @date     2026-03-26
-  @desc     Project detail — questionnaire fields, add/remove custom fields, PM permission toggle
+  @desc     Admin project detail — read-only overview (meta + activity +
+            validation history). Questionnaire / templates / custom-field
+            management have been moved to the PM workspace.
 -->
 <template>
   <div class="detail-panel">
@@ -14,7 +14,7 @@
       </button>
       <NeoTag
         v-if="project"
-        :value="PROJECT_STATUS_LABELS[project.status]"
+        :value="PROJECT_STATUS_LABELS[project.status] ?? project.status"
         :severity="statusSeverity(project.status)"
       />
     </div>
@@ -37,21 +37,8 @@
         </div>
       </div>
 
-      <!-- Inner tabs -->
-      <div class="inner-tabs">
-        <button
-          v-for="tab in panelTabs"
-          :key="tab.id"
-          :class="['inner-tab', { 'inner-tab--active': activeTab === tab.id }]"
-          @click="switchTab(tab.id)"
-        >
-          <i :class="['pi', tab.icon]" />
-          {{ tab.label }}
-        </button>
-      </div>
-
-      <!-- Project meta -->
-      <div v-show="activeTab === 'fields'" class="meta-card">
+      <!-- Project meta — always visible -->
+      <div class="meta-card">
         <div class="meta-row">
           <div class="meta-item">
             <span class="meta-label">Projet</span>
@@ -72,186 +59,48 @@
         </div>
       </div>
 
-      <!-- Field management -->
-      <div v-show="activeTab === 'fields'" class="fields-card">
-        <div class="fields-header">
-          <div>
-            <h3 class="fields-title">Questionnaire</h3>
-            <p class="fields-sub">{{ project.fields.length }} champ(s)</p>
-          </div>
-
-          <!-- PM permission toggle -->
-          <div class="permission-toggle">
-            <span class="toggle-label">
-              Autoriser le chef de projet à ajouter des champs
-            </span>
-            <ToggleSwitch
-              :modelValue="project.allowManagerCustomFields"
-              :title="project.allowManagerCustomFields ? 'Révoquer la permission' : 'Accorder la permission'"
-              @update:modelValue="handleToggle"
-            />
-          </div>
-        </div>
-
-        <!-- Field list -->
-        <div class="field-list">
-          <div
-            v-for="field in project.fields"
-            :key="field.id"
-            class="field-row"
-          >
-            <div class="field-info">
-              <span class="field-label">{{ field.label }}</span>
-              <span class="field-meta">
-                <NeoTag
-                  :value="FIELD_TYPE_LABELS[field.fieldType] ?? field.fieldType"
-                  severity="secondary"
-                />
-                <NeoTag
-                  v-if="field.isRequired"
-                  value="Requis"
-                  severity="danger"
-                />
-                <NeoTag
-                  :value="FIELD_CATEGORY_LABELS[field.fieldCategory] ?? field.fieldCategory"
-                  severity="info"
-                />
-              </span>
-            </div>
-            <NeoButton
-              v-if="field.fieldCategory !== 'Static'"
-              icon="pi pi-trash"
-              size="small"
-              outlined
-              severity="danger"
-              title="Supprimer ce champ"
-              @click="handleRemoveField(field.id, field.label)"
-            />
-          </div>
-        </div>
-
-        <!-- Apply template -->
-        <div class="add-field-form" style="border-top: 1px solid #f3f4f6; padding-top: 1rem; margin-top: 0.5rem;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
-            <h4 class="add-field-title" style="margin:0">Appliquer un modèle de champs</h4>
-            <NeoButton label="Choisir un modèle" icon="pi pi-copy" outlined size="small" @click="openTemplateDialog" />
-          </div>
-        </div>
-
-        <!-- Add custom field -->
-        <div class="add-field-form">
-          <h4 class="add-field-title">Ajouter un champ personnalisé</h4>
-          <div class="add-field-row">
-            <NeoInputText
-              v-model="newField.label"
-              label="Libellé"
-              placeholder="Ex : Numéro de contrat"
-              class="add-field-input"
-            />
-            <NeoSelect
-              v-model="newField.fieldType"
-              label="Type"
-              :options="fieldTypeOptions"
-              optionLabel="label"
-              optionValue="value"
-              class="add-field-select"
-            />
-            <div class="add-field-required">
-              <Checkbox v-model="newField.isRequired" :binary="true" />
-              <span class="add-field-required-label">Obligatoire</span>
-            </div>
-            <div class="add-field-required">
-              <Checkbox v-model="newField.isBacklogDriver" :binary="true" />
-              <span class="add-field-required-label" title="Cette question alimentera la génération IA du backlog">Backlog IA</span>
-            </div>
-            <NeoButton
-              label="Ajouter"
-              icon="pi pi-plus"
-              :loading="store.loading"
-              :disabled="!newField.label.trim()"
-              @click="handleAddField"
-            />
-          </div>
-          <NeoInputText
-            v-if="newField.isBacklogDriver"
-            v-model="newField.backlogHint"
-            label="Indication pour l'IA (optionnel)"
-            placeholder="Ex : lister les modules fonctionnels attendus"
-            :maxlength="500"
-            style="margin-top: 0.5rem;"
-          />
-        </div>
+      <!-- Inner tabs: Activity (default) + Validation history -->
+      <div class="inner-tabs">
+        <button
+          v-for="tab in panelTabs"
+          :key="tab.id"
+          :class="['inner-tab', { 'inner-tab--active': activeTab === tab.id }]"
+          @click="switchTab(tab.id)"
+        >
+          <i :class="['pi', tab.icon]" />
+          {{ tab.label }}
+        </button>
       </div>
-      <!-- Activity feed tab -->
+
+      <!-- Activity feed -->
       <div v-if="activeTab === 'activity'" class="fields-card" style="padding: 1rem 1.5rem;">
         <ActivityFeed :activities="store.activities" />
       </div>
 
-      <!-- Validation history tab (read-only) -->
+      <!-- Validation history (read-only) -->
       <div v-if="activeTab === 'validations' && validationsLoaded" class="fields-card" style="padding: 1rem 1.5rem;">
         <ValidationTimeline :project-id="props.projectId" />
       </div>
-
-      <!-- Template picker dialog -->
-      <Dialog v-model:visible="showTemplateDialog" header="Appliquer un modèle" :modal="true" style="width: 480px">
-        <div v-if="store.templates.length === 0" style="padding: 1rem; color: #6b7280; text-align:center;">
-          Aucun modèle disponible.
-        </div>
-        <div v-else style="display:flex;flex-direction:column;gap:0.75rem;padding:0.5rem 0">
-          <div
-            v-for="tpl in store.templates"
-            :key="tpl.id"
-            style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem;border:1px solid #e5e7eb;border-radius:8px"
-          >
-            <div>
-              <div style="font-weight:600;font-size:0.875rem;color:#111827">{{ tpl.name }}</div>
-              <div style="font-size:0.78rem;color:#6b7280">{{ tpl.fieldCount }} champ(s)</div>
-            </div>
-            <NeoButton label="Appliquer" size="small" :loading="applyingTemplate" @click="handleApplyTemplate(tpl.id)" />
-          </div>
-        </div>
-      </Dialog>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import Dialog from 'primevue/dialog'
-import { NeoButton, NeoTag, NeoInputText, NeoSelect, useNeoToast, useNeoConfirm } from '@neolibrary/components'
-import Checkbox from 'primevue/checkbox'
-import ToggleSwitch from 'primevue/toggleswitch'
+import { NeoTag } from '@neolibrary/components'
 import { useProjectStore, computeProgress } from '@/stores/projectStore'
 import ActivityFeed from '@/components/pm/ActivityFeed.vue'
 import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
-import type { ProjectStatus, FieldType } from '@/types/project.types'
-
-const FIELD_TYPE_LABELS: Record<string, string> = {
-  Text: 'Texte', Number: 'Nombre', Date: 'Date', Select: 'Liste', Checkbox: 'Case à cocher',
-}
-const FIELD_CATEGORY_LABELS: Record<string, string> = {
-  Static: 'Statique', Dynamic: 'Dynamique', Custom: 'Personnalisé',
-}
-
-const fieldTypeOptions = Object.entries(FIELD_TYPE_LABELS).map(([value, label]) => ({ value, label }))
+import type { ProjectStatus } from '@/types/project.types'
 
 const props = defineProps<{ projectId: string }>()
 const emit  = defineEmits<{ close: [] }>()
 
 const store   = useProjectStore()
-const toast   = useNeoToast()
-const confirm = useNeoConfirm()
 
 const project = ref(store.currentProject?.id === props.projectId ? store.currentProject : null)
 const loading = ref(false)
-const newField = ref({
-  label: '',
-  fieldType: 'Text' as FieldType,
-  isRequired: false,
-  isBacklogDriver: false,
-  backlogHint: '',
-})
 
 const projectProgress = computed(() =>
   project.value ? computeProgress(project.value) : 0,
@@ -265,41 +114,18 @@ const progressFillStyle = computed((): Record<string, string> => {
   return { width: `${pct}%`, background: color }
 })
 
-type PanelTabId = 'fields' | 'activity' | 'validations'
-const activeTab = ref<PanelTabId>('fields')
+type PanelTabId = 'activity' | 'validations'
+const activeTab = ref<PanelTabId>('activity')
 const validationsLoaded = ref(false)
 const panelTabs: { id: PanelTabId; label: string; icon: string }[] = [
-  { id: 'fields',      label: 'Questionnaire',           icon: 'pi-list-check' },
-  { id: 'validations', label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'activity',    label: 'Activité',                icon: 'pi-history' },
+  { id: 'validations', label: 'Historique validations',  icon: 'pi-clock' },
 ]
-
-const showTemplateDialog = ref(false)
-const applyingTemplate   = ref(false)
 
 function switchTab(tab: PanelTabId) {
   activeTab.value = tab
   if (tab === 'activity') store.fetchActivity(props.projectId)
   if (tab === 'validations') validationsLoaded.value = true
-}
-
-async function openTemplateDialog() {
-  if (store.templates.length === 0) await store.fetchTemplates()
-  showTemplateDialog.value = true
-}
-
-async function handleApplyTemplate(templateId: string) {
-  applyingTemplate.value = true
-  try {
-    await store.applyTemplate(templateId, props.projectId)
-    await load()
-    showTemplateDialog.value = false
-    toast.add({ severity: 'success', detail: 'Modèle appliqué avec succès.', life: 3000 })
-  } catch {
-    toast.add({ severity: 'error', detail: "Erreur lors de l'application du modèle.", life: 4000 })
-  } finally {
-    applyingTemplate.value = false
-  }
 }
 
 const statusSeverity = (s: ProjectStatus) =>
@@ -309,60 +135,13 @@ const load = async () => {
   loading.value = true
   await store.fetchById(props.projectId)
   project.value = store.currentProject
+  // Pre-load activity since it's the default tab
+  await store.fetchActivity(props.projectId)
   loading.value = false
 }
 
 onMounted(load)
 watch(() => store.currentProject, (v) => { project.value = v })
-
-const handleToggle = async () => {
-  if (!project.value) return
-  const next = !project.value.allowManagerCustomFields
-  await store.toggleManagerFields(props.projectId, next)
-  toast.add({
-    severity: 'info',
-    detail: next
-      ? 'Permission accordée au chef de projet.'
-      : 'Permission révoquée.',
-    life: 3000,
-  })
-}
-
-const handleAddField = async () => {
-  if (!newField.value.label.trim()) return
-  const result = await store.addField(props.projectId, {
-    label: newField.value.label.trim(),
-    fieldType: newField.value.fieldType,
-    isRequired: newField.value.isRequired,
-    options: null,
-    isBacklogDriver: newField.value.isBacklogDriver,
-    backlogHint: newField.value.backlogHint.trim() || null,
-  })
-  if (result) {
-    toast.add({ severity: 'success', detail: `Champ « ${result.label} » ajouté.`, life: 3000 })
-    newField.value = {
-      label: '',
-      fieldType: 'Text',
-      isRequired: false,
-      isBacklogDriver: false,
-      backlogHint: '',
-    }
-  }
-}
-
-const handleRemoveField = (fieldId: string, label: string) => {
-  confirm.require({
-    message: `Supprimer le champ « ${label} » ?`,
-    header: 'Confirmer la suppression',
-    icon: 'pi pi-exclamation-triangle',
-    acceptLabel: 'Supprimer',
-    rejectLabel: 'Annuler',
-    accept: async () => {
-      await store.removeField(props.projectId, fieldId)
-      toast.add({ severity: 'info', detail: `Champ « ${label} » supprimé.`, life: 3000 })
-    },
-  })
-}
 </script>
 
 <style scoped>
@@ -453,68 +232,4 @@ const handleRemoveField = (fieldId: string, label: string) => {
   border-radius: 10px;
   overflow: hidden;
 }
-
-.fields-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--nl-surface-2);
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.fields-title { font-size: 1rem; font-weight: 700; color: var(--nl-text-1); margin: 0; }
-.fields-sub   { font-size: 0.8rem; color: var(--nl-text-3); margin: 0.15rem 0 0; }
-
-/* Permission toggle */
-.permission-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.toggle-label { font-size: 0.82rem; color: var(--nl-text-2); max-width: 220px; line-height: 1.3; }
-
-/* Field list */
-.field-list {
-  padding: 0.5rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--nl-surface-2);
-}
-.field-row:last-child { border-bottom: none; }
-
-.field-info { display: flex; flex-direction: column; gap: 0.3rem; }
-.field-label { font-size: 0.875rem; font-weight: 500; color: var(--nl-text-2); }
-.field-meta  { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-
-/* Add field form */
-.add-field-form {
-  padding: 1.25rem 1.5rem;
-  background: var(--nl-surface-2);
-  border-top: 1px solid var(--nl-surface-2);
-}
-
-.add-field-title { font-size: 0.875rem; font-weight: 600; color: var(--nl-text-2); margin: 0 0 0.75rem; }
-
-.add-field-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.add-field-input  { flex: 2; min-width: 160px; }
-.add-field-select { flex: 1; min-width: 130px; }
-
-.add-field-required { display: flex; align-items: center; padding-bottom: 0.25rem; }
 </style>
