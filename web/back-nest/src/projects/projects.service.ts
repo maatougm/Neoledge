@@ -714,27 +714,11 @@ export class ProjectsService {
 
   /**
    * Resolve the validating user's effective role for a given project.
-   *
-   * Precedence:
-   *   1. A `UserRoleAssignment` scoped to THIS project (most specific)
-   *   2. A global `UserRoleAssignment` (projectId = NULL)
-   *   3. The legacy `AppUser.role` column, re-read from the DB (NEVER trust
-   *      the JWT claim — a compromised / stale token must not let a caller
-   *      pick their own `validatedByRole`)
+   * Reads `AppUser.role` from the DB — NEVER trusts the JWT claim, since a
+   * compromised / stale token must not let the caller pick their own
+   * `validatedByRole`.
    */
-  private async resolveValidatorRole(userId: string, projectId: string): Promise<string | null> {
-    const scoped = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, projectId },
-      include: { role: { select: { name: true } } },
-    });
-    if (scoped?.role?.name) return scoped.role.name;
-
-    const global = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, projectId: null },
-      include: { role: { select: { name: true } } },
-    });
-    if (global?.role?.name) return global.role.name;
-
+  private async resolveValidatorRole(userId: string): Promise<string | null> {
     const user = await this.prisma.appUser.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -746,26 +730,28 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
-    // Authorisation: caller must either be the project's PM, or have a
-    // UserRoleAssignment that covers this project (scoped OR global). The
-    // global assignment is the single source of truth for Admin — no
-    // special-casing of the legacy AppUser.role column here.
-    const assignment = await this.prisma.userRoleAssignment.findFirst({
-      where: {
-        userId,
-        OR: [{ projectId }, { projectId: null }],
-      },
-      select: { id: true },
-    });
+    // Authorisation: caller must be the project's PM, an Admin, or in
+    // ProjectMember. (The custom-role-with-permission path was retired
+    // along with the dynamic RBAC stack.)
+    const [isMember, dbUser] = await Promise.all([
+      this.prisma.projectMember.findFirst({
+        where: { userId, projectId },
+        select: { id: true },
+      }),
+      this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      }),
+    ]);
     const isPm = project.projectManagerId === userId;
-    if (!assignment && !isPm) {
+    const isAdmin = dbUser?.role === 'Admin';
+    if (!isMember && !isPm && !isAdmin) {
       throw new ForbiddenException('Access denied');
     }
 
-    // Derive the validating role from the user's role assignment for THIS
-    // project (falling back to global / AppUser.role) — NEVER from the JWT,
-    // which the client controls.
-    const resolvedRole = await this.resolveValidatorRole(userId, projectId);
+    // Derive the validating role from AppUser.role — never from the JWT
+    // (which the client controls).
+    const resolvedRole = await this.resolveValidatorRole(userId);
     if (!resolvedRole) return Result.fail('Impossible de déterminer votre rôle pour ce projet.');
 
     const duplicate = await this.prisma.projectValidation.findFirst({

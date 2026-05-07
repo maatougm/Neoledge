@@ -68,24 +68,25 @@ export class NotificationsService {
     // Skip self-notifications.
     if (actorId && actorId === userId) return;
 
-    // Scope check: when a projectId is provided, verify the target user is a project member.
+    // Scope check: when a projectId is provided, verify the target user is
+    // a member (PM, Admin, or in ProjectMember).
     if (projectId) {
       try {
-        const [asPm, asAssignment, asProjectMember] = await Promise.all([
+        const [asPm, asProjectMember, dbUser] = await Promise.all([
           this.prisma.project.findFirst({
             where: { id: projectId, isDeleted: false, projectManagerId: userId },
-            select: { id: true },
-          }),
-          this.prisma.userRoleAssignment.findFirst({
-            where: { userId, OR: [{ projectId }, { projectId: null }] },
             select: { id: true },
           }),
           this.prisma.projectMember.findFirst({
             where: { projectId, userId },
             select: { id: true },
           }),
+          this.prisma.appUser.findUnique({
+            where: { id: userId },
+            select: { role: true },
+          }),
         ]);
-        if (!asPm && !asAssignment && !asProjectMember) {
+        if (!asPm && !asProjectMember && dbUser?.role !== 'Admin') {
           this.logger.warn(`notify: user ${userId} is not a member of project ${projectId} — skipping`);
           return;
         }
@@ -155,24 +156,25 @@ export class NotificationsService {
     // Skip self-notifications.
     if (params.actorId && params.actorId === params.userId) return;
 
-    // Scope check: when a projectId is provided, verify the target user is a project member.
+    // Scope check: when a projectId is provided, verify the target user is
+    // a member (PM, Admin, or in ProjectMember).
     if (params.projectId) {
       try {
-        const [asPm, asAssignment, asProjectMember] = await Promise.all([
+        const [asPm, asProjectMember, dbUser] = await Promise.all([
           this.prisma.project.findFirst({
             where: { id: params.projectId, isDeleted: false, projectManagerId: params.userId },
-            select: { id: true },
-          }),
-          this.prisma.userRoleAssignment.findFirst({
-            where: { userId: params.userId, OR: [{ projectId: params.projectId }, { projectId: null }] },
             select: { id: true },
           }),
           this.prisma.projectMember.findFirst({
             where: { projectId: params.projectId, userId: params.userId },
             select: { id: true },
           }),
+          this.prisma.appUser.findUnique({
+            where: { id: params.userId },
+            select: { role: true },
+          }),
         ]);
-        if (!asPm && !asAssignment && !asProjectMember) {
+        if (!asPm && !asProjectMember && dbUser?.role !== 'Admin') {
           this.logger.warn(`notifyEnhanced: user ${params.userId} is not a member of project ${params.projectId} — skipping`);
           return;
         }

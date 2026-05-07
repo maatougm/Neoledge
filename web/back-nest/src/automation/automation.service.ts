@@ -171,33 +171,30 @@ export class AutomationService {
   }
 
   /**
-   * Verify `userId` is a legitimate member of `projectId` — either a per-project
-   * UserRoleAssignment exists, a global role assignment exists (projectId = null),
-   * OR they are the assigned project manager.
-   * Returns null on success, an error message on failure.
+   * Verify `userId` has access to `projectId` — Admin, the assigned PM,
+   * or a row in ProjectMember. Returns null on success, an error message
+   * on failure.
    */
   private async assertProjectMember(userId: string, projectId: string): Promise<string | null> {
     const user = await this.prisma.appUser.findFirst({
       where: { id: userId, isActive: true },
-      select: { id: true },
+      select: { id: true, role: true },
     });
     if (!user) return 'Utilisateur cible introuvable ou désactivé.';
+    if (user.role === 'Admin') return null;
 
-    const [project, assignment] = await Promise.all([
+    const [asPm, asMember] = await Promise.all([
       this.prisma.project.findFirst({
         where: { id: projectId, isDeleted: false, projectManagerId: userId },
         select: { id: true },
       }),
-      this.prisma.userRoleAssignment.findFirst({
-        where: {
-          userId,
-          OR: [{ projectId }, { projectId: null }],
-        },
+      this.prisma.projectMember.findFirst({
+        where: { userId, projectId },
         select: { id: true },
       }),
     ]);
 
-    if (!project && !assignment) {
+    if (!asPm && !asMember) {
       return 'Utilisateur cible n\'a pas accès à ce projet.';
     }
     return null;

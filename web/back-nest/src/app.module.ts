@@ -4,8 +4,6 @@ import { LoggerModule } from 'nestjs-pino';
 // ThrottlerModule removed — was causing stale 429s due to DI complications
 import { randomUUID } from 'node:crypto';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { PermissionsModule } from './permissions/permissions.module.js';
-import { RolesModule } from './roles/roles.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ProjectsModule } from './projects/projects.module.js';
@@ -127,11 +125,9 @@ import { RetentionModule } from './retention/retention.module.js';
       },
     }),
     PrismaModule,
-    PermissionsModule,
     MailModule,
     AuditModule,
     AuthModule,
-    RolesModule,
     UsersModule,
     ProjectsModule,
     MeetingsModule,
