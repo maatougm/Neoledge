@@ -104,11 +104,16 @@ const pmNav: NavSection[] = [
 // Cache per role+projectId so admins and PMs get the correct back-link.
 // LRU-bounded at 50 entries so a long session visiting many projects doesn't
 // leak memory.
+//
+// NAV_VERSION is bumped any time the nav SHAPE changes — entries cached by
+// older versions never collide with the new layout, so we don't need a
+// `.clear()` call (which would defeat the LRU). Bump on every reorder.
+const NAV_VERSION = 'v2'
 const PROJECT_NAV_CACHE_MAX = 50
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
   const role = authStore.userRole ?? 'ProjectManager'
-  const cacheKey = `${role}:${projectId}`
+  const cacheKey = `${NAV_VERSION}:${role}:${projectId}`
   const cached = projectNavCache.get(cacheKey)
   if (cached) {
     // Refresh recency: delete + re-set moves the entry to the tail of the Map iteration order.
@@ -118,27 +123,37 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
   }
   const base = `/app/pm/projects/${projectId}`
   const isAdmin = role === 'Admin'
+  // Sidebar order mirrors the PM workflow narrative:
+  //   Cadrage    → questionnaire / meetings / cahier / validations
+  //   Planification → Backlog IA (generate + create sprints) → Backlog
+  //                   Sprint (drop tasks into a sprint) → Assignation
+  //                   (sprint-scoped multi-select assign) → Sprint (active
+  //                   burndown).
+  //   Exécution  → views consumed during in-flight work
+  //   Suivi     → bottom-of-list reporting tabs.
   const sections: NavSection[] = [
     { items: [{ key: isAdmin ? 'admin-projects' : 'pm-projects', label: isAdmin ? 'Projets' : 'Mes projets', icon: 'pi-briefcase', to: isAdmin ? '/app/admin/projects' : '/app/pm/projects' }] },
-    { heading: 'Projet', items: [
+    { heading: 'Cadrage', items: [
         { key: 'proj-overview',     label: 'Aperçu',         icon: 'pi-home',        to: base },
         { key: 'proj-questionnaire', label: 'Questionnaire',  icon: 'pi-list-check',  to: `${base}/questionnaire` },
         { key: 'proj-meetings',     label: 'Réunions',       icon: 'pi-microphone',  to: `${base}/meetings` },
         { key: 'proj-cahier',       label: 'Cahier des charges', icon: 'pi-file-word', to: `${base}/cahier` },
         { key: 'proj-validations',  label: 'Validations',    icon: 'pi-shield',      to: `${base}/validations` },
     ]},
-    { heading: 'Exécution', items: [
+    { heading: 'Planification', items: [
         { key: 'proj-backlog-gen',  label: 'Backlog IA',     icon: 'pi-sparkles',    to: `${base}/backlog-generator` },
-        { key: 'proj-assign-tasks', label: 'Assignation',    icon: 'pi-arrows-h',    to: `${base}/assign-tasks` },
-        { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
-        { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
-        { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
         { key: 'proj-backlogs',     label: 'Backlog Sprint', icon: 'pi-inbox',       to: `${base}/backlogs` },
+        { key: 'proj-assign-tasks', label: 'Assignation',    icon: 'pi-arrows-h',    to: `${base}/assign-tasks` },
         { key: 'proj-sprint',       label: 'Sprint',         icon: 'pi-forward',     to: `${base}/sprint` },
     ]},
+    { heading: 'Exécution', items: [
+        { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
+        { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
+        { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
+    ]},
     { heading: 'Suivi', items: [
-        { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
         { key: 'proj-members',      label: 'Membres',        icon: 'pi-users',       to: `${base}/members` },
+        { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
         { key: 'proj-activity',     label: 'Activité',       icon: 'pi-history',     to: `${base}/activity` },
     ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
