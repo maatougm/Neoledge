@@ -75,8 +75,13 @@ export async function runOpenAiCompatibleLoop(args: {
   const emitNames = new Set(emitTools.map((t) => t.name))
   const collectedEmits = new Map<string, { name: string; args: unknown }>()
 
-  const messages: OpenAiToolMessage[] = [{ role: 'system', content: systemPrompt }]
-  if (userMessage) messages.push({ role: 'user', content: userMessage })
+  // Z.AI rejects `messages` arrays that contain only a system turn (HTTP
+  // 400 "messages parameter is illegal"), so we always add a user kick-off
+  // — either the caller-supplied one, or a generic "begin" instruction.
+  const messages: OpenAiToolMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage ?? 'Commence par appeler les fonctions de lecture nécessaires, puis appelle l\'outil terminal d\'émission une fois prêt.' },
+  ]
 
   const toolCallsLog: ToolCallLogEntry[] = []
   let iterationsRun = 0
