@@ -310,21 +310,6 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
-  const toggleManagerFields = async (projectId: string, allow: boolean) => {
-    loading.value = true
-    error.value = null
-    try {
-      await api.patch(`/admin/project/${projectId}/toggle-manager-fields`, { allow })
-      if (currentProject.value?.id === projectId) {
-        currentProject.value = { ...currentProject.value, allowManagerCustomFields: allow }
-      }
-    } catch (e: unknown) {
-      error.value =
-        e instanceof Error ? e.message : 'Erreur lors de la mise à jour des permissions.'
-    } finally {
-      loading.value = false
-    }
-  }
 
   // ─── Selection ───────────────────────────────────────────────────────────────
 
@@ -515,7 +500,6 @@ export const useProjectStore = defineStore('projects', () => {
     duplicateProject,
     addField,
     removeField,
-    toggleManagerFields,
     fetchDeletedProjects,
     restoreProject,
     purgeProject,

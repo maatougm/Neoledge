@@ -114,7 +114,6 @@ model Project {
   projectManagerId         String
   status                   String   @default("Draft") @db.VarChar(50)
   priority                 String   @default("Medium") @db.VarChar(50)
-  allowManagerCustomFields Boolean  @default(false)
   createdByAdminId         String
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt

@@ -32,7 +32,6 @@ const mockDetail: ProjectDetail = {
   name: 'Projet Alpha',
   clientName: 'Client A',
   status: 'Kickoff',
-  allowManagerCustomFields: false,
   startDate: '2026-04-01',
   endDate: '2026-06-01',
   createdAt: '2026-03-26T00:00:00Z',

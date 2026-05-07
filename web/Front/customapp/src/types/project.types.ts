@@ -89,7 +89,6 @@ export interface ProjectDetail {
   name: string
   clientName: string
   status: ProjectStatus
-  allowManagerCustomFields: boolean
   aiOutput?: string | null
   startDate: string
   endDate: string

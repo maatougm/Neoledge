@@ -475,13 +475,6 @@ export class ProjectsService {
     return Result.ok();
   }
 
-  async toggleManagerFields(projectId: string, allow: boolean) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
-    if (!project) return Result.fail('Projet non trouvé.');
-    await this.prisma.project.update({ where: { id: projectId }, data: { allowManagerCustomFields: allow } });
-    return Result.ok();
-  }
-
   async duplicate(projectId: string, newName: string, adminId?: string) {
     const source = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
@@ -934,7 +927,6 @@ export class ProjectsService {
       name: p.name,
       clientName: p.clientName,
       status: p.status,
-      allowManagerCustomFields: p.allowManagerCustomFields,
       aiOutput: p.aiOutput,
       startDate: p.startDate,
       endDate: p.endDate,
