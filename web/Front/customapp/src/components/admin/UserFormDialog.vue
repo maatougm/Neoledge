@@ -115,7 +115,7 @@ const isEdit = computed(() => !!props.user)
 
 /** Filter the Admin option out when the current user is not Admin */
 const filteredRoleOptions = computed(() => {
-  const canManageAdmins = authStore.can('user.manage_admins') || authStore.userRole === 'Admin'
+  const canManageAdmins = authStore.userRole === 'Admin'
   if (canManageAdmins) return USER_ROLE_OPTIONS
   return USER_ROLE_OPTIONS.filter((o) => o.value !== 'Admin')
 })

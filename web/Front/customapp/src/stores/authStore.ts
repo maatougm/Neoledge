@@ -13,18 +13,20 @@ const STORAGE_KEY = 'nl_jwt'
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+/**
+ * /auth/me response. The dynamic-RBAC era exposed a `permissions` map and
+ * an `assignedRoles` list on top of the user object; both are now empty
+ * (kept in the response shape for one-release backward compatibility).
+ */
 interface MeResponse {
   user: { id: string; email: string; firstName: string; lastName: string; role: string }
-  permissions: { global: string[]; perProject: Record<string, string[]> }
-  roles: { id: string; name: string; projectId: string | null }[]
+  permissions?: { global: string[]; perProject: Record<string, string[]> }
+  roles?: { id: string; name: string; projectId: string | null }[]
 }
 
 export const useAuthStore = defineStore('auth', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const jwt = ref<string>('')
-  const globalPermissions = ref<Set<string>>(new Set())
-  const projectPermissions = ref<Map<string, Set<string>>>(new Map())
-  const assignedRoles = ref<MeResponse['roles']>([])
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -45,19 +47,6 @@ export const useAuthStore = defineStore('auth', () => {
   const userId = computed<string | null>(() =>
     jwt.value ? getUserId(jwt.value) : null,
   )
-
-  /**
-   * Check whether the current user holds a permission. If `projectId` is
-   * provided, per-project permissions also count; otherwise only global ones.
-   */
-  const can = (permissionKey: string, projectId?: string | null): boolean => {
-    if (globalPermissions.value.has(permissionKey)) return true
-    if (projectId) {
-      const bucket = projectPermissions.value.get(projectId)
-      if (bucket?.has(permissionKey)) return true
-    }
-    return false
-  }
 
   // ── Internal helpers ───────────────────────────────────────────────────────
 
@@ -157,9 +146,6 @@ export const useAuthStore = defineStore('auth', () => {
   /** Clear authentication state entirely (without calling the logout endpoint). */
   const clear = (): void => {
     jwt.value = ''
-    globalPermissions.value = new Set()
-    projectPermissions.value = new Map()
-    assignedRoles.value = []
     _clearStorage()
     // Notify every store that registered on the logout bus so they can reset
     // their per-user state and tear down any polling timers.
@@ -176,9 +162,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Fetch the live permission set for the current JWT. Call after login and
-   * on app bootstrap. 401 means the token was invalidated (e.g. role change)
-   * and the user should be redirected to /login.
+   * Validate the current JWT against /auth/me. 401 means the token was
+   * invalidated (e.g. password reset / account deactivation) and the user
+   * should be redirected to /login. The legacy `permissions` / `roles`
+   * fields in the response are ignored — authorization is driven by the
+   * `role` claim baked into the JWT.
    */
   const fetchMe = async (): Promise<MeResponse | null> => {
     if (!jwt.value) return null
@@ -187,13 +175,6 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await axios.get<MeResponse>(config.apiUrl + '/auth/me', {
         headers: { Authorization: `Bearer ${jwt.value}` },
       })
-      globalPermissions.value = new Set(response.data.permissions.global)
-      const perProject = new Map<string, Set<string>>()
-      for (const [pid, keys] of Object.entries(response.data.permissions.perProject)) {
-        perProject.set(pid, new Set(keys))
-      }
-      projectPermissions.value = perProject
-      assignedRoles.value = response.data.roles
       return response.data
     } catch (err) {
       if (axios.isAxiosError(err) && err.response?.status === 401) {
@@ -212,10 +193,6 @@ export const useAuthStore = defineStore('auth', () => {
     userFullName,
     userInitials,
     userId,
-    globalPermissions,
-    projectPermissions,
-    assignedRoles,
-    can,
     // Actions
     init,
     login,

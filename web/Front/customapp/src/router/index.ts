@@ -140,11 +140,6 @@ const router = createRouter({
               name: 'admin-audit',
               component: () => import('@/views/AuditLogView.vue'),
             },
-            {
-              path: 'roles',
-              name: 'admin-roles',
-              component: () => import('@/views/admin/RolesView.vue'),
-            },
           ],
         },
 
@@ -354,6 +349,13 @@ const router = createRouter({
 
 // ─── Global before-each guard ─────────────────────────────────────────────────
 
+// Module-scoped flag — tracks whether /auth/me has been validated once
+// since the JWT was loaded into memory. Reset by the logout bus.
+let meChecked = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:logout', () => { meChecked = false })
+}
+
 router.beforeEach(async (to: RouteLocationNormalized) => {
   const auth = useAuthStore()
   const config = useConfigStore()
@@ -403,9 +405,11 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
       return { name: 'login', query: redirect ? { redirect } : undefined }
     }
 
-// Hydrate permission set on first authenticated navigation (or after login).
-    // fetchMe clears the token if it's been invalidated server-side.
-    if (auth.isAuthenticated && auth.globalPermissions.size === 0) {
+    // Validate the JWT against /auth/me on first authenticated navigation.
+    // fetchMe clears the token if it's been invalidated server-side
+    // (password reset, deactivation, …).
+    if (auth.isAuthenticated && !meChecked) {
+      meChecked = true
       await auth.fetchMe()
       if (!auth.isAuthenticated) {
         return { name: 'login' }

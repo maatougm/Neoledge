@@ -19,9 +19,8 @@ export interface JwtPayload {
  * Returns null on any failure — never throws.
  *
  * UI DISPLAY ONLY. NEVER use for access control — the signature is NOT
- * verified here. All authoritative permission checks must go through the
- * backend (JwtAuthGuard + RolesGuard) or the server-hydrated `can()` helper
- * in authStore which is backed by /auth/me.
+ * verified here. All authoritative role checks must go through the
+ * backend (JwtAuthGuard + RolesGuard).
  */
 export function decodeJwt(token: string): JwtPayload | null {
   try {
