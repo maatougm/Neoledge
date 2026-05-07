@@ -7,6 +7,7 @@ import { OutcomesService } from './outcomes.service.js'
 import { MeetingExtrasController } from './meeting-extras.controller.js'
 import { LiveMeetingService } from './live-meeting.service.js'
 import { LiveMeetingController } from './live-meeting.controller.js'
+import { LiveCopilotService } from './live-copilot.service.js'
 import { AssemblyAiProvider } from './assemblyai.provider.js'
 import { AiModule } from '../ai/ai.module.js'
 import { NotificationsModule } from '../notifications/notifications.module.js'
@@ -21,8 +22,10 @@ import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
     AttendeesService,
     OutcomesService,
     LiveMeetingService,
+    LiveCopilotService,
     AssemblyAiProvider,
     ProjectAccessGuard,
   ],
+  exports: [LiveCopilotService],
 })
 export class MeetingsModule {}

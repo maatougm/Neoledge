@@ -139,6 +139,7 @@ model Project {
   checklists      PhaseChecklist[]
   cahierVersions  CahierVersion[]
   aiUsages        AiUsage[]
+  liveMeetingSuggestions LiveMeetingSuggestion[]
 
   // Sprint 0+ back-relations
   boards         Board[]
@@ -337,13 +338,14 @@ model MeetingTranscript {
   audioPreserved    Boolean   @default(false)
 
   // Relations
-  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  segments    TranscriptSegment[]
-  actionItems MeetingActionItem[]
-  decisions   MeetingDecision[]
-  agendaItems MeetingAgendaItem[]
-  attendees   MeetingAttendee[]
-  outcomes    MeetingOutcome[]
+  project           Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments          TranscriptSegment[]
+  actionItems       MeetingActionItem[]
+  decisions         MeetingDecision[]
+  agendaItems       MeetingAgendaItem[]
+  attendees         MeetingAttendee[]
+  outcomes          MeetingOutcome[]
+  copilotSuggestions LiveMeetingSuggestion[]
 
   @@index([projectId])
   @@index([createdAt])
@@ -394,6 +396,34 @@ model TranscriptSegment {
 
   @@index([transcriptId])
   @@map("TranscriptSegments")
+}
+
+/// Real-time meeting copilot suggestions. One row per question card the
+/// AI proposes during a live meeting. `liveSessionId` is a UUID generated
+/// by the frontend on session start; `meetingTranscriptId` is null until
+/// the meeting is saved (live session converts to a stored transcript).
+/// `forNextMeeting` flags cards produced post-hoc against an uploaded
+/// audio — they belong to a follow-up meeting, not the analyzed one.
+model LiveMeetingSuggestion {
+  id                  String   @id @default(uuid())
+  projectId           String
+  liveSessionId       String   @db.VarChar(80)
+  meetingTranscriptId String?
+  question            String   @db.Text
+  rationale           String   @db.Text
+  urgency             String   @default("medium") @db.VarChar(10) // low | medium | high
+  section             String   @db.VarChar(50)                    // 9 cahier keys + backlog_driver
+  status              String   @default("pending") @db.VarChar(20) // pending | dismissed | asked
+  forNextMeeting      Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  transcript MeetingTranscript? @relation(fields: [meetingTranscriptId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, liveSessionId, status])
+  @@index([meetingTranscriptId])
+  @@map("LiveMeetingSuggestions")
 }
 
 model Notification {
