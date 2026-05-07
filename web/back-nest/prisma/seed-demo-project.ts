@@ -26,9 +26,11 @@ const COL_INPRG     = 'eeeeeeee-co2p-0000-0000-000000000001'
 const COL_REVIEW    = 'eeeeeeee-co3r-0000-0000-000000000001'
 const COL_DONE      = 'eeeeeeee-co4d-0000-0000-000000000001'
 
-const SPRINT_PAST   = 'ffffffff-sp01-0000-0000-000000000001'
-const SPRINT_ACTIVE = 'ffffffff-sp02-0000-0000-000000000001'
-const SPRINT_NEXT   = 'ffffffff-sp03-0000-0000-000000000001'
+const SPRINT_S0     = 'ffffffff-sp00-0000-0000-000000000001' // Sprint 0 — Cadrage initial (closed)
+const SPRINT_PAST   = 'ffffffff-sp01-0000-0000-000000000001' // Sprint 1 — Maquettes & cahier (closed)
+const SPRINT_ACTIVE = 'ffffffff-sp02-0000-0000-000000000001' // Sprint 2 — Auth & espace personnel (active)
+const SPRINT_NEXT   = 'ffffffff-sp03-0000-0000-000000000001' // Sprint 3 — Demande d'acte & paiement (planning)
+const SPRINT_S4     = 'ffffffff-sp04-0000-0000-000000000001' // Sprint 4 — RDV & notifications (planning)
 
 const TRANSCRIPT_ID = 'ababcdcd-tran-0000-0000-000000000001'
 
@@ -175,11 +177,21 @@ async function main() {
   console.log(`  ✓ board + ${columns.length} columns`)
 
   // ─── Sprints ────────────────────────────────────────────────────────────
+  // Five 2-week sprints from kickoff (~8 weeks ago) through MEP planning.
   const sprints = [
     {
+      id: SPRINT_S0,
+      name: 'Sprint 0 — Cadrage initial',
+      goal: 'Lancement officiel du projet, ateliers d\'identification des parties prenantes, recueil initial des besoins.',
+      startDate: dayOnly(days(-70)),
+      endDate:   dayOnly(days(-57)),
+      status: 'Closed',
+      capacity: 60,
+    },
+    {
       id: SPRINT_PAST,
-      name: 'Sprint 1 — Cadrage & Maquettes',
-      goal: 'Recueil détaillé des besoins, validation des maquettes interactives, rédaction du cahier des charges.',
+      name: 'Sprint 1 — Maquettes & cahier des charges',
+      goal: 'Maquettes interactives, validation par la DGS, rédaction et signature du cahier des charges.',
       startDate: dayOnly(days(-56)),
       endDate:   dayOnly(days(-42)),
       status: 'Closed',
@@ -197,11 +209,20 @@ async function main() {
     {
       id: SPRINT_NEXT,
       name: 'Sprint 3 — Demande d\'acte & Paiement',
-      goal: 'Développer le formulaire de demande d\'acte d\'état civil et l\'intégration du paiement en ligne.',
+      goal: 'Développer le formulaire de demande d\'acte d\'état civil et l\'intégration du paiement en ligne (Tunisie Net Pay).',
       startDate: dayOnly(days(1)),
       endDate:   dayOnly(days(15)),
       status: 'Planning',
       capacity: 110,
+    },
+    {
+      id: SPRINT_S4,
+      name: 'Sprint 4 — Prise de RDV & notifications avancées',
+      goal: 'Module de prise de rendez-vous, notifications SMS/email, tableau de bord administratif.',
+      startDate: dayOnly(days(16)),
+      endDate:   dayOnly(days(30)),
+      status: 'Planning',
+      capacity: 100,
     },
   ]
   for (const s of sprints) {
@@ -218,29 +239,50 @@ async function main() {
   // sprint capacity reasonably. specB falls back to spec1 if spec2 is unseeded.
   const specB = U.spec2 ?? U.spec1
   const wps = [
-    // Sprint 1 — closed
-    { n:1,  title:'Atelier de recueil des besoins', type:'Task',    status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-56), due:days(-52), est:16, spent:18, pct:100 },
-    { n:2,  title:'Maquettes Figma — espace citoyen', type:'Task',  status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-50), due:days(-46), est:24, spent:22, pct:100 },
-    { n:3,  title:'Validation maquettes par DGS',   type:'Task',    status:'Closed',    priority:'Normal',   assigneeId:specB,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-46), due:days(-44), est:8,  spent:6,  pct:100 },
-    { n:4,  title:'Rédaction cahier des charges',   type:'Task',    status:'Closed',    priority:'High',     assigneeId:U.spec1,  sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-44), due:days(-42), est:16, spent:14, pct:100 },
+    // Sprint 0 — Cadrage initial (closed)
+    { n:17, title:'Kick-off avec la DGS et les sponsors',   type:'Task',  status:'Closed', priority:'High',   assigneeId:U.pm,    sprintId:SPRINT_S0,     colId:COL_DONE,   start:days(-70), due:days(-68), est:8,  spent:10, pct:100 },
+    { n:18, title:'Identification des parties prenantes',   type:'Task',  status:'Closed', priority:'High',   assigneeId:U.pm,    sprintId:SPRINT_S0,     colId:COL_DONE,   start:days(-68), due:days(-65), est:6,  spent:5,  pct:100 },
+    { n:19, title:'Recueil initial des besoins métier',     type:'Task',  status:'Closed', priority:'High',   assigneeId:U.spec1, sprintId:SPRINT_S0,     colId:COL_DONE,   start:days(-65), due:days(-60), est:16, spent:18, pct:100 },
+    { n:20, title:'Étude de l\'existant (portail v1)',      type:'Task',  status:'Closed', priority:'Normal', assigneeId:U.spec1, sprintId:SPRINT_S0,     colId:COL_DONE,   start:days(-63), due:days(-58), est:12, spent:11, pct:100 },
+    { n:21, title:'Validation périmètre Sprint 0',          type:'Task',  status:'Closed', priority:'Normal', assigneeId:specB,   sprintId:SPRINT_S0,     colId:COL_DONE,   start:days(-58), due:days(-57), est:4,  spent:3,  pct:100 },
 
-    // Sprint 2 — active
-    { n:5,  title:'POC SAML2 contre IdP de la mairie', type:'Task', status:'Closed',    priority:'High',     assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_DONE,   start:days(-14), due:days(-10), est:12, spent:11, pct:100 },
-    { n:6,  title:'Implémenter OAuth2 (Google/Facebook)', type:'Feature', status:'Resolved', priority:'High', assigneeId:U.dev,   sprintId:SPRINT_ACTIVE, colId:COL_REVIEW, start:days(-10), due:days(-3),  est:20, spent:22, pct:90 },
-    { n:7,  title:'Espace citoyen — page d\'accueil', type:'Feature', status:'InProgress', priority:'High',  assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_INPRG,  start:days(-7),  due:days(-1),  est:16, spent:10, pct:60 },
-    { n:8,  title:'Consultation des dossiers en cours', type:'Feature', status:'InProgress', priority:'Normal', assigneeId:U.dev, sprintId:SPRINT_ACTIVE, colId:COL_INPRG,  start:days(-5),  due:days(2),   est:14, spent:6,  pct:40 },
-    { n:9,  title:'Notifications push citoyennes', type:'Feature',   status:'New',       priority:'Normal',   assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_NEW,    start:days(0),   due:days(5),   est:18, spent:0,  pct:0 },
-    { n:10, title:'Bug — login échoue avec accents dans le nom', type:'Bug', status:'New', priority:'Urgent', assigneeId:U.dev,   sprintId:SPRINT_ACTIVE, colId:COL_NEW,    start:null,      due:days(-1),  est:4,  spent:0,  pct:0 },
+    // Sprint 1 — Maquettes & cahier (closed)
+    { n:1,  title:'Atelier de recueil des besoins détaillés', type:'Task',    status:'Closed', priority:'High',   assigneeId:U.spec1, sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-56), due:days(-52), est:16, spent:18, pct:100 },
+    { n:2,  title:'Maquettes Figma — espace citoyen',        type:'Task',    status:'Closed', priority:'High',   assigneeId:U.spec1, sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-50), due:days(-46), est:24, spent:22, pct:100 },
+    { n:3,  title:'Validation maquettes par DGS',            type:'Task',    status:'Closed', priority:'Normal', assigneeId:specB,   sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-46), due:days(-44), est:8,  spent:6,  pct:100 },
+    { n:4,  title:'Rédaction cahier des charges',            type:'Task',    status:'Closed', priority:'High',   assigneeId:U.spec1, sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-44), due:days(-42), est:16, spent:14, pct:100 },
+    { n:22, title:'Architecture technique cible (revue)',    type:'Task',    status:'Closed', priority:'High',   assigneeId:U.dev,   sprintId:SPRINT_PAST,   colId:COL_DONE,   start:days(-49), due:days(-45), est:12, spent:14, pct:100 },
 
-    // Sprint 3 — planning
-    { n:11, title:'Formulaire demande d\'acte d\'état civil', type:'Feature', status:'New', priority:'High', assigneeId:U.dev,   sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(1),   due:days(8),   est:24, spent:0,  pct:0 },
-    { n:12, title:'Intégration passerelle de paiement', type:'Feature', status:'New', priority:'High',     assigneeId:U.dev,    sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(3),   due:days(12),  est:30, spent:0,  pct:0 },
-    { n:13, title:'Validation des paiements côté trésorerie', type:'Task', status:'New', priority:'Normal', assigneeId:specB,  sprintId:SPRINT_NEXT,   colId:COL_NEW,    start:days(12),  due:days(15),  est:8,  spent:0,  pct:0 },
+    // Sprint 2 — Auth & espace personnel (active)
+    { n:5,  title:'POC SAML2 contre IdP de la mairie',           type:'Task',    status:'Closed',    priority:'High',   assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_DONE,   start:days(-14), due:days(-10), est:12, spent:11, pct:100 },
+    { n:6,  title:'Implémenter OAuth2 (Google/Facebook)',        type:'Feature', status:'Resolved',  priority:'High',   assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_REVIEW, start:days(-10), due:days(-3),  est:20, spent:22, pct:90 },
+    { n:7,  title:'Espace citoyen — page d\'accueil',            type:'Feature', status:'InProgress', priority:'High',  assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_INPRG,  start:days(-7),  due:days(-1),  est:16, spent:10, pct:60 },
+    { n:8,  title:'Consultation des dossiers en cours',          type:'Feature', status:'InProgress', priority:'Normal',assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_INPRG,  start:days(-5),  due:days(2),   est:14, spent:6,  pct:40 },
+    { n:9,  title:'Notifications push citoyennes',               type:'Feature', status:'New',        priority:'Normal',assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_NEW,    start:days(0),   due:days(5),   est:18, spent:0,  pct:0 },
+    { n:10, title:'Bug — login échoue avec accents dans le nom', type:'Bug',     status:'New',        priority:'Urgent',assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_NEW,    start:null,      due:days(-1),  est:4,  spent:0,  pct:0 },
+    { n:23, title:'Tests E2E Cypress — parcours connexion',      type:'Task',    status:'InProgress', priority:'Normal',assigneeId:U.dev,    sprintId:SPRINT_ACTIVE, colId:COL_INPRG,  start:days(-3),  due:days(3),   est:10, spent:4,  pct:35 },
+    { n:24, title:'Audit accessibilité (WCAG AA) — page accueil',type:'Task',    status:'New',        priority:'Normal',assigneeId:U.spec1,  sprintId:SPRINT_ACTIVE, colId:COL_NEW,    start:days(1),   due:days(4),   est:6,  spent:0,  pct:0 },
 
-    // Backlog (no sprint) — long-term planning
-    { n:14, title:'Prise de rendez-vous en ligne',     type:'Feature', status:'New',  priority:'Normal',   assigneeId:null,     sprintId:null,           colId:COL_NEW,    start:null,      due:days(45),  est:36, spent:0,  pct:0 },
-    { n:15, title:'Audit RGPD pré-MEP',               type:'Task',    status:'New',   priority:'High',     assigneeId:specB,  sprintId:null,           colId:COL_NEW,    start:days(80),  due:days(95),  est:16, spent:0,  pct:0 },
-    { n:16, title:'Plan de bascule production',       type:'Task',    status:'New',   priority:'Normal',   assigneeId:U.deploy, sprintId:null,           colId:COL_NEW,    start:days(100), due:days(115), est:20, spent:0,  pct:0 },
+    // Sprint 3 — Demande d'acte & paiement (planning)
+    { n:11, title:'Formulaire demande d\'acte d\'état civil',         type:'Feature', status:'New', priority:'High',   assigneeId:U.dev,    sprintId:SPRINT_NEXT, colId:COL_NEW, start:days(1),  due:days(8),  est:24, spent:0, pct:0 },
+    { n:12, title:'Intégration passerelle de paiement (Tunisie Net)', type:'Feature', status:'New', priority:'High',   assigneeId:U.dev,    sprintId:SPRINT_NEXT, colId:COL_NEW, start:days(3),  due:days(12), est:30, spent:0, pct:0 },
+    { n:13, title:'Validation des paiements côté trésorerie',         type:'Task',    status:'New', priority:'Normal', assigneeId:specB,    sprintId:SPRINT_NEXT, colId:COL_NEW, start:days(12), due:days(15), est:8,  spent:0, pct:0 },
+    { n:25, title:'Génération PDF du reçu de paiement',               type:'Task',    status:'New', priority:'Normal', assigneeId:U.dev,    sprintId:SPRINT_NEXT, colId:COL_NEW, start:days(8),  due:days(13), est:10, spent:0, pct:0 },
+    { n:26, title:'Suivi de statut du dossier (workflow)',            type:'Feature', status:'New', priority:'High',   assigneeId:U.dev,    sprintId:SPRINT_NEXT, colId:COL_NEW, start:days(5),  due:days(14), est:18, spent:0, pct:0 },
+
+    // Sprint 4 — RDV & notifications avancées (planning)
+    { n:14, title:'Prise de rendez-vous — calendrier par service',   type:'Feature', status:'New', priority:'Normal', assigneeId:U.dev,    sprintId:SPRINT_S4,   colId:COL_NEW, start:days(16), due:days(24), est:24, spent:0, pct:0 },
+    { n:27, title:'Notifications email transactionnelles',           type:'Feature', status:'New', priority:'Normal', assigneeId:U.dev,    sprintId:SPRINT_S4,   colId:COL_NEW, start:days(20), due:days(26), est:14, spent:0, pct:0 },
+    { n:28, title:'Notifications SMS via Twilio (créneau RDV)',      type:'Feature', status:'New', priority:'Low',    assigneeId:U.dev,    sprintId:SPRINT_S4,   colId:COL_NEW, start:days(22), due:days(28), est:12, spent:0, pct:0 },
+    { n:29, title:'Tableau de bord administratif (suivi dossiers)',  type:'Feature', status:'New', priority:'Normal', assigneeId:U.dev,    sprintId:SPRINT_S4,   colId:COL_NEW, start:days(18), due:days(29), est:20, spent:0, pct:0 },
+
+    // Backlog (no sprint) — long-term planning + recette + MEP
+    { n:15, title:'Audit RGPD pré-MEP',                             type:'Task',    status:'New', priority:'High',   assigneeId:specB,    sprintId:null, colId:COL_NEW, start:days(80),  due:days(95),  est:16, spent:0, pct:0 },
+    { n:16, title:'Plan de bascule production',                     type:'Task',    status:'New', priority:'Normal', assigneeId:U.deploy, sprintId:null, colId:COL_NEW, start:days(100), due:days(115), est:20, spent:0, pct:0 },
+    { n:30, title:'Recette utilisateur — cycle 1 (parcours bout-en-bout)', type:'Task', status:'New', priority:'High', assigneeId:U.spec1,  sprintId:null, colId:COL_NEW, start:days(35), due:days(50), est:24, spent:0, pct:0 },
+    { n:31, title:'Tests de charge (50k req/mois pic)',              type:'Task',    status:'New', priority:'High',   assigneeId:U.deploy, sprintId:null, colId:COL_NEW, start:days(60),  due:days(70),  est:16, spent:0, pct:0 },
+    { n:32, title:'Documentation technique + guide utilisateur',     type:'Task',    status:'New', priority:'Normal', assigneeId:U.spec1,  sprintId:null, colId:COL_NEW, start:days(85),  due:days(105), est:20, spent:0, pct:0 },
+    { n:33, title:'Formation des agents municipaux (2 sessions)',    type:'Task',    status:'New', priority:'Normal', assigneeId:U.spec1,  sprintId:null, colId:COL_NEW, start:days(105), due:days(112), est:12, spent:0, pct:0 },
   ]
 
   for (const w of wps) {
@@ -284,13 +326,20 @@ async function main() {
   }
   console.log(`  ✓ ${deps.length} dependencies`)
 
-  // ─── Milestones ─────────────────────────────────────────────────────────
+  // ─── Milestones (jalons) ────────────────────────────────────────────────
+  // Spread across the project lifeline. Past = reached; future = pending.
   const milestones = [
-    { id: 'mile0001-0000-0000-0000-000000000001', title: 'Cahier des charges signé',     date: dayOnly(days(-42)), isReached: true,  workPackageId: WP(4) },
-    { id: 'mile0002-0000-0000-0000-000000000001', title: 'Recette espace citoyen',       date: dayOnly(days(7)),   isReached: false, workPackageId: WP(8) },
-    { id: 'mile0003-0000-0000-0000-000000000001', title: 'Recette paiement & demandes',  date: dayOnly(days(20)),  isReached: false, workPackageId: WP(13) },
-    { id: 'mile0004-0000-0000-0000-000000000001', title: 'Audit RGPD validé',            date: dayOnly(days(95)),  isReached: false, workPackageId: WP(15) },
-    { id: 'mile0005-0000-0000-0000-000000000001', title: 'Mise en production',           date: dayOnly(days(120)), isReached: false, workPackageId: WP(16) },
+    { id: 'mile0001-0000-0000-0000-000000000001', title: 'Kick-off projet signé',                date: dayOnly(days(-68)), isReached: true,  workPackageId: WP(17), color: '#10b981' },
+    { id: 'mile0002-0000-0000-0000-000000000001', title: 'Périmètre Sprint 0 validé',            date: dayOnly(days(-57)), isReached: true,  workPackageId: WP(21), color: '#10b981' },
+    { id: 'mile0003-0000-0000-0000-000000000001', title: 'Cahier des charges signé',             date: dayOnly(days(-42)), isReached: true,  workPackageId: WP(4),  color: '#10b981' },
+    { id: 'mile0004-0000-0000-0000-000000000001', title: 'POC SAML2 validé en interne',          date: dayOnly(days(-10)), isReached: true,  workPackageId: WP(5),  color: '#10b981' },
+    { id: 'mile0005-0000-0000-0000-000000000001', title: 'Recette espace citoyen',               date: dayOnly(days(7)),   isReached: false, workPackageId: WP(8),  color: '#3b82f6' },
+    { id: 'mile0006-0000-0000-0000-000000000001', title: 'Recette demande d\'acte & paiement',   date: dayOnly(days(20)),  isReached: false, workPackageId: WP(13), color: '#3b82f6' },
+    { id: 'mile0007-0000-0000-0000-000000000001', title: 'Recette prise de RDV & notifications', date: dayOnly(days(35)),  isReached: false, workPackageId: WP(14), color: '#3b82f6' },
+    { id: 'mile0008-0000-0000-0000-000000000001', title: 'Tests de charge passés',               date: dayOnly(days(72)),  isReached: false, workPackageId: WP(31), color: '#f59e0b' },
+    { id: 'mile0009-0000-0000-0000-000000000001', title: 'Audit RGPD validé',                    date: dayOnly(days(95)),  isReached: false, workPackageId: WP(15), color: '#f59e0b' },
+    { id: 'mile0010-0000-0000-0000-000000000001', title: 'Formation agents municipaux',          date: dayOnly(days(112)), isReached: false, workPackageId: WP(33), color: '#8b5cf6' },
+    { id: 'mile0011-0000-0000-0000-000000000001', title: 'Mise en production',                   date: dayOnly(days(120)), isReached: false, workPackageId: WP(16), color: '#dc2626' },
   ]
   for (const m of milestones) {
     const { id: mid, ...mRest } = m
@@ -315,6 +364,17 @@ async function main() {
     { userId: U.dev,    workPackageId: WP(8), hours: 6, daysAgo: 1,  comment: 'Liste dossiers + filtre' },
     { userId: U.spec1,  workPackageId: WP(1), hours: 8, daysAgo: 50, comment: 'Atelier sponsor + écriture compte-rendu' },
     { userId: U.spec1,  workPackageId: WP(2), hours: 6, daysAgo: 48, comment: 'Maquettes basse-fi' },
+    // Sprint 0 entries — historical context for analytics / burndown
+    { userId: U.pm,     workPackageId: WP(17), hours: 4, daysAgo: 69, comment: 'Préparation kick-off + slides DGS' },
+    { userId: U.pm,     workPackageId: WP(17), hours: 6, daysAgo: 68, comment: 'Réunion kick-off + compte-rendu' },
+    { userId: U.spec1,  workPackageId: WP(19), hours: 8, daysAgo: 64, comment: 'Recueil besoins équipe état civil' },
+    { userId: U.spec1,  workPackageId: WP(19), hours: 6, daysAgo: 62, comment: 'Recueil besoins service paiement' },
+    { userId: U.spec1,  workPackageId: WP(20), hours: 8, daysAgo: 61, comment: 'Audit code legacy portail v1' },
+    { userId: U.dev,    workPackageId: WP(22), hours: 6, daysAgo: 47, comment: 'Architecture target + ADR' },
+    { userId: U.dev,    workPackageId: WP(22), hours: 8, daysAgo: 46, comment: 'Revue tech avec lead' },
+    // Active-sprint progress
+    { userId: U.dev,    workPackageId: WP(23), hours: 2, daysAgo: 3,  comment: 'Setup Cypress + 1er parcours' },
+    { userId: U.dev,    workPackageId: WP(23), hours: 2, daysAgo: 1,  comment: 'Tests 2FA + reset password' },
   ]
   for (const t of timeEntries) {
     const spentOn = dayOnly(days(-t.daysAgo))
@@ -342,6 +402,10 @@ async function main() {
     { userId: U.pm,    content: 'Sprint 2 démarre demain — focus sur l\'auth + espace citoyen. Daily à 9h30.', daysAgo: 14 },
     { userId: U.dev,   content: 'OAuth2 Google + Facebook OK. Je passe la PR en revue.', daysAgo: 4 },
     { userId: U.deploy,content: 'Environnement de staging prêt. URL : https://staging.portail-tunis.tn', daysAgo: 2 },
+    { userId: U.pm,    content: 'Kick-off réussi avec la DGS — équipe alignée sur les 4 modules majeurs et l\'échéance MEP.', daysAgo: 68 },
+    { userId: U.spec1, content: 'Étude de l\'existant terminée. ~12k dossiers actifs à reprendre, format hétérogène à normaliser.', daysAgo: 60 },
+    { userId: U.dev,   content: 'Architecture cible validée : Vue 3 + NestJS + PostgreSQL hébergés en Tunisie.', daysAgo: 46 },
+    { userId: U.pm,    content: 'Sprint 3 (demande d\'acte + paiement) démarrage J+1 — prévoir réunion préparatoire avec la trésorerie.', daysAgo: 1 },
   ]
   for (const c of comments) {
     const createdAt = days(-c.daysAgo)
