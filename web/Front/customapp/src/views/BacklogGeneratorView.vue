@@ -21,6 +21,8 @@
     </template>
 
     <div class="bg">
+      <SprintsPanel :project-id="id" />
+
       <NeoMessage v-if="store.error" severity="error" :text="store.error" />
 
       <div v-if="store.loading" class="bg__loading">
@@ -80,6 +82,7 @@ import { useRouter } from 'vue-router'
 import { NeoButton, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import EpicCard from '@/components/pm/backlog/EpicCard.vue'
+import SprintsPanel from '@/components/pm/backlog/SprintsPanel.vue'
 import { useBacklogGeneratorStore } from '@/stores/backlogGeneratorStore'
 import { extractErrorMessage } from '@/lib/api'
 
