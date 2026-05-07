@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
+import { AgentRunnerService } from './agent/agent-runner.service.js'
+import { runTranscriptAgent } from './transcript-agent.js'
+import { AgentEmitMissedError } from './agent/agent-errors.js'
 import type { AiAnalysisResult } from './ai.types.js'
 
 /** Strip API keys and auth tokens from error messages before persisting. */
@@ -23,7 +27,15 @@ export class AiService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerFactory: AiProviderFactory,
+    private readonly config: ConfigService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
+
+  /** True when the transcript agent loop should run instead of the legacy single-shot path. */
+  private isAgentModeEnabled(): boolean {
+    const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    return raw === 'all' || raw.split(/[,\s]+/).includes('transcript')
+  }
 
   /** On startup, mark any rows stuck in processing as failed. */
   async onModuleInit(): Promise<void> {
@@ -70,19 +82,26 @@ export class AiService implements OnModuleInit {
 
       const uniqueSpeakers = [...new Set(transcript.segments.map((s) => s.speaker))]
 
-      // 3. Call primary provider — on error, fall back to AI_FALLBACK_PROVIDER if configured.
-      const primary = this.providerFactory.getPrimary()
-      const fallback = this.providerFactory.getFallback()
+      // 3. Resolve the analysis result. Agent mode (when enabled) runs a
+      //    tool-using loop where the model fetches segments incrementally;
+      //    on AgentEmitMissedError it transparently falls through to the
+      //    single-shot path. Errors other than the emit-missed signal still
+      //    surface so the catch below marks the row failed.
       let result: AiAnalysisResult
-      let modelUsed = primary.modelName
-      try {
-        result = await primary.analyze(fullText, uniqueSpeakers)
-      } catch (primaryErr: unknown) {
-        if (!fallback) throw primaryErr
-        const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
-        this.logger.warn(`Primary provider (${primary.modelName}) failed: ${msg.slice(0, 200)} — falling back to ${fallback.modelName}`)
-        result = await fallback.analyze(fullText, uniqueSpeakers)
-        modelUsed = `${fallback.modelName} (fallback)`
+      let modelUsed: string
+      const useAgent = this.isAgentModeEnabled() && this.agentRunner.isAgentModeAvailable()
+
+      if (useAgent) {
+        try {
+          result = await runTranscriptAgent(this.agentRunner, this.logger, transcript.projectId, transcriptId)
+          modelUsed = 'agent-mode'
+        } catch (agentErr: unknown) {
+          if (!(agentErr instanceof AgentEmitMissedError)) throw agentErr
+          this.logger.warn(`Transcript agent fell through to single-shot: ${agentErr.message}`)
+          ;({ result, modelUsed } = await this.singleShotAnalyze(fullText, uniqueSpeakers))
+        }
+      } else {
+        ;({ result, modelUsed } = await this.singleShotAnalyze(fullText, uniqueSpeakers))
       }
 
       // 4. Persist results in a transaction
@@ -172,6 +191,26 @@ export class AiService implements OnModuleInit {
           })
           .catch(() => { /* non-fatal */ })
       }
+    }
+  }
+
+  /** Legacy single-shot analyze path. Used as the default and as the
+   *  graceful fallback when agent mode emits-miss. */
+  private async singleShotAnalyze(
+    fullText: string,
+    uniqueSpeakers: string[],
+  ): Promise<{ result: AiAnalysisResult; modelUsed: string }> {
+    const primary = this.providerFactory.getPrimary()
+    const fallback = this.providerFactory.getFallback()
+    try {
+      const r = await primary.analyze(fullText, uniqueSpeakers)
+      return { result: r, modelUsed: primary.modelName }
+    } catch (primaryErr: unknown) {
+      if (!fallback) throw primaryErr
+      const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
+      this.logger.warn(`Primary provider (${primary.modelName}) failed: ${msg.slice(0, 200)} — falling back to ${fallback.modelName}`)
+      const r = await fallback.analyze(fullText, uniqueSpeakers)
+      return { result: r, modelUsed: `${fallback.modelName} (fallback)` }
     }
   }
 }
