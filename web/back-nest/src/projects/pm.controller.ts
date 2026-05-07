@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from './projects.service.js';
 import { UsersService } from '../users/users.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -53,7 +53,25 @@ export class PmController {
 
   @Post('projects/:id/fields')
   @ProjectAccess('id')
-  async addField(@Param('id') id: string, @Body() dto: AddFieldDto) {
+  async addField(
+    @Param('id') id: string,
+    @Body() dto: AddFieldDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    // Custom-field authoring is reserved for the project's PM (and Admin).
+    // ProjectAccessGuard would otherwise also let any ProjectMember through —
+    // closes the audit IDOR finding (docs/qa/backend/projects.md:47-63).
+    const project = await this.prisma.project.findFirst({
+      where: { id, isDeleted: false },
+      select: { projectManagerId: true },
+    });
+    if (!project) throw new NotFoundException('Projet non trouvé.');
+    const isOwner = project.projectManagerId === user.userId;
+    const isAdmin = user.role === 'Admin';
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('Seul le chef de projet peut ajouter des champs personnalisés.');
+    }
+
     const result = await this.service.addField(id, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;

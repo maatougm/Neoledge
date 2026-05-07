@@ -193,7 +193,16 @@ const saved        = ref(false)
 const showAddField = ref(false)
 const newField     = reactive({ label: '', fieldType: 'Text' as FieldType, isRequired: false })
 
-const canAddFields = props.project.allowManagerCustomFields
+// Custom-field authoring is allowed for the project's PM and any Admin.
+// Server enforces the same rule (POST /pm/projects/:id/fields). The
+// `Project.allowManagerCustomFields` admin gate has been retired — PMs
+// don't need admin permission to author fields on their own projects.
+const canAddFields = (() => {
+  const role = auth.userRole
+  if (role === 'Admin') return true
+  if (role !== 'ProjectManager') return false
+  return props.project.projectManager?.id === auth.userId
+})()
 
 const fieldTypeOptions = [
   { value: 'Text',     label: 'Texte' },
