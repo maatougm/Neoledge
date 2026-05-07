@@ -53,6 +53,8 @@ services:
       AI_FALLBACK_API_KEY: ${AI_FALLBACK_API_KEY:-}
       AI_FALLBACK_BASE_URL: ${AI_FALLBACK_BASE_URL:-}
       AI_FALLBACK_MODEL: ${AI_FALLBACK_MODEL:-}
+      AI_FALLBACK_PROVIDER: ${AI_FALLBACK_PROVIDER:-openai}
+      AI_AGENT_MODE: ${AI_AGENT_MODE:-off}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Pinned to the docker-internal service name — overriding via .env.prod
       # would break the compose-network resolution.
