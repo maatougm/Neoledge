@@ -94,70 +94,16 @@ model AppUser {
   actedNotifications Notification[]       @relation("NotificationActor")
   wpComments         WorkPackageComment[] @relation("WpCommentAuthor")
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
-  roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
   cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
   projectMemberships ProjectMember[]      @relation("ProjectMemberships")
 
   @@map("AppUsers")
 }
 
-// ─── Permissions (Phase 1 — OpenProject-style data-driven roles) ─────────────
-
-model Permission {
-  id          String   @id @default(uuid())
-  key         String   @unique @db.VarChar(100)
-  resource    String   @db.VarChar(50)
-  description String   @db.VarChar(255)
-  createdAt   DateTime @default(now())
-
-  roles       RolePermission[]
-
-  @@index([resource])
-  @@map("Permissions")
-}
-
-model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique @db.VarChar(100)
-  description String?  @db.VarChar(500)
-  isPreset    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  permissions RolePermission[]
-  assignments UserRoleAssignment[]
-
-  @@map("Roles")
-}
-
-model RolePermission {
-  roleId       String
-  permissionId String
-
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@index([permissionId])
-  @@map("RolePermissions")
-}
-
-model UserRoleAssignment {
-  id        String   @id @default(uuid())
-  userId    String
-  roleId    String
-  projectId String?
-  createdAt DateTime @default(now())
-
-  user    AppUser  @relation("UserRoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
-  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  project Project? @relation("ProjectRoleAssignments", fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, roleId, projectId], name: "user_role_project_uq")
-  @@index([roleId])
-  @@index([projectId])
-  @@map("UserRoleAssignments")
-}
+// Note: the dynamic RBAC stack (Permission / Role / RolePermission /
+// UserRoleAssignment) was removed in May 2026 — see migration
+// 20260507000000_drop_rbac_tables. Authorization is now driven by
+// AppUser.role + ProjectMember rows.
 
 model Project {
   id                       String   @id @default(uuid())
@@ -204,7 +150,6 @@ model Project {
   timeEntries    TimeEntry[]
   milestones     Milestone[]
   ganttBaselines GanttBaseline[]
-  roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   cahierFeedback  CahierFeedback[]
   projectMembers  ProjectMember[]  @relation("ProjectMembers")
 
