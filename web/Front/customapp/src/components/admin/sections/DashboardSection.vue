@@ -139,9 +139,9 @@
       </div>
     </div>
 
-    <!-- ── Bottom grid: deadlines + health ──────────────────────────────────── -->
+    <!-- ── Deadline radar ────────────────────────────────────────────────────
+         (Status-breakdown lives on the Projects-dashboard filter chips above.) -->
     <div class="bottom-grid">
-      <!-- Deadline radar -->
       <div class="section-card deadline-card">
         <div class="section-header">
           <h2 class="section-title">
@@ -180,35 +180,6 @@
         </div>
       </div>
 
-      <!-- Project health summary -->
-      <div class="section-card health-card">
-        <div class="section-header">
-          <h2 class="section-title">Santé du portefeuille</h2>
-        </div>
-
-        <div class="health-ring-area">
-          <svg class="ring-svg" viewBox="0 0 100 100" aria-hidden="true">
-            <circle class="ring-bg" cx="50" cy="50" r="38" />
-            <circle
-              class="ring-prog"
-              cx="50" cy="50" r="38"
-              :stroke-dasharray="`${(completionPct / 100) * 238.8} 238.8`"
-            />
-          </svg>
-          <div class="ring-center">
-            <span class="ring-pct">{{ completionPct }}%</span>
-            <span class="ring-sub">terminés</span>
-          </div>
-        </div>
-
-        <div class="health-stats">
-          <div v-for="s in HEALTH_STATS" :key="s.label" class="health-stat">
-            <span class="health-stat__dot" :style="{ background: s.color }" />
-            <span class="health-stat__label">{{ s.label }}</span>
-            <span class="health-stat__val">{{ s.count }}</span>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -261,10 +232,6 @@ const pendingValidationCount = computed(() =>
   projectStore.projects.filter(
     p => p.status === 'Parametrage' || p.status === 'MEP'
   ).length
-)
-
-const completedCount = computed(() =>
-  projectStore.projects.filter(p => p.status === 'Cloture').length
 )
 
 // ── Projects dashboard helpers ────────────────────────────────────────────────
@@ -326,20 +293,6 @@ function dueClass(iso: string, status: ProjectStatus): string {
   if (ms < 14 * 86_400_000) return 'pd-due--warn'
   return 'pd-due--ok'
 }
-
-// ── Completion ─────────────────────────────────────────────────────────────────
-const completionPct = computed(() => {
-  const total = projectStore.projects.length
-  return total === 0 ? 0 : Math.round((completedCount.value / total) * 100)
-})
-
-// ── Health stats ──────────────────────────────────────────────────────────────
-const HEALTH_STATS = computed(() => [
-  { label: 'En cours',        count: projectStore.projects.filter(p => !TERMINAL_STATUSES.includes(p.status) && p.status !== 'Draft').length, color: '#3b82f6' },
-  { label: 'En validation',   count: pendingValidationCount.value,                                        color: '#f59e0b' },
-  { label: 'En retard',       count: overdueCount.value,                                                  color: '#e11d48' },
-  { label: 'Terminés',        count: completedCount.value,                                                color: '#10b981' },
-])
 
 // ── Deadline helpers ───────────────────────────────────────────────────────────
 const upcomingDeadlines = computed(() => {
@@ -721,17 +674,11 @@ const todayLabel = computed(() =>
 }
 .pd-row:hover .pd-arrow-cell { color: var(--nl-accent); }
 
-/* ── Bottom grid ─────────────────────────────────────────────────────────────── */
+/* ── Bottom grid (deadline radar — single column now) ──────────────────────── */
 .bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr;
   gap: 1rem;
-}
-
-@media (max-width: 1280px) {
-  .bottom-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ── Deadline list ───────────────────────────────────────────────────────────── */
@@ -830,82 +777,9 @@ const todayLabel = computed(() =>
   color: var(--nl-text-3);
 }
 
-/* ── Health ring ─────────────────────────────────────────────────────────────── */
-.health-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.health-ring-area {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 1rem;
-}
-
-.ring-svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.ring-bg   { fill: none; stroke: var(--nl-border); stroke-width: 10; }
-.ring-prog {
-  fill: none;
-  stroke: var(--nl-accent);
-  stroke-width: 10;
-  stroke-linecap: round;
-  stroke-dasharray: 0 238.8;
-  transition: stroke-dasharray 0.8s cubic-bezier(0.4,0,0.2,1);
-}
-
-.ring-center {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.ring-pct { font-size: 1.5rem; font-weight: 800; color: var(--nl-text-1); line-height: 1; }
-.ring-sub { font-size: 0.625rem; color: var(--nl-text-3); margin-top: 0.125rem; }
-
-.health-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.health-stat {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.health-stat__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.health-stat__label {
-  flex: 1;
-  font-size: 0.75rem;
-  color: var(--nl-text-2);
-}
-
-.health-stat__val {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--nl-text-1);
-}
-
 /* ── Responsive ──────────────────────────────────────────────────────────────── */
 @media (max-width: 860px) {
   .kpi-grid   { grid-template-columns: repeat(2, 1fr); }
-  .bottom-grid { grid-template-columns: 1fr; }
   /* Compact the projects dashboard table on narrow screens */
   .pd-table .pd-progress-col,
   .pd-progress-cell { display: none; }
