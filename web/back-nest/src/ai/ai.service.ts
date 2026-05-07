@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
-import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
 import type { AiAnalysisResult } from './ai.types.js'
 
 /** Strip API keys and auth tokens from error messages before persisting. */
@@ -24,7 +23,6 @@ export class AiService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerFactory: AiProviderFactory,
-    private readonly zaiFallback: ZaiFallbackProvider,
   ) {}
 
   /** On startup, mark any rows stuck in processing as failed. */
@@ -72,18 +70,19 @@ export class AiService implements OnModuleInit {
 
       const uniqueSpeakers = [...new Set(transcript.segments.map((s) => s.speaker))]
 
-      // 3. Call AI provider — on error, fall back to Z.AI if configured
-      const provider = this.providerFactory.getProvider()
+      // 3. Call primary provider — on error, fall back to AI_FALLBACK_PROVIDER if configured.
+      const primary = this.providerFactory.getPrimary()
+      const fallback = this.providerFactory.getFallback()
       let result: AiAnalysisResult
-      let modelUsed = provider.modelName
+      let modelUsed = primary.modelName
       try {
-        result = await provider.analyze(fullText, uniqueSpeakers)
+        result = await primary.analyze(fullText, uniqueSpeakers)
       } catch (primaryErr: unknown) {
-        if (!this.zaiFallback.isConfigured()) throw primaryErr
+        if (!fallback) throw primaryErr
         const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
-        this.logger.warn(`Primary provider (${provider.modelName}) failed: ${msg.slice(0, 200)} — falling back to Z.AI`)
-        result = await this.zaiFallback.analyze(fullText, uniqueSpeakers)
-        modelUsed = `${this.zaiFallback.modelName} (fallback)`
+        this.logger.warn(`Primary provider (${primary.modelName}) failed: ${msg.slice(0, 200)} — falling back to ${fallback.modelName}`)
+        result = await fallback.analyze(fullText, uniqueSpeakers)
+        modelUsed = `${fallback.modelName} (fallback)`
       }
 
       // 4. Persist results in a transaction

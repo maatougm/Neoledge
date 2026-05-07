@@ -632,7 +632,9 @@ export class CahierDesChargesService {
     transcripts: CahierTranscriptInput[],
     projectId?: string,
   ): Promise<CahierAiResult> {
-    const provider = this.config.get<string>('AI_PROVIDER', 'openai').toLowerCase()
+    // All AI features default to Z.AI primary (cheap + supports tool-use).
+    // AI_FALLBACK_PROVIDER (default 'openai') auto-engages on Z.AI failure.
+    const provider = (this.config.get<string>('AI_PROVIDER') ?? 'zai').toLowerCase()
 
     // Driver-fields gate — block if any field marked "alimente l'IA" has no answer.
     if (projectId) {
@@ -671,15 +673,29 @@ export class CahierDesChargesService {
     }
 
     const startedAt = Date.now()
-    const model = this.config.get<string>('CAHIER_AI_MODEL') ?? this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini'
+    // Pick model name for logging — Z.AI primary uses AI_FALLBACK_MODEL (kept
+    // for backward compat with the env var name), OpenAI/Gemini paths use the
+    // older CAHIER_AI_MODEL/AI_MODEL chain.
+    const modelName = (() => {
+      if (provider === 'zai') {
+        return this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air'
+      }
+      return this.config.get<string>('CAHIER_AI_MODEL') ?? this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini'
+    })()
+
+    // Pick the secondary provider — never the same as primary.
+    const fallbackProvider = (() => {
+      if (provider === 'zai') return 'openai'
+      // Existing behaviour: any non-Z.AI primary falls back to Z.AI.
+      return 'zai'
+    })()
+
     try {
-      const result = provider === 'gemini'
-        ? await this.callGemini(userPrompt)
-        : await this.callOpenAi(userPrompt)
+      const result = await this.callCahierProvider(provider, userPrompt)
       void this.aiUsage.log({
         projectId: projectId ?? null,
         provider,
-        model,
+        model: modelName,
         feature: 'cahier',
         // We don't get token counts back from the helpers today — estimate
         // from char count (~4 chars/token).
@@ -690,11 +706,14 @@ export class CahierDesChargesService {
       })
       return result
     } catch (primaryErr: unknown) {
-      if (!this.zaiFallback.isConfigured()) {
+      const fallbackAvailable = fallbackProvider === 'zai'
+        ? this.zaiFallback.isConfigured()
+        : Boolean(this.config.get<string>('OPENAI_API_KEY') ?? this.config.get<string>('AZURE_OPENAI_ENDPOINT'))
+      if (!fallbackAvailable) {
         void this.aiUsage.log({
           projectId: projectId ?? null,
           provider,
-          model,
+          model: modelName,
           feature: 'cahier',
           promptTokens: Math.ceil(userPrompt.length / 4),
           durationMs: Date.now() - startedAt,
@@ -704,20 +723,37 @@ export class CahierDesChargesService {
         throw primaryErr
       }
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
-      this.logger.warn(`Primary cahier provider (${provider}) failed: ${msg.slice(0, 200)} — falling back to Z.AI`)
-      const content = await this.zaiFallback.chat(SYSTEM_PROMPT, userPrompt)
+      this.logger.warn(`Primary cahier provider (${provider}) failed: ${msg.slice(0, 200)} — falling back to ${fallbackProvider}`)
+      const result = await this.callCahierProvider(fallbackProvider, userPrompt)
+      const fallbackModel = fallbackProvider === 'zai'
+        ? (this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air')
+        : (this.config.get<string>('CAHIER_AI_MODEL') ?? this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini')
       void this.aiUsage.log({
         projectId: projectId ?? null,
-        provider: 'zai-fallback',
-        model: this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air',
+        provider: `${fallbackProvider}-fallback`,
+        model: fallbackModel,
         feature: 'cahier',
         promptTokens: Math.ceil(userPrompt.length / 4),
         completionTokens: 1_500,
         durationMs: Date.now() - startedAt,
         success: true,
       })
+      return result
+    }
+  }
+
+  /**
+   * Dispatch one cahier completion call by provider name. Z.AI uses the
+   * existing `chat()` helper (forces JSON mode); OpenAI/Gemini use the
+   * older private call helpers below.
+   */
+  private async callCahierProvider(name: string, userPrompt: string): Promise<CahierAiResult> {
+    if (name === 'zai') {
+      const content = await this.zaiFallback.chat(SYSTEM_PROMPT, userPrompt)
       return this.parseCahierResult(content)
     }
+    if (name === 'gemini') return this.callGemini(userPrompt)
+    return this.callOpenAi(userPrompt)
   }
 
   private async callOpenAi(userPrompt: string): Promise<CahierAiResult> {
