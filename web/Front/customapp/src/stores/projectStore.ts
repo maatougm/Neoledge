@@ -140,7 +140,11 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<ProjectDetail>(`/admin/project/${id}`)
+      // Use the PM endpoint (no strict UUID validation) — the access guard
+      // auto-passes for Admin role, so this also works from the admin
+      // overview panel. The legacy /admin/project/:id route uses
+      // ParseUUIDPipe which rejects the patterned demo UUIDs.
+      const { data } = await api.get<ProjectDetail>(`/pm/projects/${id}`)
       currentProject.value = { ...data }
       return data
     } catch (e: unknown) {
