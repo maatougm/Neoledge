@@ -115,9 +115,11 @@ export async function runOpenAiCompatibleLoop(args: {
     const toolCalls = message?.tool_calls ?? []
 
     // Append the assistant turn so the next loop has the right history.
+    // Z.AI rejects `content: null` on assistant turns even when tool_calls
+    // are present (HTTP 400 "messages parameter is illegal"); coerce to ''.
     messages.push({
       role: 'assistant',
-      content: message?.content ?? null,
+      content: message?.content ?? '',
       ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
     })
 
