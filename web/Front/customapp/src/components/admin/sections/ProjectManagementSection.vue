@@ -176,14 +176,14 @@
                     icon="pi pi-eye"
                     size="small"
                     outlined
-                    title="Gérer le questionnaire (panneau)"
+                    title="Aperçu administrateur"
                     @click="selectedProjectId = p.id"
                   />
                   <NeoButton
                     icon="pi pi-external-link"
                     size="small"
                     outlined
-                    title="Ouvrir le projet (modules)"
+                    title="Ouvrir en détail (modules)"
                     @click="openProjectModules(p.id)"
                   />
                   <NeoButton
