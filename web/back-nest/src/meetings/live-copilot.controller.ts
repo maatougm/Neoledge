@@ -17,7 +17,6 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
-  ParseUUIDPipe,
   Post,
   UseGuards,
   BadRequestException,
@@ -59,7 +58,7 @@ export class LiveCopilotController {
   // ─── Driver-field snapshot (frontend coverage gauge) ──────────────────────
 
   @Get('_drivers')
-  async listDrivers(@Param('projectId', ParseUUIDPipe) projectId: string) {
+  async listDrivers(@Param('projectId') projectId: string) {
     this.assertEnabled()
     const fields = await this.prisma.projectField.findMany({
       where: { projectId, isBacklogDriver: true },
@@ -80,7 +79,7 @@ export class LiveCopilotController {
   @Post('session')
   @HttpCode(HttpStatus.CREATED)
   async startSession(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('projectId') projectId: string,
     @Body() dto: StartCopilotSessionDto,
     @CurrentUser() user: JwtUser,
   ) {
@@ -109,7 +108,7 @@ export class LiveCopilotController {
   @Post('fire')
   @HttpCode(HttpStatus.ACCEPTED)
   async fire(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('projectId') projectId: string,
     @Body() dto: FireCopilotDto,
   ) {
     this.assertEnabled()
@@ -137,7 +136,7 @@ export class LiveCopilotController {
 
   @Post('suggestions/:suggestionId/dismiss')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async dismiss(@Param('suggestionId', ParseUUIDPipe) suggestionId: string) {
+  async dismiss(@Param('suggestionId') suggestionId: string) {
     this.assertEnabled()
     const r = await this.service.dismissSuggestion(suggestionId)
     if (r.isFailure) throw new NotFoundException(r.error)
@@ -145,7 +144,7 @@ export class LiveCopilotController {
 
   @Post('suggestions/:suggestionId/ask')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async ask(@Param('suggestionId', ParseUUIDPipe) suggestionId: string) {
+  async ask(@Param('suggestionId') suggestionId: string) {
     this.assertEnabled()
     const r = await this.service.markAsked(suggestionId)
     if (r.isFailure) throw new NotFoundException(r.error)
