@@ -12,14 +12,26 @@ import { Injectable, Logger } from '@nestjs/common'
 import { createHash, randomUUID } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
+import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
+import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
+import { buildCopilotTools } from '../ai/agent/tools/copilot-tools.js'
+import {
+  readProjectSummaryTool,
+  readQuestionnaireTool,
+  readValidatedCahierTool,
+} from '../ai/agent/tools/project-tools.js'
+import { readGlossaryTool } from '../ai/agent/tools/glossary-tools.js'
+import type { ToolDefinition } from '../ai/agent/agent-types.js'
+import { obj, str, arr } from '../ai/agent/json-schema.js'
+import { LIVE_COPILOT_SYSTEM_PROMPT } from './live-copilot.prompt.js'
 import {
   COPILOT_LIMITS,
+  VALID_CAHIER_SECTIONS,
   type CahierSection,
   type LiveCopilotFireResult,
   type LiveSessionState,
   type SuggestionCard,
   type SuggestionUrgency,
-  VALID_CAHIER_SECTIONS,
 } from './live-copilot.types.js'
 
 @Injectable()
@@ -27,7 +39,10 @@ export class LiveCopilotService {
   private readonly logger = new Logger(LiveCopilotService.name)
   private readonly sessions = new Map<string, LiveSessionState>()
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly agentRunner: AgentRunnerService,
+  ) {
     // Idle session sweep — runs every 5 min, evicts sessions older than the cap.
     setInterval(() => this.sweepIdleSessions(), 5 * 60_000).unref()
   }
@@ -98,9 +113,11 @@ export class LiveCopilotService {
   }
 
   /**
-   * Phase 1 stub — returns no cards. Phase 2 wires this to AgentRunnerService.
-   * Always logs telemetry (fire count, content size) and decrements caps as
-   * if a real fire had happened so the integration tests for caps still pass.
+   * Run one copilot agent loop. Returns the new cards (if any) plus the
+   * refreshed rolling summary. Caller is expected to push the cards via
+   * the socket gateway. Errors during the loop are downgraded to
+   * `{ skipped: true, skipReason: 'provider' }` so the calling HTTP path
+   * never 5xx's mid-meeting.
    */
   async fire(liveSessionId: string): Promise<Result<LiveCopilotFireResult>> {
     const state = this.sessions.get(liveSessionId)
@@ -128,8 +145,86 @@ export class LiveCopilotService {
     state.lastFiredAtMs = Date.now()
     state.lastFiredAtOffset = state.totalCharsAppended
 
-    // Phase 1 stub. Phase 2 replaces with: agentRunner.run(...) + persist cards.
-    return Result.ok({ cards: [], summary: state.summary })
+    // Multi-emit terminal: emit_suggestions + update_meeting_summary
+    const emitSuggestions: ToolDefinition<{ cards: AgentCard[] }, { cards: AgentCard[] }> = {
+      name: 'emit_suggestions',
+      description: `Emit 0..${COPILOT_LIMITS.MAX_CARDS_PER_FIRE} new question cards for the PM. Empty array is allowed and preferred over filler. NEVER duplicate a question already returned by read_already_emitted_suggestions or read_dismissed_suggestions.`,
+      parameters: obj(
+        {
+          cards: arr(
+            obj(
+              {
+                question:  str({ description: 'The question to ask, exactly as the PM would phrase it', maxLength: 240 }),
+                rationale: str({ description: 'Why this question now, 1-2 sentences', maxLength: 500 }),
+                urgency:   str({ enum: ['low', 'medium', 'high'] }),
+                section:   str({ enum: [...VALID_CAHIER_SECTIONS] }),
+              },
+              { required: ['question', 'rationale', 'urgency', 'section'] },
+            ),
+            { maxItems: COPILOT_LIMITS.MAX_CARDS_PER_FIRE },
+          ),
+        },
+        { required: ['cards'] },
+      ),
+      handler: async () => ({ cards: [] }),
+    }
+
+    const updateSummary: ToolDefinition<{ summary: string }, { summary: string }> = {
+      name: 'update_meeting_summary',
+      description: 'Update the rolling summary so the next fire has memory of what has been covered. <= 600 chars. Required every fire.',
+      parameters: obj(
+        { summary: str({ description: 'Rolling summary, <= 600 chars, French', maxLength: 600 }) },
+        { required: ['summary'] },
+      ),
+      handler: async () => ({ summary: '' }),
+    }
+
+    const tools = [
+      readProjectSummaryTool,
+      readQuestionnaireTool,
+      readValidatedCahierTool,
+      readGlossaryTool,
+      ...buildCopilotTools(state, this),
+    ]
+
+    try {
+      const result = await this.agentRunner.run<{ cards: AgentCard[]; summary: string }>({
+        systemPrompt: LIVE_COPILOT_SYSTEM_PROMPT,
+        userMessage:
+          'Une nouvelle portion de transcription est disponible. Décide s\'il y a des questions à proposer maintenant.',
+        tools,
+        emitTools: [emitSuggestions, updateSummary],
+        maxIterations: 6,
+        loopTimeoutMs: COPILOT_LIMITS.AGENT_LOOP_TIMEOUT_MS,
+        feature: 'meeting-analysis',
+        projectId: state.projectId,
+        combineEmits: (calls) => {
+          const sugCall = calls.find((c) => c.name === 'emit_suggestions')
+          const sumCall = calls.find((c) => c.name === 'update_meeting_summary')
+          const cards = ((sugCall?.args as { cards?: unknown[] } | undefined)?.cards ?? [])
+            .filter((c): c is AgentCard => isValidAgentCard(c))
+          const summary = (sumCall?.args as { summary?: string } | undefined)?.summary ?? state.summary
+          return { cards, summary }
+        },
+      })
+
+      // Persist + tally token spend.
+      const persisted = await this.persistCards(state, result.output.cards)
+      this.updateSummary(liveSessionId, result.output.summary)
+      // Cumulative token spend tracked from the AgentRunnerService telemetry.
+      // (We don't get exact prompt tokens back from the runner today; estimate
+      // from iteration count × ~1500 prompt tokens per round-trip.)
+      this.addTokenSpend(liveSessionId, result.iterations * 1_500)
+
+      return Result.ok({ cards: persisted, summary: result.output.summary })
+    } catch (e) {
+      if (e instanceof AgentEmitMissedError) {
+        this.logger.warn(`Copilot agent missed emit on ${liveSessionId}: ${e.message}`)
+        return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'provider' })
+      }
+      this.logger.warn(`Copilot fire failed on ${liveSessionId}: ${e instanceof Error ? e.message : String(e)}`)
+      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'provider' })
+    }
   }
 
   /** Mark a suggestion as dismissed. */
@@ -270,4 +365,23 @@ export class LiveCopilotService {
     }
     if (evicted > 0) this.logger.log(`Evicted ${evicted} idle copilot session(s)`)
   }
+}
+
+// ─── Internal types ─────────────────────────────────────────────────────────
+
+interface AgentCard {
+  question: string
+  rationale: string
+  urgency: SuggestionUrgency
+  section: CahierSection
+}
+
+function isValidAgentCard(value: unknown): value is AgentCard {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Record<string, unknown>
+  if (typeof c.question !== 'string' || c.question.trim().length === 0) return false
+  if (typeof c.rationale !== 'string') return false
+  if (c.urgency !== 'low' && c.urgency !== 'medium' && c.urgency !== 'high') return false
+  if (typeof c.section !== 'string') return false
+  return VALID_CAHIER_SECTIONS.includes(c.section as CahierSection)
 }
