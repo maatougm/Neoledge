@@ -12,6 +12,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -22,6 +23,7 @@ import {
   BadRequestException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { PrismaService } from '../prisma/prisma.service.js'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
 import { RolesGuard } from '../common/guards/roles.guard.js'
@@ -51,7 +53,27 @@ export class LiveCopilotController {
     private readonly service: LiveCopilotService,
     private readonly gateway: LiveCopilotGateway,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  // ─── Driver-field snapshot (frontend coverage gauge) ──────────────────────
+
+  @Get('_drivers')
+  async listDrivers(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    this.assertEnabled()
+    const fields = await this.prisma.projectField.findMany({
+      where: { projectId, isBacklogDriver: true },
+      orderBy: { orderIndex: 'asc' },
+      include: { values: { select: { value: true } } },
+    })
+    return {
+      items: fields.map((f) => ({
+        label: f.label,
+        value: f.values[0]?.value ?? null,
+        isBacklogDriver: f.isBacklogDriver,
+      })),
+    }
+  }
 
   // ─── Session lifecycle ────────────────────────────────────────────────────
 

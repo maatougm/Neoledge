@@ -68,7 +68,15 @@
         </div>
       </header>
 
-      <div class="lm__grid">
+      <CopilotCoverageBar
+        v-if="copilot.enabled.value"
+        :coverage-pct="coverage.cahierCoveragePct"
+        :drivers-answered="coverage.driversAnswered"
+        :drivers-total="coverage.driversTotal"
+        style="margin-bottom: 12px;"
+      />
+
+      <div class="lm__grid lm__grid--copilot" :class="{ 'lm__grid--with-copilot': copilot.enabled.value }">
         <!-- LEFT: Live transcript -->
         <section class="lm__panel">
           <h3 class="lm__panel-title">
@@ -145,6 +153,17 @@
             @click="refreshChecklist"
           />
         </section>
+
+        <!-- COPILOT: AI-suggested questions -->
+        <CopilotSuggestionsPanel
+          v-if="copilot.enabled.value"
+          :enabled="copilot.enabled.value"
+          :connected="copilot.connected.value"
+          :pending-cards="copilot.pendingCards.value"
+          :last-skip-reason="copilot.lastSkipReason.value"
+          @ask="copilot.markAsked"
+          @dismiss="copilot.dismiss"
+        />
       </div>
     </div>
   </div>
@@ -154,6 +173,10 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
+import CopilotSuggestionsPanel from '@/components/pm/CopilotSuggestionsPanel.vue'
+import CopilotCoverageBar from '@/components/pm/CopilotCoverageBar.vue'
+import { useLiveCopilot, type CahierSection } from '@/composables/useLiveCopilot'
+import { computeCoverage, type DriverField } from '@/lib/copilot/coverage-engine'
 
 type ChecklistStatus = 'covered' | 'partial' | 'missing'
 type ChecklistCategory =
@@ -211,6 +234,13 @@ const checklistLoading = ref(false)
 const readyForCahier = ref(false)
 const aiHint = ref<string | null>(null)
 const chunkPending = ref(false)
+
+// ── Live copilot state (Phase 4) ─────────────────────────────────────────────
+const copilot = useLiveCopilot(props.projectId)
+const driverFields = ref<DriverField[]>([])
+const lastAppendedLength = ref(0)
+let copilotFireTimerId: number | null = null
+let copilotShouldFireSoon = false
 
 interface SpeechRecognitionLike {
   continuous: boolean
@@ -490,7 +520,61 @@ function beginSession(): void {
   // single speaker), still nudge the checklist every SAFETY_INTERVAL_MS so
   // the PM sees something move.
   checklistTimerId.value = window.setInterval(maybeRefreshChecklist, SAFETY_INTERVAL_MS)
+
+  // Live copilot — best-effort start. 404s if feature flag is off (we just
+  // skip; the existing checklist still runs).
+  void startCopilot()
 }
+
+async function startCopilot(): Promise<void> {
+  // Generate a frontend session id; the backend ties suggestions to it.
+  const sessionId = (window.crypto && 'randomUUID' in window.crypto)
+    ? window.crypto.randomUUID()
+    : `lm-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+  const result = await copilot.startSession(sessionId)
+  if (!result.ok) return // feature off; fail silently
+
+  // Pull driver-fields once for the coverage gauge.
+  try {
+    const { data } = await api.get<{ items: Array<{ label: string; value: string | null; isBacklogDriver: boolean }> }>(
+      `/pm/projects/${props.projectId}/meetings/live/copilot/_drivers`,
+    ).catch(() => ({ data: { items: [] } } as never))
+    if (Array.isArray(data?.items)) {
+      driverFields.value = data.items.filter((f) => f.isBacklogDriver).map((f) => ({ label: f.label, value: f.value }))
+    }
+  } catch { /* ignore */ }
+
+  // Heartbeat: try to fire every 60s. Service-side cooldown gates the rest.
+  copilotFireTimerId = window.setInterval(() => {
+    if (copilot.enabled.value) void copilot.fire()
+  }, 60_000)
+}
+
+// Watch transcript growth: append the diff to the copilot, trigger a fire
+// when the service signals it's worth firing, OR when the 60s heartbeat ticks.
+watch(transcript, async (next) => {
+  if (!copilot.enabled.value) return
+  const diff = next.slice(lastAppendedLength.value).trim()
+  if (diff.length === 0) return
+  lastAppendedLength.value = next.length
+  const { shouldFire } = await copilot.appendChunk(diff)
+  if (shouldFire && !copilotShouldFireSoon) {
+    copilotShouldFireSoon = true
+    setTimeout(() => {
+      copilotShouldFireSoon = false
+      if (copilot.enabled.value) void copilot.fire()
+    }, 1_000) // 1s coalesce so several rapid appends share one fire
+  }
+})
+
+// ── Coverage gauge (pure-frontend) ────────────────────────────────────────────
+const emittedSections = computed<CahierSection[]>(() =>
+  copilot.cards.value.map((c) => c.section),
+)
+const coverage = computed(() =>
+  computeCoverage(transcript.value, driverFields.value, emittedSections.value),
+)
 
 async function refreshChecklist(): Promise<void> {
   if (checklistLoading.value) return
@@ -553,6 +637,9 @@ async function stopAndSave(): Promise<void> {
       },
     )
     toast.add({ severity: 'success', detail: 'Réunion enregistrée.', life: 3000 })
+    // End the copilot session, linking suggestions to the saved transcript.
+    if (copilotFireTimerId !== null) { window.clearInterval(copilotFireTimerId); copilotFireTimerId = null }
+    void copilot.endSession(data.transcriptId)
     // Best-effort: upload the merged audio so the meeting can be replayed.
     // Don't block the success toast on it — the transcript is the main artefact.
     void uploadArchivedAudio(data.transcriptId)
@@ -596,6 +683,8 @@ onUnmounted(() => {
   if (checklistTimerId.value !== null) window.clearInterval(checklistTimerId.value)
   if (initialChecklistTimeoutId.value !== null) window.clearTimeout(initialChecklistTimeoutId.value)
   if (pendingScheduleId !== null) window.clearTimeout(pendingScheduleId)
+  if (copilotFireTimerId !== null) window.clearInterval(copilotFireTimerId)
+  // The composable's own onBeforeUnmount handles socket teardown.
 })
 </script>
 
@@ -659,7 +748,9 @@ onUnmounted(() => {
 @keyframes lm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 .lm__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 900px) { .lm__grid { grid-template-columns: 1fr; } }
+.lm__grid--with-copilot { grid-template-columns: 1.4fr 1fr 1fr; }
+@media (max-width: 1200px) { .lm__grid--with-copilot { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .lm__grid { grid-template-columns: 1fr; } .lm__grid--with-copilot { grid-template-columns: 1fr; } }
 
 .lm__panel {
   background: var(--nl-surface);
