@@ -129,13 +129,22 @@ export class WorkPackagesService {
   }
 
   /** Cross-project work packages for a specific user (assignee). Used by "Mes tâches". */
-  async findForAssignee(userId: string, filters: { status?: string; q?: string; page?: number; limit?: number } = {}) {
+  async findForAssignee(userId: string, filters: {
+    status?: string;
+    q?: string;
+    projectId?: string;
+    sprintId?: string;
+    page?: number;
+    limit?: number;
+  } = {}) {
     try {
       const page = Math.max(1, filters.page ?? 1);
       const limit = Math.min(200, Math.max(1, filters.limit ?? 100));
       const where: Record<string, unknown> = { assigneeId: userId, isDeleted: false };
       if (filters.status) where.status = filters.status;
       if (filters.q) where.title = { contains: filters.q };
+      if (filters.projectId) where.projectId = filters.projectId;
+      if (filters.sprintId) where.sprintId = filters.sprintId;
 
       const [items, total] = await Promise.all([
         this.prisma.workPackage.findMany({
@@ -144,6 +153,7 @@ export class WorkPackagesService {
             assignee: { select: USER_SELECT },
             author: { select: USER_SELECT },
             project: { select: { id: true, name: true } },
+            sprint: { select: { id: true, name: true, status: true } },
           },
           orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
           skip: (page - 1) * limit,
@@ -155,6 +165,34 @@ export class WorkPackagesService {
     } catch (e) {
       this.logger.error('findForAssignee failed', e);
       return Result.fail<{ items: unknown[]; total: number; page: number; limit: number }>('Échec du chargement des tâches.');
+    }
+  }
+
+  /**
+   * Top-N urgent OPEN tasks (status in {New, InProgress, AwaitingReview}) for
+   * the Member dashboard. Ordering: overdue first, then ascending due date,
+   * then priority desc. Default limit 6.
+   */
+  async findTodayForAssignee(userId: string, limit = 6) {
+    try {
+      const cap = Math.min(20, Math.max(1, limit));
+      const items = await this.prisma.workPackage.findMany({
+        where: {
+          assigneeId: userId,
+          isDeleted: false,
+          status: { in: ['New', 'InProgress', 'AwaitingReview'] },
+        },
+        include: {
+          project: { select: { id: true, name: true } },
+          sprint: { select: { id: true, name: true } },
+        },
+        orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
+        take: cap,
+      });
+      return Result.ok({ items });
+    } catch (e) {
+      this.logger.error('findTodayForAssignee failed', e);
+      return Result.fail<{ items: unknown[] }>('Échec du chargement des tâches du jour.');
     }
   }
 

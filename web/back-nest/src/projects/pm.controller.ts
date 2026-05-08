@@ -118,6 +118,117 @@ export class PmController {
     return (result.value as { items: unknown[] }).items;
   }
 
+  /**
+   * Strict ProjectMember-scoped project list for the Member dashboard.
+   * Returns only projects where the caller has a `ProjectMember` row.
+   * Each item carries the active sprint (if any) + the caller's
+   * in-progress WP count for that project.
+   */
+  @Get('my-projects')
+  async getMyMemberProjects(@CurrentUser() user: JwtUser) {
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId: user.userId },
+      include: {
+        project: {
+          select: {
+            id: true, name: true, clientName: true, status: true,
+            startDate: true, endDate: true, isDeleted: true,
+            boards: {
+              select: {
+                sprints: {
+                  where: { status: 'Active' },
+                  orderBy: { startDate: 'desc' },
+                  take: 1,
+                  select: { id: true, name: true, status: true, startDate: true, endDate: true, goal: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const projects = memberships
+      .map((m) => m.project)
+      .filter((p): p is NonNullable<typeof p> => !!p && !p.isDeleted);
+
+    if (projects.length === 0) return { items: [] };
+
+    const wpCounts = await this.prisma.workPackage.groupBy({
+      by: ['projectId'],
+      where: {
+        assigneeId: user.userId,
+        isDeleted: false,
+        status: 'InProgress',
+        projectId: { in: projects.map((p) => p.id) },
+      },
+      _count: { _all: true },
+    });
+    const inProgressByProject = new Map(wpCounts.map((c) => [c.projectId, c._count._all]));
+
+    return {
+      items: projects.map((p) => {
+        const activeSprint = p.boards?.[0]?.sprints?.[0] ?? null;
+        return {
+          id: p.id,
+          name: p.name,
+          clientName: p.clientName,
+          status: p.status,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          activeSprint,
+          myInProgressCount: inProgressByProject.get(p.id) ?? 0,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Cross-project active + planning sprints where the caller has at least
+   * one assigned WP. Powers the Member dashboard's "Sprint en cours" widget.
+   */
+  @Get('my-sprints')
+  async getMyAssignedSprints(@CurrentUser() user: JwtUser) {
+    const wps = await this.prisma.workPackage.findMany({
+      where: {
+        assigneeId: user.userId,
+        isDeleted: false,
+        sprintId: { not: null },
+      },
+      select: { sprintId: true, projectId: true },
+    });
+    if (wps.length === 0) return { items: [] };
+
+    const sprintIds = Array.from(new Set(wps.map((w) => w.sprintId).filter((x): x is string => !!x)));
+    const sprints = await this.prisma.sprint.findMany({
+      where: { id: { in: sprintIds }, status: { in: ['Active', 'Planning'] } },
+      include: { board: { select: { project: { select: { id: true, name: true } } } } },
+      orderBy: [{ status: 'asc' }, { startDate: 'desc' }],
+    });
+
+    const myTasksBySprint = new Map<string, number>();
+    for (const w of wps) {
+      if (!w.sprintId) continue;
+      myTasksBySprint.set(w.sprintId, (myTasksBySprint.get(w.sprintId) ?? 0) + 1);
+    }
+
+    return {
+      items: sprints.map((s) => ({
+        sprint: {
+          id: s.id,
+          name: s.name,
+          goal: s.goal,
+          status: s.status,
+          startDate: s.startDate,
+          endDate: s.endDate,
+        },
+        projectId: s.board.project.id,
+        projectName: s.board.project.name,
+        myTaskCount: myTasksBySprint.get(s.id) ?? 0,
+      })),
+    };
+  }
+
   /** Users available to be assigned as team responsibles (SpecificationTeam + Member). */
   @Get('projects/:id/assignable-users')
   @ProjectAccess('id')

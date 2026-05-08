@@ -294,7 +294,18 @@ const router = createRouter({
           children: [
             {
               path: '',
-              redirect: { name: 'team-projects' },
+              name: 'team-home',
+              // Member lands on the new dashboard; SpecificationTeam is
+              // redirected to the existing project list as their entrypoint.
+              component: () => import('@/views/team/MemberDashboardView.vue'),
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'SpecificationTeam') {
+                  next({ name: 'team-projects' })
+                } else {
+                  next()
+                }
+              },
             },
             {
               path: 'projects',
@@ -304,9 +315,18 @@ const router = createRouter({
             {
               path: 'projects/:id',
               name: 'team-project-detail',
-              component: () => import('@/views/PMProjectFullView.vue'),
+              component: () => import('@/views/team/MemberProjectRouter.vue'),
               props: (route) => ({ id: route.params.id }),
               meta: { readonly: true },
+            },
+            {
+              path: 'projects/:projectId/sprint/:sprintId',
+              name: 'team-sprint-detail',
+              component: () => import('@/views/team/MemberSprintView.vue'),
+              props: (route) => ({
+                projectId: route.params.projectId,
+                sprintId: route.params.sprintId,
+              }),
             },
             {
               path: 'validations',
@@ -316,7 +336,22 @@ const router = createRouter({
             {
               path: 'my-tasks',
               name: 'team-my-tasks',
-              component: () => import('@/views/MyTasksView.vue'),
+              component: () => import('@/views/team/MemberTasksView.vue'),
+            },
+            {
+              path: 'sprints',
+              name: 'team-sprints',
+              component: () => import('@/views/team/MemberSprintsListView.vue'),
+            },
+            {
+              path: 'inbox',
+              name: 'team-inbox',
+              component: () => import('@/views/team/MemberInboxView.vue'),
+            },
+            {
+              path: 'time',
+              name: 'team-time',
+              component: () => import('@/views/team/MemberTimeView.vue'),
             },
             {
               path: 'pending-reviews',

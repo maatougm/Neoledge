@@ -374,6 +374,11 @@ function canValidatePhase(role: string, phase: string): boolean {
 }
 
 onMounted(() => {
+  // Members get a role-tuned dashboard at /app/team — redirect immediately.
+  if (authStore.userRole === 'Member') {
+    void router.replace('/app/team')
+    return
+  }
   void loadMyTasks()
   void loadPendingValidations()
   void loadMilestones()

@@ -108,7 +108,7 @@ const pmNav: NavSection[] = [
 // NAV_VERSION is bumped any time the nav SHAPE changes — entries cached by
 // older versions never collide with the new layout, so we don't need a
 // `.clear()` call (which would defeat the LRU). Bump on every reorder.
-const NAV_VERSION = 'v2'
+const NAV_VERSION = 'v3'
 const PROJECT_NAV_CACHE_MAX = 50
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
@@ -167,15 +167,31 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
   return sections
 }
 
-const teamNav: NavSection[] = [
+// SpecificationTeam-specific nav — keeps full validation surface.
+const specTeamNav: NavSection[] = [
   { items: [
       { key: 'app-home',             label: 'Accueil',           icon: 'pi-inbox',        to: '/app' },
-      { key: 'team-my-tasks',        label: 'Mes tâches',        icon: 'pi-list',         to: '/app/team/my-tasks'        },
-      { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
-      { key: 'team-validations',     label: 'Validations',       icon: 'pi-check-circle', to: '/app/team/validations'     },
       { key: 'team-pending-reviews', label: 'Cahiers à valider', icon: 'pi-check-square', to: '/app/team/pending-reviews' },
+      { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
+      { key: 'team-validations',     label: 'Mes validations',   icon: 'pi-check-circle', to: '/app/team/validations'     },
+      { key: 'team-my-tasks',        label: 'Mes tâches',        icon: 'pi-list',         to: '/app/team/my-tasks'        },
   ]},
   { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
+]
+
+// Member-specific nav — task-focused, no validation surface.
+const memberNav: NavSection[] = [
+  { items: [
+      { key: 'team-home',     label: 'Aperçu',         icon: 'pi-home',      to: '/app/team' },
+      { key: 'team-my-tasks', label: 'Mes tâches',     icon: 'pi-list',      to: '/app/team/my-tasks' },
+      { key: 'team-sprints',  label: 'Sprints actifs', icon: 'pi-forward',   to: '/app/team/sprints' },
+      { key: 'team-projects', label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/team/projects' },
+  ]},
+  { heading: 'Mon espace', items: [
+      { key: 'team-time',  label: 'Mon temps',     icon: 'pi-clock', to: '/app/team/time' },
+      { key: 'team-inbox', label: 'Notifications', icon: 'pi-bell',  to: '/app/team/inbox' },
+      { key: 'profile',    label: 'Mon profil',    icon: 'pi-user',  to: '/app/profile' },
+  ]},
 ]
 
 // Compute the nav for a given path — imperative helper, not a computed.
@@ -183,9 +199,10 @@ function computeNavForRoute(path: string, params: Record<string, string | string
   const isProjectRoute = path.startsWith('/app/pm/projects/')
   const projectId = isProjectRoute && typeof params.id === 'string' && params.id ? params.id : null
   if (projectId) return buildProjectModuleNav(projectId)
-  if (authStore.userRole === 'Admin')          return adminNav
-  if (authStore.userRole === 'ProjectManager') return pmNav
-  return teamNav
+  if (authStore.userRole === 'Admin')             return adminNav
+  if (authStore.userRole === 'ProjectManager')    return pmNav
+  if (authStore.userRole === 'SpecificationTeam') return specTeamNav
+  return memberNav
 }
 
 // Use a ref (not a computed) updated via router.afterEach — nav changes AFTER

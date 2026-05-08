@@ -20,14 +20,30 @@ export class MyTasksController {
     @CurrentUser() user: AuthUser,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('projectId') projectId?: string,
+    @Query('sprintId') sprintId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     const r = await this.service.findForAssignee(user.userId, {
-      status, q,
+      status, q, projectId, sprintId,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
+  }
+
+  /** Top-N urgent open tasks for the Member dashboard's "À faire aujourd'hui" widget. */
+  @Get('today')
+  async myTasksToday(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit?: string,
+  ) {
+    const r = await this.service.findTodayForAssignee(
+      user.userId,
+      limit ? parseInt(limit, 10) : 6,
+    );
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
