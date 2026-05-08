@@ -145,10 +145,14 @@ export class LiveCopilotService {
     state.lastFiredAtMs = Date.now()
     state.lastFiredAtOffset = state.totalCharsAppended
 
-    // Multi-emit terminal: emit_suggestions + update_meeting_summary
+    // Single-emit terminal: emit_suggestions. The summary is updated via a
+    // regular (non-terminal) tool the agent can call mid-loop — keeping a
+    // single terminal emit lets the runner force tool_choice on the final
+    // iteration, which is more reliable than relying on the model to call
+    // multiple emits in the right order.
     const emitSuggestions: ToolDefinition<{ cards: AgentCard[] }, { cards: AgentCard[] }> = {
       name: 'emit_suggestions',
-      description: `Emit 0..${COPILOT_LIMITS.MAX_CARDS_PER_FIRE} new question cards for the PM. Empty array is allowed and preferred over filler. NEVER duplicate a question already returned by read_already_emitted_suggestions or read_dismissed_suggestions.`,
+      description: `Final tool. Call this exactly once with 0..${COPILOT_LIMITS.MAX_CARDS_PER_FIRE} new question cards. Empty array is allowed and preferred over filler. After this call, the loop ends.`,
       parameters: obj(
         {
           cards: arr(
@@ -169,14 +173,20 @@ export class LiveCopilotService {
       handler: async () => ({ cards: [] }),
     }
 
-    const updateSummary: ToolDefinition<{ summary: string }, { summary: string }> = {
-      name: 'update_meeting_summary',
-      description: 'Update the rolling summary so the next fire has memory of what has been covered. <= 600 chars. Required every fire.',
+    // Regular tool — agent can optionally call it BEFORE emit_suggestions to
+    // record a rolling summary. Side-effect persists `state.summary` so the
+    // next fire has memory.
+    const writeSummary: ToolDefinition<{ summary: string }, { ok: boolean }> = {
+      name: 'write_session_summary',
+      description: 'Persist a short rolling summary (<=600 chars) of what has been covered so far. Optional but recommended before emit_suggestions so the next fire has memory.',
       parameters: obj(
         { summary: str({ description: 'Rolling summary, <= 600 chars, French', maxLength: 600 }) },
         { required: ['summary'] },
       ),
-      handler: async () => ({ summary: '' }),
+      handler: async (args) => {
+        this.updateSummary(state.liveSessionId, args.summary)
+        return { ok: true }
+      },
     }
 
     const tools = [
@@ -185,38 +195,31 @@ export class LiveCopilotService {
       readValidatedCahierTool,
       readGlossaryTool,
       ...buildCopilotTools(state, this),
+      writeSummary,
     ]
 
     try {
-      const result = await this.agentRunner.run<{ cards: AgentCard[]; summary: string }>({
+      const result = await this.agentRunner.run<{ cards: AgentCard[] }>({
         systemPrompt: LIVE_COPILOT_SYSTEM_PROMPT,
         userMessage:
-          'Une nouvelle portion de transcription est disponible. Lis-la (read_live_transcript_window) puis appelle IMPÉRATIVEMENT emit_suggestions et update_meeting_summary pour terminer cet appel. Tableau cards vide accepté si rien à proposer.',
+          'Une nouvelle portion de transcription est disponible. Lis-la (read_live_transcript_window) puis appelle emit_suggestions pour terminer cet appel. Tableau cards vide accepté si rien à proposer. Tu peux aussi appeler write_session_summary avant emit_suggestions.',
         tools,
-        emitTools: [emitSuggestions, updateSummary],
+        emitTools: [emitSuggestions],
         maxIterations: 6,
         loopTimeoutMs: COPILOT_LIMITS.AGENT_LOOP_TIMEOUT_MS,
         feature: 'meeting-analysis',
         projectId: state.projectId,
-        combineEmits: (calls) => {
-          const sugCall = calls.find((c) => c.name === 'emit_suggestions')
-          const sumCall = calls.find((c) => c.name === 'update_meeting_summary')
-          const cards = ((sugCall?.args as { cards?: unknown[] } | undefined)?.cards ?? [])
-            .filter((c): c is AgentCard => isValidAgentCard(c))
-          const summary = (sumCall?.args as { summary?: string } | undefined)?.summary ?? state.summary
-          return { cards, summary }
-        },
       })
 
-      // Persist + tally token spend.
-      const persisted = await this.persistCards(state, result.output.cards)
-      this.updateSummary(liveSessionId, result.output.summary)
-      // Cumulative token spend tracked from the AgentRunnerService telemetry.
-      // (We don't get exact prompt tokens back from the runner today; estimate
-      // from iteration count × ~1500 prompt tokens per round-trip.)
+      // result.output is the args of emit_suggestions (single-emit mode).
+      const cards = (result.output.cards ?? []).filter(isValidAgentCard)
+
+      // Persist + tally token spend. write_session_summary already mutated
+      // state.summary directly via its handler if the agent called it.
+      const persisted = await this.persistCards(state, cards)
       this.addTokenSpend(liveSessionId, result.iterations * 1_500)
 
-      return Result.ok({ cards: persisted, summary: result.output.summary })
+      return Result.ok({ cards: persisted, summary: state.summary })
     } catch (e) {
       if (e instanceof AgentEmitMissedError) {
         this.logger.warn(`Copilot agent missed emit on ${liveSessionId}: ${e.message}`)
