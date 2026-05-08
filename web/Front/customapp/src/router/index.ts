@@ -332,6 +332,12 @@ const router = createRouter({
               path: 'validations',
               name: 'team-validations',
               component: () => import('@/views/TeamMemberView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
+              },
             },
             {
               path: 'my-tasks',
@@ -357,6 +363,12 @@ const router = createRouter({
               path: 'pending-reviews',
               name: 'team-pending-reviews',
               component: () => import('@/views/SpecPendingReviewsView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
+              },
             },
           ],
         },

@@ -229,7 +229,9 @@ const unreadCount = computed<number>(() => notifStore.notifications.filter((n: {
 
 const showValidations = computed<boolean>(() => {
   const r = authStore.userRole
-  return r === 'Admin' || r === 'SpecificationTeam' || r === 'Member'
+  // Member never validates anything — they were incorrectly seeing this
+  // section before. Validation is for SpecificationTeam (and Admin oversight).
+  return r === 'Admin' || r === 'SpecificationTeam'
 })
 
 const stats = computed(() => {
