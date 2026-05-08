@@ -6,7 +6,7 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
-import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto } from './dto/work-package.dto.js';
+import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto, SuggestAssignmentsDto } from './dto/work-package.dto.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -197,6 +197,23 @@ export class WorkPackagesController {
     @CurrentUser() user: AuthUser,
   ) {
     const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId, dto.sprintId);
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
+  }
+
+  /**
+   * AI-assisted assignment suggestions. PMs select a sprint + N tasks
+   * in the UI, then call this endpoint to get ranked assignee proposals
+   * per task with rationale. The PM still confirms via the regular
+   * bulk-assign endpoint — this is decision-aid only.
+   */
+  @Post('suggest-assignments')
+  @Roles('Admin', 'ProjectManager')
+  async suggestAssignments(
+    @Param('projectId') projectId: string,
+    @Body() dto: SuggestAssignmentsDto,
+  ) {
+    const r = await this.service.suggestAssignments(projectId, dto.wpIds);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

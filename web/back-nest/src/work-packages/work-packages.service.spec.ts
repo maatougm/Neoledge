@@ -49,7 +49,8 @@ describe('WorkPackagesService', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (prisma as any).projectActivity = projectActivity;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc = new WorkPackagesService(prisma as any, notifications as any, analyticsCache as any);
+    const agentRunner = { run: jest.fn(async () => ({ output: { items: [] }, iterations: 0, toolCallsLog: [], provider: 'zai', model: 'glm-4.5-air' })) };
+    svc = new WorkPackagesService(prisma as any, notifications as any, analyticsCache as any, agentRunner as any);
   });
 
   it('rejects empty title', async () => {

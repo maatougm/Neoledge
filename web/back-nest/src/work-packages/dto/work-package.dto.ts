@@ -84,3 +84,10 @@ export class BulkAssignDto {
    */
   @IsOptional() @IsString() sprintId?: string;
 }
+
+export class SuggestAssignmentsDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  wpIds!: string[];
+}

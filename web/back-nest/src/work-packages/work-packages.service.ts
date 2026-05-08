@@ -4,6 +4,8 @@ import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
+import { AgentRunnerService } from '../ai/agent/agent-runner.service.js';
+import { runAssignmentAgent, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
 
 export interface WorkPackageFilters {
   status?: string;
@@ -28,6 +30,7 @@ export class WorkPackagesService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
 
   /** Log an entry to ProjectActivity. Fire-and-forget. */
@@ -711,5 +714,28 @@ export class WorkPackagesService {
     }
 
     return Result.ok({ updated });
+  }
+
+  /**
+   * Run the AI-assisted assignment agent for a list of candidate WPs.
+   * The agent reads members + workload + history and emits per-WP
+   * suggestions (advisory; PM still confirms via bulk-assign).
+   */
+  async suggestAssignments(
+    projectId: string,
+    wpIds: string[],
+  ): Promise<Result<{ items: AssignmentSuggestionForWp[] }>> {
+    if (!wpIds || wpIds.length === 0) {
+      return Result.ok({ items: [] });
+    }
+    // Trim to 50 — controller DTO already enforces, but be safe.
+    const candidate = wpIds.slice(0, 50);
+    try {
+      const items = await runAssignmentAgent(this.agentRunner, this.logger, projectId, candidate);
+      return Result.ok({ items });
+    } catch (e) {
+      this.logger.warn(`suggestAssignments failed: ${e instanceof Error ? e.message : String(e)}`);
+      return Result.fail<{ items: AssignmentSuggestionForWp[] }>('Suggestions IA indisponibles, réessayez.');
+    }
   }
 }
