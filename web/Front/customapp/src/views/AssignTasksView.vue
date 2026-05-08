@@ -40,6 +40,15 @@
           :disabled="!canAssign"
           @click="onAssign"
         />
+        <NeoButton
+          label="Suggestions IA"
+          icon="pi pi-sparkles"
+          severity="secondary"
+          outlined
+          :loading="suggesting"
+          :disabled="selectedIds.size === 0 || suggesting"
+          @click="onRequestSuggestions"
+        />
       </div>
 
       <!-- Filters -->
@@ -114,6 +123,65 @@
         </table>
       </div>
     </div>
+
+    <!-- AI suggestions modal -->
+    <AppModal
+      v-model:visible="showSuggestionsModal"
+      header="Suggestions d'affectation par l'IA"
+      width="720px"
+    >
+      <p class="at__sugg-help">
+        L'IA propose un membre pour chaque tâche sélectionnée en se basant sur les compétences,
+        la charge de travail actuelle et l'historique du projet. Tu peux appliquer chaque suggestion
+        individuellement ou tout valider d'un seul coup.
+      </p>
+      <div v-if="suggestions.length === 0" class="at__sugg-empty">
+        <i class="pi pi-info-circle" />
+        <span>Aucune suggestion disponible pour les tâches sélectionnées.</span>
+      </div>
+      <ul v-else class="at__sugg-list">
+        <li v-for="entry in suggestions" :key="entry.wpId" class="at__sugg-row">
+          <div class="at__sugg-task">
+            <span class="at__sugg-task-title">{{ entry.taskTitle }}</span>
+            <span class="at__sugg-task-type">{{ entry.taskType }}</span>
+          </div>
+          <div class="at__sugg-pick">
+            <div v-if="entry.suggestions.length === 0" class="at__sugg-none">Aucune suggestion</div>
+            <button
+              v-for="s in entry.suggestions"
+              :key="s.userId"
+              type="button"
+              class="at__sugg-chip"
+              :class="{
+                'at__sugg-chip--applied': appliedAssignments[entry.wpId] === s.userId,
+                'at__sugg-chip--high': s.confidence >= 0.85,
+                'at__sugg-chip--med':  s.confidence >= 0.7 && s.confidence < 0.85,
+              }"
+              @click="applyOne(entry.wpId, s.userId)"
+            >
+              <span class="at__sugg-name">{{ memberName(s.userId) }}</span>
+              <span class="at__sugg-conf">{{ Math.round(s.confidence * 100) }}%</span>
+              <span class="at__sugg-rationale">{{ s.rationale }}</span>
+            </button>
+          </div>
+        </li>
+      </ul>
+      <template #footer>
+        <NeoButton
+          label="Fermer"
+          severity="secondary"
+          outlined
+          @click="showSuggestionsModal = false"
+        />
+        <NeoButton
+          label="Appliquer toutes les suggestions"
+          icon="pi pi-check"
+          :loading="applyingAll"
+          :disabled="suggestions.length === 0 || applyingAll"
+          @click="applyAllAndAssign"
+        />
+      </template>
+    </AppModal>
   </ProjectModuleShell>
 </template>
 
@@ -122,6 +190,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { NeoButton, NeoTag, NeoSelect, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
 import { useAgileStore } from '@/stores/agileStore'
 import api, { extractErrorMessage } from '@/lib/api'
@@ -158,6 +227,20 @@ const targetMemberId = ref<string | null>(null)
 const showOnlyUnassigned = ref(false)
 const loading = ref(false)
 const saving = ref(false)
+
+// ─── AI assignment suggestions ───────────────────────────────────────────────
+interface SuggestionItem { userId: string; confidence: number; rationale: string }
+interface SuggestionEntry {
+  wpId: string
+  taskTitle: string
+  taskType: string
+  suggestions: SuggestionItem[]
+}
+const suggesting = ref(false)
+const showSuggestionsModal = ref(false)
+const suggestions = ref<SuggestionEntry[]>([])
+const appliedAssignments = reactive<Record<string, string>>({})
+const applyingAll = ref(false)
 
 const sprintOptions = computed(() => {
   const opts: Array<{ label: string; value: string }> = [
@@ -362,6 +445,110 @@ onBeforeUnmount(() => {
     window.removeEventListener('beforeunload', handleBeforeUnload)
   }
 })
+
+// ─── AI suggestions handlers ─────────────────────────────────────────────────
+
+function memberName(userId: string): string {
+  const m = members.value.find((x) => x.userId === userId)
+  return m ? `${m.user.firstName} ${m.user.lastName}` : 'Inconnu'
+}
+
+async function onRequestSuggestions(): Promise<void> {
+  const wpIds = Array.from(selectedIds)
+  if (wpIds.length === 0) return
+  suggesting.value = true
+  // Reset previous run.
+  for (const k of Object.keys(appliedAssignments)) delete appliedAssignments[k]
+  suggestions.value = []
+  try {
+    const { data } = await api.post<{ items: Array<{ wpId: string; suggestions: SuggestionItem[] }> }>(
+      `/pm/projects/${props.id}/work-packages/suggest-assignments`,
+      { wpIds },
+    )
+    // Decorate with task title/type from local cache so the modal renders cleanly.
+    const byId = new Map(allTasks.value.map((t) => [t.id, t]))
+    suggestions.value = (data.items ?? [])
+      .map((it) => {
+        const task = byId.get(it.wpId)
+        return {
+          wpId: it.wpId,
+          taskTitle: task?.title ?? '(tâche inconnue)',
+          taskType: task?.type ?? '',
+          suggestions: it.suggestions ?? [],
+        }
+      })
+      .filter((it) => byId.has(it.wpId))
+    if (suggestions.value.length === 0) {
+      toast.add({ severity: 'info', detail: 'Aucune suggestion produite.', life: 3000 })
+    }
+    showSuggestionsModal.value = true
+  } catch (err: unknown) {
+    toast.add({
+      severity: 'error',
+      detail: extractErrorMessage(err) ?? 'Suggestions IA indisponibles.',
+      life: 4000,
+    })
+  } finally {
+    suggesting.value = false
+  }
+}
+
+function applyOne(wpId: string, userId: string): void {
+  if (appliedAssignments[wpId] === userId) {
+    delete appliedAssignments[wpId]
+  } else {
+    appliedAssignments[wpId] = userId
+  }
+}
+
+async function applyAllAndAssign(): Promise<void> {
+  // Auto-pick the top suggestion for any WP without an explicit choice.
+  for (const entry of suggestions.value) {
+    if (appliedAssignments[entry.wpId]) continue
+    const top = entry.suggestions[0]
+    if (top) appliedAssignments[entry.wpId] = top.userId
+  }
+
+  const assignments = Object.entries(appliedAssignments).map(([wpId, userId]) => ({ wpId, assigneeId: userId }))
+  if (assignments.length === 0) {
+    toast.add({ severity: 'info', detail: 'Sélectionne au moins une suggestion.', life: 3000 })
+    return
+  }
+
+  applyingAll.value = true
+  try {
+    const sprintIdForCall = sprintFilter.value === NO_SPRINT ? undefined : sprintFilter.value ?? undefined
+    const { data } = await api.post<{ updated: number }>(
+      `/pm/projects/${props.id}/work-packages/bulk-assign`,
+      {
+        assignments,
+        ...(sprintIdForCall ? { sprintId: sprintIdForCall } : {}),
+      },
+    )
+    toast.add({
+      severity: 'success',
+      detail: `${data.updated} tâche(s) assignée(s) via les suggestions IA.`,
+      life: 4000,
+    })
+    // Reflect locally (same pattern as bulk onAssign).
+    for (const t of allTasks.value) {
+      const newAssignee = appliedAssignments[t.id]
+      if (newAssignee) t.assigneeId = newAssignee
+    }
+    selectedIds.clear()
+    showSuggestionsModal.value = false
+    suggestions.value = []
+    for (const k of Object.keys(appliedAssignments)) delete appliedAssignments[k]
+  } catch (err: unknown) {
+    toast.add({
+      severity: 'error',
+      detail: extractErrorMessage(err) ?? "Échec de l'application des suggestions.",
+      life: 4000,
+    })
+  } finally {
+    applyingAll.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -458,5 +645,73 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 1rem;
   color: var(--nl-text-muted, #6b7280);
+}
+
+/* AI suggestions modal */
+.at__sugg-help {
+  margin: 0 0 1rem 0;
+  font-size: 0.8125rem;
+  color: var(--nl-text-2);
+  line-height: 1.4;
+}
+.at__sugg-empty {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 1rem;
+  border: 1px dashed var(--nl-border);
+  border-radius: 6px;
+  color: var(--nl-text-3);
+  font-size: 0.8125rem;
+}
+.at__sugg-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.6rem;
+  max-height: 60vh; overflow-y: auto;
+}
+.at__sugg-row {
+  display: grid; grid-template-columns: 200px 1fr; gap: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid var(--nl-border);
+  border-radius: 6px;
+  background: var(--nl-card-bg, #fff);
+}
+.at__sugg-task { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.at__sugg-task-title {
+  font-weight: 600; font-size: 0.8125rem; color: var(--nl-text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.at__sugg-task-type {
+  font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--nl-text-3);
+}
+.at__sugg-pick { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.at__sugg-none { font-size: 0.75rem; color: var(--nl-text-3); font-style: italic; padding: 0.4rem 0; }
+.at__sugg-chip {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.85rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--nl-border);
+  border-radius: 6px;
+  background: var(--nl-surface-2, #fafafa);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.at__sugg-chip:hover { border-color: var(--nl-accent); }
+.at__sugg-chip--applied { background: var(--nl-accent-light, #ecfdf5); border-color: var(--nl-accent); }
+.at__sugg-chip--high   { border-left: 3px solid var(--nl-success, #059669); }
+.at__sugg-chip--med    { border-left: 3px solid var(--nl-warn, #d97706); }
+.at__sugg-name { font-weight: 600; font-size: 0.8125rem; color: var(--nl-text-1); }
+.at__sugg-conf {
+  font-weight: 700; font-size: 0.75rem;
+  color: var(--nl-text-2);
+  background: var(--nl-card-bg, #fff);
+  padding: 0.1rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--nl-border);
+}
+.at__sugg-rationale {
+  grid-column: 1 / -1;
+  font-size: 0.75rem; color: var(--nl-text-3);
+  line-height: 1.35;
 }
 </style>
