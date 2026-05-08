@@ -191,7 +191,7 @@ export class LiveCopilotService {
       const result = await this.agentRunner.run<{ cards: AgentCard[]; summary: string }>({
         systemPrompt: LIVE_COPILOT_SYSTEM_PROMPT,
         userMessage:
-          'Une nouvelle portion de transcription est disponible. Décide s\'il y a des questions à proposer maintenant.',
+          'Une nouvelle portion de transcription est disponible. Lis-la (read_live_transcript_window) puis appelle IMPÉRATIVEMENT emit_suggestions et update_meeting_summary pour terminer cet appel. Tableau cards vide accepté si rien à proposer.',
         tools,
         emitTools: [emitSuggestions, updateSummary],
         maxIterations: 6,
