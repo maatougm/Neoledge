@@ -195,7 +195,7 @@ const URGENCY_LABEL: Record<SuggestionUrgency, string> = {
 function urgencyLabel(u: SuggestionUrgency): string { return URGENCY_LABEL[u] }
 
 const SKIP_REASON_LABEL: Record<FireSkipReason, string> = {
-  cooldown: 'Le copilote vient de parler — il attend la suite.',
+  cooldown: 'Le copilote écoute — analyse à venir dans quelques secondes.',
   cap_reached: 'Limite de la réunion atteinte.',
   budget: 'Budget IA quotidien atteint.',
   min_content: 'Pas assez de nouveau contenu pour analyser.',
