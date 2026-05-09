@@ -24,7 +24,7 @@ import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { getJwtSecret } from '../auth/jwt-secret.js'
-import type { SuggestionCard } from './live-copilot.types.js'
+import type { SuggestionCard, CahierSection } from './live-copilot.types.js'
 
 const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
   .split(',')
@@ -144,6 +144,12 @@ export class LiveCopilotGateway implements OnGatewayConnection, OnGatewayDisconn
   /** Push a "fire skipped" notice (cooldown / cap / budget) so the UI can show why nothing arrived. */
   emitFireSkipped(projectId: string, liveSessionId: string, reason: string): void {
     this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:fire-skipped', { reason })
+  }
+
+  /** Push the agent's cumulative coverage tagging so the gauge can replace
+   *  the keyword baseline with an LLM-classified signal. */
+  emitCoverage(projectId: string, liveSessionId: string, sections: CahierSection[]): void {
+    this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:coverage', { sections })
   }
 
   /** Push a status update (sub-tab like "thinking…", "summary updated") if needed. */

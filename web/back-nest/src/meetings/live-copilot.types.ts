@@ -67,6 +67,9 @@ export interface SuggestionCard {
 export interface LiveCopilotFireResult {
   cards: SuggestionCard[]
   summary: string
+  /** Sections the agent flagged as covered during this fire (union of
+   *  per-session agent-tagged coverage so far). */
+  coveredSections?: CahierSection[]
   /** True when the fire was skipped (cap reached, cooldown, min-content, ...) */
   skipped?: boolean
   /** When skipped, why. */
@@ -79,6 +82,10 @@ export interface LiveSessionState {
   projectId: string
   userId: string
   meetingType: MeetingType
+  /** Set of cahier sections the agent has explicitly flagged as covered
+   *  during this session (via the `tag_coverage` tool). The frontend
+   *  unions this with its keyword baseline + emitted-suggestion sections. */
+  agentTaggedCoverage: Set<CahierSection>
   /** Append-only ring buffer of transcript text (capped at 8000 chars). */
   transcriptBuffer: string
   /** Total chars ever appended (used to compute "new since last fire"). */

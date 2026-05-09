@@ -125,6 +125,9 @@ export class LiveCopilotController {
         if (value.cards.length > 0) {
           this.gateway.emitSuggestions(projectId, dto.liveSessionId, value.cards)
         }
+        if (value.coveredSections && value.coveredSections.length > 0) {
+          this.gateway.emitCoverage(projectId, dto.liveSessionId, value.coveredSections)
+        }
       })
       .catch(() => {
         this.gateway.emitFireSkipped(projectId, dto.liveSessionId, 'provider')

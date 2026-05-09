@@ -46,6 +46,9 @@ export function useLiveCopilot(projectId: string) {
   const connected = ref(false)
   const enabled = ref(false) // false until startSession returns 201
   const liveSessionId = ref<string | null>(null)
+  /** Agent-tagged covered sections — accumulated across fires. The
+   *  frontend coverage engine unions this with its keyword baseline. */
+  const agentCoverage = ref<CahierSection[]>([])
 
   let socket: Socket | null = null
 
@@ -158,6 +161,7 @@ export function useLiveCopilot(projectId: string) {
     _disconnectSocket()
     liveSessionId.value = null
     enabled.value = false
+    agentCoverage.value = []
   }
 
   // ─── Socket plumbing ───────────────────────────────────────────────────────
@@ -201,6 +205,18 @@ export function useLiveCopilot(projectId: string) {
         lastSkipReason.value = (payload as { reason: FireSkipReason }).reason
       }
     })
+
+    socket.on('copilot:coverage', (payload: unknown) => {
+      if (!payload || typeof payload !== 'object' || !('sections' in payload)) return
+      const sections = (payload as { sections: unknown }).sections
+      if (!Array.isArray(sections)) return
+      // Union with existing.
+      const next = new Set<CahierSection>(agentCoverage.value)
+      for (const s of sections) {
+        if (typeof s === 'string') next.add(s as CahierSection)
+      }
+      agentCoverage.value = Array.from(next)
+    })
   }
 
   function _disconnectSocket(): void {
@@ -223,6 +239,7 @@ export function useLiveCopilot(projectId: string) {
     connected,
     lastSkipReason,
     liveSessionId,
+    agentCoverage,
     startSession,
     appendChunk,
     fire,

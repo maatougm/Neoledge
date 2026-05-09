@@ -599,12 +599,20 @@ watch(transcript, async (next) => {
   }
 })
 
-// ── Coverage gauge (pure-frontend) ────────────────────────────────────────────
-const emittedSections = computed<CahierSection[]>(() =>
-  copilot.cards.value.map((c) => c.section),
-)
+// ── Coverage gauge ───────────────────────────────────────────────────────────
+// Three signals fed to the coverage engine:
+//   1. Frontend keyword baseline (computed inside computeCoverage from transcript).
+//   2. Sections of every emitted suggestion card (the agent already mentioned them).
+//   3. Sections the agent EXPLICITLY tagged via tag_coverage (LLM-classified
+//      replacement for the keyword baseline — strongest signal).
+const aggregatedSections = computed<CahierSection[]>(() => {
+  const set = new Set<CahierSection>()
+  for (const c of copilot.cards.value) set.add(c.section)
+  for (const s of copilot.agentCoverage.value) set.add(s)
+  return Array.from(set)
+})
 const coverage = computed(() =>
-  computeCoverage(transcript.value, driverFields.value, emittedSections.value),
+  computeCoverage(transcript.value, driverFields.value, aggregatedSections.value),
 )
 
 async function refreshChecklist(): Promise<void> {

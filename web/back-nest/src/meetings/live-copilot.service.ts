@@ -71,6 +71,7 @@ export class LiveCopilotService {
       projectId,
       userId,
       meetingType: safeType,
+      agentTaggedCoverage: new Set<CahierSection>(),
       transcriptBuffer: '',
       totalCharsAppended: 0,
       lastFiredAtOffset: 0,
@@ -202,6 +203,33 @@ export class LiveCopilotService {
       },
     }
 
+    // Coverage tagging tool — the agent flags which cahier sections have
+    // been substantively discussed in this fire's transcript window. Used
+    // by the frontend coverage gauge to upgrade the keyword baseline with
+    // an LLM-classified signal at zero extra cost (one tool call per fire).
+    const tagCoverage: ToolDefinition<{ sections: CahierSection[] }, { ok: boolean }> = {
+      name: 'tag_coverage',
+      description: 'Flag the cahier sections that were SUBSTANTIVELY discussed (more than a passing mention) in the latest transcript window. Optional but recommended once per fire — feeds the live coverage gauge so the PM sees progress.',
+      parameters: obj(
+        {
+          sections: arr(
+            str({
+              enum: [...VALID_CAHIER_SECTIONS],
+              description: 'A cahier section discussed in this window.',
+            }),
+            { description: '0..3 sections, no duplicates.', maxItems: 4 },
+          ),
+        },
+        { required: ['sections'] },
+      ),
+      handler: async (args) => {
+        for (const s of args.sections ?? []) {
+          if (VALID_CAHIER_SECTIONS.includes(s)) state.agentTaggedCoverage.add(s)
+        }
+        return { ok: true }
+      },
+    }
+
     const tools = [
       readProjectSummaryTool,
       readQuestionnaireTool,
@@ -209,6 +237,7 @@ export class LiveCopilotService {
       readGlossaryTool,
       ...buildCopilotTools(state, this),
       writeSummary,
+      tagCoverage,
     ]
 
     try {
@@ -227,12 +256,16 @@ export class LiveCopilotService {
       // result.output is the args of emit_suggestions (single-emit mode).
       const cards = (result.output.cards ?? []).filter(isValidAgentCard)
 
-      // Persist + tally token spend. write_session_summary already mutated
-      // state.summary directly via its handler if the agent called it.
+      // Persist + tally token spend. write_session_summary and tag_coverage
+      // already mutated state directly via their handlers if the agent called them.
       const persisted = await this.persistCards(state, cards)
       this.addTokenSpend(liveSessionId, result.iterations * 1_500)
 
-      return Result.ok({ cards: persisted, summary: state.summary })
+      return Result.ok({
+        cards: persisted,
+        summary: state.summary,
+        coveredSections: Array.from(state.agentTaggedCoverage),
+      })
     } catch (e) {
       if (e instanceof AgentEmitMissedError) {
         this.logger.warn(`Copilot agent missed emit on ${liveSessionId}: ${e.message}`)
