@@ -49,6 +49,7 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoMessage } from '@neolibrary/components'
 import { useNotificationStore } from '@/stores/notificationStore'
+import type { Notification } from '@/types/notification.types'
 
 const router = useRouter()
 const store = useNotificationStore()
@@ -56,10 +57,9 @@ const store = useNotificationStore()
 const filtered = computed(() => store.notifications ?? [])
 const hasUnread = computed(() => filtered.value.some((n) => !n.isRead))
 
-async function onOpen(n: { id: string; isRead: boolean }): Promise<void> {
+async function onOpen(n: Notification): Promise<void> {
   if (!n.isRead) await store.markAsRead(n.id)
-  const link = (n as unknown as { link?: string | null }).link
-  if (typeof link === 'string' && link.length > 0) void router.push(link)
+  if (typeof n.link === 'string' && n.link.startsWith('/')) void router.push(n.link)
 }
 
 async function markAllRead(): Promise<void> { await store.markAllAsRead() }

@@ -130,6 +130,7 @@ import TaskCard from '@/components/team/TaskCard.vue'
 import SprintWidget from '@/components/team/SprintWidget.vue'
 import MemberProjectCard from '@/components/team/MemberProjectCard.vue'
 import type { MemberTaskCard } from '@/stores/memberDashboardStore'
+import type { Notification } from '@/types/notification.types'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -190,9 +191,8 @@ async function onTransition(task: MemberTaskCard, newStatus: string): Promise<vo
 }
 
 function goToTime(): void { void router.push('/app/team/time') }
-function openNotification(n: unknown): void {
-  const link = (n as { link?: string | null }).link
-  if (typeof link === 'string' && link.length > 0) void router.push(link)
+function openNotification(n: Notification): void {
+  if (typeof n.link === 'string' && n.link.startsWith('/')) void router.push(n.link)
   else void router.push('/app/team/inbox')
 }
 

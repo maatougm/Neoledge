@@ -118,7 +118,18 @@ function handleItemClick(id: string, isRead: boolean): void {
   }
 
   const notif = notifStore.notifications.find(n => n.id === id)
-  if (notif?.projectId) {
+  if (!notif) return
+
+  // Prefer the explicit deep-link the producer set (e.g. wp_bulk_assigned →
+  // /app/team/my-tasks?projectId=…&sprintId=…). Only accept internal paths
+  // to prevent open-redirect via crafted notifications.
+  if (typeof notif.link === 'string' && notif.link.startsWith('/')) {
+    close()
+    router.push(notif.link)
+    return
+  }
+
+  if (notif.projectId) {
     close()
     const role = authStore.userRole
     if (role === 'Admin') {

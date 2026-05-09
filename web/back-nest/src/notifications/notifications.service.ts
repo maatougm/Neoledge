@@ -49,6 +49,38 @@ export class NotificationsService {
   }
 
   /**
+   * Verify the target user is allowed to receive a project-scoped notification.
+   * Membership = PM, ProjectMember row, or global Admin role.
+   *
+   * Fail-closed: if the check itself errors (DB blip, etc.) we return false so
+   * the caller drops the notification rather than risk persisting a cross-
+   * project leak. The notification is recoverable — the producer log line lets
+   * ops detect it and the user will see it on the next legitimate event.
+   */
+  private async assertProjectMember(userId: string, projectId: string): Promise<boolean> {
+    try {
+      const [asPm, asProjectMember, dbUser] = await Promise.all([
+        this.prisma.project.findFirst({
+          where: { id: projectId, isDeleted: false, projectManagerId: userId },
+          select: { id: true },
+        }),
+        this.prisma.projectMember.findFirst({
+          where: { projectId, userId },
+          select: { id: true },
+        }),
+        this.prisma.appUser.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        }),
+      ]);
+      return Boolean(asPm) || Boolean(asProjectMember) || dbUser?.role === 'Admin';
+    } catch (e) {
+      this.logger.error(`assertProjectMember: check failed for user=${userId} project=${projectId}`, e);
+      return false;
+    }
+  }
+
+  /**
    * Helper for internal use by other services — fire-and-forget style.
    * Creates the in-app notification, then attempts to send an email if the
    * user has `emailNotifications` enabled (default: true when key is absent).
@@ -69,30 +101,12 @@ export class NotificationsService {
     if (actorId && actorId === userId) return;
 
     // Scope check: when a projectId is provided, verify the target user is
-    // a member (PM, Admin, or in ProjectMember).
+    // a member (PM, Admin, or in ProjectMember). Fail-closed on errors.
     if (projectId) {
-      try {
-        const [asPm, asProjectMember, dbUser] = await Promise.all([
-          this.prisma.project.findFirst({
-            where: { id: projectId, isDeleted: false, projectManagerId: userId },
-            select: { id: true },
-          }),
-          this.prisma.projectMember.findFirst({
-            where: { projectId, userId },
-            select: { id: true },
-          }),
-          this.prisma.appUser.findUnique({
-            where: { id: userId },
-            select: { role: true },
-          }),
-        ]);
-        if (!asPm && !asProjectMember && dbUser?.role !== 'Admin') {
-          this.logger.warn(`notify: user ${userId} is not a member of project ${projectId} — skipping`);
-          return;
-        }
-      } catch (e) {
-        this.logger.error('notify: project member check failed', e);
-        // Fail open: if the check itself errors, proceed rather than drop the notification.
+      const allowed = await this.assertProjectMember(userId, projectId);
+      if (!allowed) {
+        this.logger.warn(`notify: user ${userId} not a member of project ${projectId} — skipping`);
+        return;
       }
     }
 
@@ -147,8 +161,15 @@ export class NotificationsService {
     title: string;
     message: string;
     projectId?: string | null;
-    reason?: 'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange' | 'Comment' | 'System';
-    entityType?: 'work_package' | 'project' | 'meeting' | 'comment' | 'version' | null;
+    /** Why the notification was generated. Reserved values include
+     *  'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange'
+     *  | 'Comment' | 'System' | 'AwaitingReview' | 'cahier_generated'
+     *  | 'cahier_approved' | 'cahier_rejected' | 'cahier_validated'.
+     *  Kept as string to allow domain-specific reason codes. */
+    reason?: string;
+    /** Reserved entity types include 'work_package' | 'project' | 'meeting'
+     *  | 'comment' | 'version' | 'Project'. Kept as string for forward-compat. */
+    entityType?: string | null;
     entityId?: string | null;
     actorId?: string | null;
     link?: string | null;
@@ -157,30 +178,12 @@ export class NotificationsService {
     if (params.actorId && params.actorId === params.userId) return;
 
     // Scope check: when a projectId is provided, verify the target user is
-    // a member (PM, Admin, or in ProjectMember).
+    // a member (PM, Admin, or in ProjectMember). Fail-closed on errors.
     if (params.projectId) {
-      try {
-        const [asPm, asProjectMember, dbUser] = await Promise.all([
-          this.prisma.project.findFirst({
-            where: { id: params.projectId, isDeleted: false, projectManagerId: params.userId },
-            select: { id: true },
-          }),
-          this.prisma.projectMember.findFirst({
-            where: { projectId: params.projectId, userId: params.userId },
-            select: { id: true },
-          }),
-          this.prisma.appUser.findUnique({
-            where: { id: params.userId },
-            select: { role: true },
-          }),
-        ]);
-        if (!asPm && !asProjectMember && dbUser?.role !== 'Admin') {
-          this.logger.warn(`notifyEnhanced: user ${params.userId} is not a member of project ${params.projectId} — skipping`);
-          return;
-        }
-      } catch (e) {
-        this.logger.error('notifyEnhanced: project member check failed', e);
-        // Fail open: if the check itself errors, proceed.
+      const allowed = await this.assertProjectMember(params.userId, params.projectId);
+      if (!allowed) {
+        this.logger.warn(`notifyEnhanced: user ${params.userId} not a member of project ${params.projectId} — skipping`);
+        return;
       }
     }
 

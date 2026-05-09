@@ -6,6 +6,7 @@ import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
 import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
 import { runCahierAgent } from './cahier-agent.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
 import { redactPii } from '../common/pii-redact.js'
 import type {
   CahierFormData,
@@ -43,6 +44,7 @@ export class CahierDesChargesService {
     private readonly zaiFallback: ZaiFallbackProvider,
     private readonly aiUsage: AiUsageService,
     private readonly agentRunner: AgentRunnerService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** True when the cahier agent loop should run instead of single-shot. */
@@ -344,20 +346,21 @@ export class CahierDesChargesService {
       return
     }
 
-    const rows = reviewers.map((m) => ({
-      id: crypto.randomUUID(),
-      userId: m.userId,
-      type: 'cahier_ready',
-      reason: 'cahier_generated',
-      title: 'Cahier des charges à valider',
-      message: `Un nouveau cahier des charges a été généré pour « ${projectName} ». À vérifier.`,
-      projectId,
-      entityType: 'Project',
-      entityId: projectId,
-      link: `/app/pm/projects/${projectId}/cahier`,
-      isRead: false,
-    }))
-    await this.prisma.notification.createMany({ data: rows })
+    await Promise.allSettled(
+      reviewers.map((m) =>
+        this.notifications.notifyEnhanced({
+          userId: m.userId,
+          type: 'cahier_ready',
+          reason: 'cahier_generated',
+          title: 'Cahier des charges à valider',
+          message: `Un nouveau cahier des charges a été généré pour « ${projectName} ». À vérifier.`,
+          projectId,
+          entityType: 'Project',
+          entityId: projectId,
+          link: `/app/pm/projects/${projectId}/cahier`,
+        }),
+      ),
+    )
     this.logger.log(
       `Notified ${reviewers.length} SpecificationTeam project member(s) about cahier for project ${projectId}`,
     )
@@ -493,20 +496,16 @@ export class CahierDesChargesService {
       ? `Le cahier des charges de « ${project.name} » a été approuvé.`
       : `Le cahier des charges de « ${project.name} » a été rejeté. Commentaire : ${comment.slice(0, 200)}`
 
-    await this.prisma.notification.create({
-      data: {
-        id: crypto.randomUUID(),
-        userId: project.projectManagerId,
-        type: isApproved ? 'cahier_approved' : 'cahier_rejected',
-        reason: isApproved ? 'cahier_approved' : 'cahier_rejected',
-        title,
-        message,
-        projectId,
-        entityType: 'Project',
-        entityId: projectId,
-        link: `/app/pm/projects/${projectId}/cahier`,
-        isRead: false,
-      },
+    await this.notifications.notifyEnhanced({
+      userId: project.projectManagerId,
+      type: isApproved ? 'cahier_approved' : 'cahier_rejected',
+      reason: isApproved ? 'cahier_approved' : 'cahier_rejected',
+      title,
+      message,
+      projectId,
+      entityType: 'Project',
+      entityId: projectId,
+      link: `/app/pm/projects/${projectId}/cahier`,
     })
   }
 

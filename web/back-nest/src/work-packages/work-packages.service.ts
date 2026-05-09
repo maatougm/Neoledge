@@ -70,28 +70,26 @@ export class WorkPackagesService {
       // Remove the explicitly excluded user (already notified via assignee path).
       if (excludeUserId) userIds.delete(excludeUserId);
 
-      // Batch DB inserts in a single createMany to avoid N+1 writes.
-      // Side effects that are per-user (socket emit) still run individually below.
+      // Route through notifyEnhanced so each recipient gets the realtime emit
+      // in addition to the persisted row. Promise.allSettled keeps a single
+      // failed delivery from breaking the rest.
       if (userIds.size > 0) {
-        try {
-          await this.prisma.notification.createMany({
-            data: Array.from(userIds).map((userId) => ({
+        await Promise.allSettled(
+          Array.from(userIds).map((userId) =>
+            this.notifications.notifyEnhanced({
               userId,
               type: 'work_package',
               title,
               message,
               projectId,
               reason,
-              entityType: 'work_package' as const,
+              entityType: 'work_package',
               entityId: wpId,
               actorId,
               link: `/app/pm/projects/${projectId}/workpackages`,
-            })),
-            skipDuplicates: true,
-          });
-        } catch (e) {
-          this.logger.error('notifyWatchersAndAssignee: createMany failed', e);
-        }
+            }),
+          ),
+        );
       }
     } catch {
       // Never break the caller.
@@ -115,19 +113,17 @@ export class WorkPackagesService {
     });
     if (!project || !project.projectManagerId) return;
     if (project.projectManagerId === actorId) return;
-    await this.prisma.notification.create({
-      data: {
-        userId: project.projectManagerId,
-        type: 'work_package_awaiting_review',
-        reason: 'AwaitingReview',
-        title: 'Tâche à valider',
-        message: `"${wpTitle}" est en attente de votre validation (projet « ${project.name} »).`,
-        projectId,
-        entityType: 'work_package',
-        entityId: wpId,
-        actorId,
-        link: `/app/pm/projects/${projectId}/workpackages?wpId=${wpId}`,
-      },
+    await this.notifications.notifyEnhanced({
+      userId: project.projectManagerId,
+      type: 'work_package_awaiting_review',
+      reason: 'AwaitingReview',
+      title: 'Tâche à valider',
+      message: `"${wpTitle}" est en attente de votre validation (projet « ${project.name} »).`,
+      projectId,
+      entityType: 'work_package',
+      entityId: wpId,
+      actorId,
+      link: `/app/pm/projects/${projectId}/workpackages?wpId=${wpId}`,
     });
   }
 

@@ -805,7 +805,6 @@ export class ProjectsService {
     isApproved: boolean,
     comment: string | null,
   ): Promise<void> {
-    const { randomUUID } = await import('crypto');
     const title = isApproved
       ? 'Cahier validé par la spécification'
       : 'Cahier rejeté par la spécification';
@@ -813,20 +812,16 @@ export class ProjectsService {
     const message = isApproved
       ? `Le cahier de « ${projectName} » a été validé. Vous pouvez démarrer le backlog.${commentTail}`
       : `Le cahier de « ${projectName} » a été rejeté et doit être corrigé.${commentTail}`;
-    await this.prisma.notification.create({
-      data: {
-        id: randomUUID(),
-        userId: pmUserId,
-        type: isApproved ? 'cahier_validated' : 'cahier_rejected',
-        reason: isApproved ? 'cahier_validated' : 'cahier_rejected',
-        title,
-        message,
-        projectId,
-        entityType: 'Project',
-        entityId: projectId,
-        link: `/app/pm/projects/${projectId}`,
-        isRead: false,
-      },
+    await this.notifications.notifyEnhanced({
+      userId: pmUserId,
+      type: isApproved ? 'cahier_validated' : 'cahier_rejected',
+      reason: isApproved ? 'cahier_validated' : 'cahier_rejected',
+      title,
+      message,
+      projectId,
+      entityType: 'Project',
+      entityId: projectId,
+      link: `/app/pm/projects/${projectId}`,
     });
     this.logger.log(`Notified PM ${pmUserId} about ${isApproved ? 'approval' : 'rejection'} for project ${projectId}`);
   }
