@@ -59,7 +59,8 @@
         <div>
           <h2 class="lm__title">Réunion {{ mode === 'onsite' ? 'sur site' : 'en ligne' }}</h2>
           <p class="lm__subtitle">
-            <span v-if="recording" class="lm__rec-badge"><span class="lm__rec-dot" /> Enregistrement</span>
+            <span v-if="recording && !paused" class="lm__rec-badge"><span class="lm__rec-dot" /> Enregistrement</span>
+            <span v-else-if="recording && paused" class="lm__rec-badge lm__rec-badge--paused"><i class="pi pi-pause" /> En pause</span>
             <span class="lm__duration">{{ formattedDuration }}</span>
           </p>
         </div>
@@ -78,13 +79,27 @@
             :icon="mode === 'onsite' ? 'pi pi-microphone' : 'pi pi-desktop'"
             @click="startRecording"
           />
-          <NeoButton
-            v-else
-            label="Terminer & enregistrer"
-            icon="pi pi-stop-circle"
-            severity="danger"
-            @click="stopAndSave"
-          />
+          <template v-else>
+            <NeoButton
+              v-if="!paused"
+              label="Pause"
+              icon="pi pi-pause"
+              severity="secondary"
+              @click="pauseRecording"
+            />
+            <NeoButton
+              v-else
+              label="Reprendre"
+              icon="pi pi-play"
+              @click="resumeRecording"
+            />
+            <NeoButton
+              label="Terminer & enregistrer"
+              icon="pi pi-stop-circle"
+              severity="danger"
+              @click="stopAndSave"
+            />
+          </template>
         </div>
       </header>
 
@@ -179,9 +194,15 @@ const meetingType = ref<MeetingTypeKey>('cadrage')
 
 const mode = ref<'onsite' | 'online' | null>(null)
 const recording = ref(false)
+const paused = ref(false)
 const transcript = ref('')
 const interim = ref('')
 const startedAt = ref<number | null>(null)
+/** Wall-clock when the current pause began (null when not paused). */
+const pauseStartedAt = ref<number | null>(null)
+/** Accumulated paused milliseconds across the session — subtracted from the
+ *  duration display and from the saved meeting's durationSeconds. */
+const totalPausedMs = ref(0)
 const tickIntervalId = ref<number | null>(null)
 const tick = ref(0)
 const chunkPending = ref(false)
@@ -216,7 +237,11 @@ let archiveMimeType = 'audio/webm'
 const formattedDuration = computed<string>(() => {
   void tick.value
   if (!startedAt.value) return '0:00'
-  const sec = Math.floor((Date.now() - startedAt.value) / 1000)
+  const now = Date.now()
+  const inProgressPause = paused.value && pauseStartedAt.value !== null
+    ? now - pauseStartedAt.value
+    : 0
+  const sec = Math.max(0, Math.floor((now - startedAt.value - totalPausedMs.value - inProgressPause) / 1000))
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 })
 
@@ -265,7 +290,10 @@ function startSpeechRecognition(): void {
     toast.add({ severity: 'error', detail: `Micro : ${e.error}`, life: 3500 })
   }
   recognition.onend = () => {
-    if (recording.value) {
+    // Auto-restart only when actively recording AND not paused — otherwise
+    // a Pause click that called recognition.stop() would immediately bounce
+    // back to listening.
+    if (recording.value && !paused.value) {
       try { recognition?.start() } catch { /* ignore */ }
     }
   }
@@ -401,11 +429,49 @@ async function uploadChunk(blob: Blob): Promise<void> {
 
 function beginSession(): void {
   recording.value = true
+  paused.value = false
+  pauseStartedAt.value = null
+  totalPausedMs.value = 0
   startedAt.value = Date.now()
   tickIntervalId.value = window.setInterval(() => { tick.value += 1 }, 1000)
 
   // Live copilot — best-effort start. 404s if feature flag is off → silently skip.
   void startCopilot()
+}
+
+/** Pause the meeting without ending the copilot session. SpeechRecognition is
+ *  stopped (its onend guard prevents auto-restart while paused); the
+ *  MediaRecorder is paused so no audio chunks are emitted to the archive or
+ *  the live transcribe-chunk endpoint. Time spent paused is excluded from the
+ *  duration shown to the PM and from the saved durationSeconds. */
+function pauseRecording(): void {
+  if (!recording.value || paused.value) return
+  paused.value = true
+  pauseStartedAt.value = Date.now()
+  try { recognition?.stop() } catch { /* ignore */ }
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    try { mediaRecorder.pause() } catch { /* ignore */ }
+  }
+  toast.add({ severity: 'info', detail: 'Réunion en pause.', life: 2000 })
+}
+
+/** Resume after a pause. Reactivates SpeechRecognition / MediaRecorder and
+ *  flushes the just-elapsed pause window into totalPausedMs so the duration
+ *  display catches up exactly. */
+function resumeRecording(): void {
+  if (!recording.value || !paused.value) return
+  if (pauseStartedAt.value !== null) {
+    totalPausedMs.value += Date.now() - pauseStartedAt.value
+    pauseStartedAt.value = null
+  }
+  paused.value = false
+  if (mode.value === 'onsite') {
+    try { recognition?.start() } catch { /* ignore — onend handler will retry */ }
+  }
+  if (mediaRecorder && mediaRecorder.state === 'paused') {
+    try { mediaRecorder.resume() } catch { /* ignore */ }
+  }
+  toast.add({ severity: 'success', detail: 'Reprise de la réunion.', life: 2000 })
 }
 
 async function startCopilot(): Promise<void> {
@@ -481,6 +547,13 @@ async function onForceRefresh(): Promise<void> {
 }
 
 async function stopAndSave(): Promise<void> {
+  // If the user clicks "Terminer" while paused, flush the in-progress pause
+  // into the totals so durationSeconds is accurate.
+  if (paused.value && pauseStartedAt.value !== null) {
+    totalPausedMs.value += Date.now() - pauseStartedAt.value
+    pauseStartedAt.value = null
+  }
+  paused.value = false
   recording.value = false
   if (recognition) { try { recognition.stop() } catch { /* ignore */ } recognition = null }
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -501,7 +574,9 @@ async function stopAndSave(): Promise<void> {
     toast.add({ severity: 'warn', detail: 'Transcription trop courte pour être enregistrée.', life: 3500 })
     return
   }
-  const duration = startedAt.value ? Math.round((Date.now() - startedAt.value) / 1000) : 0
+  const duration = startedAt.value
+    ? Math.max(0, Math.round((Date.now() - startedAt.value - totalPausedMs.value) / 1000))
+    : 0
   try {
     const { data } = await api.post<{ transcriptId: string }>(
       `/pm/projects/${props.projectId}/meetings/live/save`,
@@ -643,6 +718,13 @@ onUnmounted(() => {
   background: #fee2e2; color: #991b1b;
   padding: 2px 10px; border-radius: 999px;
   font-size: 0.8125rem; font-weight: 600;
+}
+.lm__rec-badge--paused {
+  background: #fef3c7;
+  color: #92400e;
+}
+.lm__rec-badge--paused i {
+  font-size: 0.75rem;
 }
 .lm__rec-dot {
   width: 8px; height: 8px; background: #dc2626; border-radius: 50%;
