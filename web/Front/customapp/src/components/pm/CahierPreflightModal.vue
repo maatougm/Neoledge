@@ -135,7 +135,7 @@
         v-if="result && !result.canGenerate"
         label="Forcer la génération"
         icon="pi pi-bolt"
-        severity="warning"
+        severity="warn"
         :disabled="loading"
         @click="onProceed(true)"
       />
