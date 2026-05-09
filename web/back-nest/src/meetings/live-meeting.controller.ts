@@ -69,13 +69,14 @@ export class LiveMeetingController {
   @Roles('Admin', 'ProjectManager', 'SpecificationTeam')
   async save(
     @Param('projectId') projectId: string,
-    @Body() body: { title?: string; transcript?: string; durationSeconds?: number },
+    @Body() body: { title?: string; transcript?: string; durationSeconds?: number; meetingType?: string },
   ): Promise<{ transcriptId: string }> {
     return this.service.saveLiveTranscript(
       projectId,
       typeof body?.title === 'string' ? body.title : 'Réunion en direct',
       typeof body?.transcript === 'string' ? body.transcript : '',
       typeof body?.durationSeconds === 'number' ? body.durationSeconds : 0,
+      typeof body?.meetingType === 'string' ? body.meetingType : undefined,
     );
   }
 }

@@ -23,13 +23,16 @@ import {
 import { readGlossaryTool } from '../ai/agent/tools/glossary-tools.js'
 import type { ToolDefinition } from '../ai/agent/agent-types.js'
 import { obj, str, arr } from '../ai/agent/json-schema.js'
-import { LIVE_COPILOT_SYSTEM_PROMPT } from './live-copilot.prompt.js'
+import { buildLiveCopilotPrompt } from './live-copilot.prompt.js'
 import {
   COPILOT_LIMITS,
+  DEFAULT_MEETING_TYPE,
   VALID_CAHIER_SECTIONS,
+  VALID_MEETING_TYPES,
   type CahierSection,
   type LiveCopilotFireResult,
   type LiveSessionState,
+  type MeetingType,
   type SuggestionCard,
   type SuggestionUrgency,
 } from './live-copilot.types.js'
@@ -48,16 +51,26 @@ export class LiveCopilotService {
   }
 
   /** Start (or re-attach to) a live session. Idempotent. */
-  startSession(projectId: string, liveSessionId: string, userId: string): Result<LiveSessionState> {
+  startSession(
+    projectId: string,
+    liveSessionId: string,
+    userId: string,
+    meetingType: MeetingType = DEFAULT_MEETING_TYPE,
+  ): Result<LiveSessionState> {
     const existing = this.sessions.get(liveSessionId)
     if (existing) {
-      // Idempotent: same session id already active. Return current state.
+      // Idempotent: same session id already active. Update meetingType in
+      // case the caller chose differently between attach attempts; everything
+      // else is preserved.
+      if (VALID_MEETING_TYPES.includes(meetingType)) existing.meetingType = meetingType
       return Result.ok(existing)
     }
+    const safeType = VALID_MEETING_TYPES.includes(meetingType) ? meetingType : DEFAULT_MEETING_TYPE
     const state: LiveSessionState = {
       liveSessionId,
       projectId,
       userId,
+      meetingType: safeType,
       transcriptBuffer: '',
       totalCharsAppended: 0,
       lastFiredAtOffset: 0,
@@ -70,7 +83,7 @@ export class LiveCopilotService {
       lastChunkHash: '',
     }
     this.sessions.set(liveSessionId, state)
-    this.logger.log(`Copilot session started: ${liveSessionId} (project=${projectId})`)
+    this.logger.log(`Copilot session started: ${liveSessionId} (project=${projectId}, type=${safeType})`)
     return Result.ok(state)
   }
 
@@ -200,7 +213,7 @@ export class LiveCopilotService {
 
     try {
       const result = await this.agentRunner.run<{ cards: AgentCard[] }>({
-        systemPrompt: LIVE_COPILOT_SYSTEM_PROMPT,
+        systemPrompt: buildLiveCopilotPrompt(state.meetingType),
         userMessage:
           'Une nouvelle portion de transcription est disponible. Lis-la (read_live_transcript_window) puis appelle emit_suggestions pour terminer cet appel. Tableau cards vide accepté si rien à proposer. Tu peux aussi appeler write_session_summary avant emit_suggestions.',
         tools,

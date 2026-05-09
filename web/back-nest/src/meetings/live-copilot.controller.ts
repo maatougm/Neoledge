@@ -84,9 +84,9 @@ export class LiveCopilotController {
     @CurrentUser() user: JwtUser,
   ) {
     this.assertEnabled()
-    const r = this.service.startSession(projectId, dto.liveSessionId, user.userId)
+    const r = this.service.startSession(projectId, dto.liveSessionId, user.userId, dto.meetingType)
     if (r.isFailure) throw new BadRequestException(r.error)
-    return { liveSessionId: dto.liveSessionId, started: true }
+    return { liveSessionId: dto.liveSessionId, started: true, meetingType: r.value?.meetingType }
   }
 
   // ─── Append a transcript chunk ────────────────────────────────────────────

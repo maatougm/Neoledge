@@ -357,6 +357,7 @@ export class LiveMeetingService {
     title: string,
     transcript: string,
     durationSeconds: number,
+    meetingType?: string,
   ): Promise<{ transcriptId: string }> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId, isDeleted: false },
@@ -369,6 +370,9 @@ export class LiveMeetingService {
       throw new BadRequestException('Transcription trop courte pour être enregistrée.');
     }
 
+    const VALID_TYPES = new Set(['kickoff', 'cadrage', 'validation', 'standup', 'retrospective', 'other']);
+    const safeType = meetingType && VALID_TYPES.has(meetingType) ? meetingType : null;
+
     const created = await this.prisma.meetingTranscript.create({
       data: {
         projectId,
@@ -377,6 +381,7 @@ export class LiveMeetingService {
         durationSeconds: Math.max(0, Math.round(durationSeconds)),
         detectedLanguages: 'fr',
         recordedAt: new Date(),
+        meetingType: safeType,
       },
     });
 

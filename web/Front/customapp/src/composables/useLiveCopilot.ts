@@ -55,10 +55,11 @@ export function useLiveCopilot(projectId: string) {
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
-  async function startSession(sessionId: string): Promise<{ ok: boolean; reason?: string }> {
+  async function startSession(sessionId: string, meetingType?: string): Promise<{ ok: boolean; reason?: string }> {
     try {
       await api.post(`/pm/projects/${projectId}/meetings/live/copilot/session`, {
         liveSessionId: sessionId,
+        ...(meetingType ? { meetingType } : {}),
       })
       liveSessionId.value = sessionId
       enabled.value = true

@@ -13,6 +13,26 @@
         collecter pour ce projet. Quand tout est coché, elle peut produire un cahier des charges et un
         backlog parfaits.
       </p>
+
+      <!-- Meeting type preset — drives the copilot's nudging style. -->
+      <div class="lm__type-row">
+        <span class="lm__type-label">Type de réunion :</span>
+        <div class="lm__type-chips">
+          <button
+            v-for="t in MEETING_TYPES"
+            :key="t.value"
+            type="button"
+            class="lm__type-chip"
+            :class="{ 'lm__type-chip--active': meetingType === t.value }"
+            :title="t.hint"
+            @click="meetingType = t.value"
+          >
+            <i :class="`pi ${t.icon}`" />
+            {{ t.label }}
+          </button>
+        </div>
+      </div>
+
       <div class="lm__modes">
         <button class="lm__mode-card" :disabled="!speechSupported" @click="chooseMode('onsite')">
           <i class="pi pi-microphone lm__mode-icon" />
@@ -219,6 +239,17 @@ const navigatorHint = navigator.userAgent.includes('Firefox')
     : 'ce navigateur'
 
 // ── State ─────────────────────────────────────────────────────────────────────
+type MeetingTypeKey = 'kickoff' | 'cadrage' | 'validation' | 'standup' | 'retrospective' | 'other'
+const MEETING_TYPES: ReadonlyArray<{ value: MeetingTypeKey; label: string; icon: string; hint: string }> = [
+  { value: 'cadrage',       label: 'Cadrage',         icon: 'pi-pencil',        hint: 'Recueil détaillé des besoins' },
+  { value: 'kickoff',       label: 'Kickoff',         icon: 'pi-flag',          hint: 'Premier rendez-vous client' },
+  { value: 'validation',    label: 'Validation',      icon: 'pi-check-square',  hint: 'Revue client d\'un livrable' },
+  { value: 'standup',       label: 'Standup',         icon: 'pi-users',         hint: 'Réunion interne courte' },
+  { value: 'retrospective', label: 'Rétrospective',   icon: 'pi-history',       hint: 'Bilan de sprint / projet' },
+  { value: 'other',         label: 'Autre',           icon: 'pi-comments',      hint: 'Sans préréglage particulier' },
+]
+const meetingType = ref<MeetingTypeKey>('cadrage')
+
 const mode = ref<'onsite' | 'online' | null>(null)
 const recording = ref(false)
 const transcript = ref('')
@@ -532,7 +563,7 @@ async function startCopilot(): Promise<void> {
     ? window.crypto.randomUUID()
     : `lm-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-  const result = await copilot.startSession(sessionId)
+  const result = await copilot.startSession(sessionId, meetingType.value)
   if (!result.ok) return // feature off; fail silently
 
   // Pull driver-fields once for the coverage gauge.
@@ -634,6 +665,7 @@ async function stopAndSave(): Promise<void> {
         title: `Réunion ${mode.value === 'online' ? 'en ligne' : 'sur site'} — ${new Date().toLocaleString('fr-FR')}`,
         transcript: text,
         durationSeconds: duration,
+        meetingType: meetingType.value,
       },
     )
     toast.add({ severity: 'success', detail: 'Réunion enregistrée.', life: 3000 })
@@ -700,6 +732,36 @@ onUnmounted(() => {
 }
 .lm__title { font-size: 1.25rem; font-weight: 600; margin: 0 0 4px; }
 .lm__subtitle { font-size: 0.9375rem; color: var(--nl-text-2); margin: 0 0 20px; max-width: 720px; line-height: 1.5; }
+
+.lm__type-row {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--nl-surface-2, #fafafa);
+  border: 1px solid var(--nl-border);
+  border-radius: 8px;
+}
+.lm__type-label {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--nl-text-3); font-weight: 600;
+}
+.lm__type-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; flex: 1; }
+.lm__type-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--nl-border);
+  border-radius: 999px;
+  background: var(--nl-card-bg, #fff);
+  color: var(--nl-text-2);
+  font-size: 0.8125rem; font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.lm__type-chip:hover { border-color: var(--nl-accent); color: var(--nl-accent); }
+.lm__type-chip--active {
+  background: var(--nl-accent); color: #fff;
+  border-color: var(--nl-accent);
+}
 
 .lm__modes {
   display: grid;

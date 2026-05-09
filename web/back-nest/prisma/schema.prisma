@@ -336,6 +336,10 @@ model MeetingTranscript {
   // When true, the retention cron will not purge this audio. Used for
   // meetings the team explicitly wants to keep beyond the global window.
   audioPreserved    Boolean   @default(false)
+  // Meeting type — drives copilot prompt selection and downstream
+  // analysis tone. One of: kickoff | cadrage | validation | standup |
+  // retrospective | other.
+  meetingType       String?   @db.VarChar(20)
 
   // Relations
   project           Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)

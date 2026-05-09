@@ -4,6 +4,26 @@
 
 export type SuggestionUrgency = 'low' | 'medium' | 'high'
 
+/** Meeting-type presets — drive the copilot prompt + transcript-analysis tone. */
+export type MeetingType =
+  | 'kickoff'
+  | 'cadrage'
+  | 'validation'
+  | 'standup'
+  | 'retrospective'
+  | 'other'
+
+export const VALID_MEETING_TYPES: ReadonlyArray<MeetingType> = [
+  'kickoff',
+  'cadrage',
+  'validation',
+  'standup',
+  'retrospective',
+  'other',
+]
+
+export const DEFAULT_MEETING_TYPE: MeetingType = 'cadrage'
+
 /** Cahier section keys (matches CahierAiResult) + 'backlog_driver' for
  *  questions targeting questionnaire fields marked isBacklogDriver=true. */
 export type CahierSection =
@@ -58,6 +78,7 @@ export interface LiveSessionState {
   liveSessionId: string
   projectId: string
   userId: string
+  meetingType: MeetingType
   /** Append-only ring buffer of transcript text (capped at 8000 chars). */
   transcriptBuffer: string
   /** Total chars ever appended (used to compute "new since last fire"). */
