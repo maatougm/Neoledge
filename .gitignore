@@ -52,3 +52,18 @@ web/Front/customapp/smoke-zindex.mjs
 
 # UX audit capture scripts
 web/Front/customapp/ux-capture*.mjs
+
+# E2E test outputs — screenshots, CDP dumps, console captures (large binaries / scratch)
+scripts/e2e-*-shots/
+scripts/cdp-*.json
+scripts/console-audit.json
+scripts/q-probe.png
+scripts/cahier-probe.png
+cahier_preview.json
+
+# Codex IDE config
+.codex/
+
+# Stray docx in repo root
+*.docx
+
