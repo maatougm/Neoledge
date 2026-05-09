@@ -1,12 +1,7 @@
 /**
  * @file live-copilot.gateway.ts — socket.io namespace `/live-meeting`.
- * Pushes copilot suggestion cards to clients joined in a project room.
- *
- * Auth pattern mirrors collaboration.gateway.ts: JWT on handshake,
- * tokenVersion check, per-socket rate bucket. The agent loop does NOT
- * run inside the gateway — the controller calls LiveCopilotService.fire
- * via runDetached and the service emits to this gateway when results
- * are ready.
+ * Pushes the unified meeting-state (checklist + inline suggestions) to
+ * clients joined in a project session room.
  */
 
 import { Logger } from '@nestjs/common'
@@ -24,7 +19,7 @@ import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { getJwtSecret } from '../auth/jwt-secret.js'
-import type { SuggestionCard, CahierSection } from './live-copilot.types.js'
+import type { CahierSection, ChecklistItem } from './live-copilot.types.js'
 
 const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
   .split(',')
@@ -113,7 +108,6 @@ export class LiveCopilotGateway implements OnGatewayConnection, OnGatewayDisconn
       return { ok: false, reason: 'invalid_session_id' }
     }
 
-    // Verify the user has access to the project (PM, Member, or Admin).
     const accessOk = await this.userCanAccessProject(userId, payload.projectId)
     if (!accessOk) return { ok: false, reason: 'forbidden' }
 
@@ -135,10 +129,17 @@ export class LiveCopilotGateway implements OnGatewayConnection, OnGatewayDisconn
 
   // ─── Server-side broadcasts (called from LiveCopilotService) ────────────
 
-  /** Push new cards to everyone joined in the session's room. */
-  emitSuggestions(projectId: string, liveSessionId: string, cards: SuggestionCard[]): void {
-    if (cards.length === 0) return
-    this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:suggestions', { cards })
+  /**
+   * Push the full unified meeting state. The client replaces its checklist
+   * wholesale on every emit (item ids are stable so per-item user actions
+   * survive on the client side).
+   */
+  emitMeetingState(
+    projectId: string,
+    liveSessionId: string,
+    payload: { checklist: ChecklistItem[]; hint: string | null; readyForCahier: boolean },
+  ): void {
+    this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:meeting-state', payload)
   }
 
   /** Push a "fire skipped" notice (cooldown / cap / budget) so the UI can show why nothing arrived. */
@@ -150,11 +151,6 @@ export class LiveCopilotGateway implements OnGatewayConnection, OnGatewayDisconn
    *  the keyword baseline with an LLM-classified signal. */
   emitCoverage(projectId: string, liveSessionId: string, sections: CahierSection[]): void {
     this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:coverage', { sections })
-  }
-
-  /** Push a status update (sub-tab like "thinking…", "summary updated") if needed. */
-  emitStatus(projectId: string, liveSessionId: string, status: string): void {
-    this.server.to(this.roomKey(projectId, liveSessionId)).emit('copilot:status', { status })
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

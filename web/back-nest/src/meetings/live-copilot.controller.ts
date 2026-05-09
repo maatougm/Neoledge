@@ -1,11 +1,11 @@
 /**
- * @file live-copilot.controller.ts — HTTP entry points for the live
- * meeting copilot. The agent-loop fire is non-blocking (returns 202)
- * and pushes its result to the gateway when ready, so the meeting UI
- * never waits on the LLM round-trip.
+ * @file live-copilot.controller.ts — HTTP entry points for the unified
+ * meeting copilot. Each fire produces both the project checklist and any
+ * inline question suggestions in one shot. The endpoint is non-blocking
+ * (returns 202) and pushes the result via the gateway when ready.
  *
- * Feature-flagged behind `LIVE_MEETING_COPILOT=on`. When off, every
- * route returns 404 so the frontend treats it as missing and degrades.
+ * Feature-flagged behind `LIVE_MEETING_COPILOT=on`. When off, every route
+ * returns 404 so the frontend treats it as missing and degrades.
  */
 
 import {
@@ -35,6 +35,7 @@ import {
   StartCopilotSessionDto,
   AppendCopilotChunkDto,
   FireCopilotDto,
+  ChecklistItemActionDto,
   EndCopilotSessionDto,
 } from './dto/live-copilot.dto.js'
 
@@ -112,9 +113,8 @@ export class LiveCopilotController {
     @Body() dto: FireCopilotDto,
   ) {
     this.assertEnabled()
-    // Run the agent loop detached so the HTTP response returns immediately.
     void this.service
-      .fire(dto.liveSessionId)
+      .fire(dto.liveSessionId, dto.force === true)
       .then((result) => {
         if (result.isFailure || !result.value) return
         const value = result.value
@@ -122,11 +122,22 @@ export class LiveCopilotController {
           this.gateway.emitFireSkipped(projectId, dto.liveSessionId, value.skipReason)
           return
         }
-        if (value.cards.length > 0) {
-          this.gateway.emitSuggestions(projectId, dto.liveSessionId, value.cards)
-        }
-        if (value.coveredSections && value.coveredSections.length > 0) {
-          this.gateway.emitCoverage(projectId, dto.liveSessionId, value.coveredSections)
+        this.gateway.emitMeetingState(projectId, dto.liveSessionId, {
+          checklist: value.checklist,
+          hint: value.hint,
+          readyForCahier: value.readyForCahier,
+        })
+        // Derive the agent-tagged coverage signal from the emitted checklist
+        // (covered + partial sections) so the keyword baseline is replaced.
+        const sections = Array.from(
+          new Set(
+            value.checklist
+              .filter((i) => i.status !== 'missing')
+              .map((i) => i.section),
+          ),
+        )
+        if (sections.length > 0) {
+          this.gateway.emitCoverage(projectId, dto.liveSessionId, sections)
         }
       })
       .catch(() => {
@@ -135,22 +146,48 @@ export class LiveCopilotController {
     return { accepted: true }
   }
 
-  // ─── Suggestion actions ───────────────────────────────────────────────────
+  // ─── Per-item actions (Ask / Ignore on a checklist row) ───────────────────
 
-  @Post('suggestions/:suggestionId/dismiss')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async dismiss(@Param('suggestionId') suggestionId: string) {
+  @Post('items/:itemId/ask')
+  @HttpCode(HttpStatus.OK)
+  async askItem(
+    @Param('projectId') projectId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ChecklistItemActionDto,
+  ) {
     this.assertEnabled()
-    const r = await this.service.dismissSuggestion(suggestionId)
+    if (dto.itemId !== itemId) throw new BadRequestException('itemId mismatch')
+    const r = await this.service.recordItemAction(dto.liveSessionId, itemId, 'asked')
     if (r.isFailure) throw new NotFoundException(r.error)
+    if (r.value) {
+      this.gateway.emitMeetingState(projectId, dto.liveSessionId, {
+        checklist: r.value.checklist,
+        hint: this.service.getState(dto.liveSessionId)?.hint ?? null,
+        readyForCahier: this.service.getState(dto.liveSessionId)?.readyForCahier ?? false,
+      })
+    }
+    return { ok: true }
   }
 
-  @Post('suggestions/:suggestionId/ask')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async ask(@Param('suggestionId') suggestionId: string) {
+  @Post('items/:itemId/dismiss')
+  @HttpCode(HttpStatus.OK)
+  async dismissItem(
+    @Param('projectId') projectId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: ChecklistItemActionDto,
+  ) {
     this.assertEnabled()
-    const r = await this.service.markAsked(suggestionId)
+    if (dto.itemId !== itemId) throw new BadRequestException('itemId mismatch')
+    const r = await this.service.recordItemAction(dto.liveSessionId, itemId, 'dismissed')
     if (r.isFailure) throw new NotFoundException(r.error)
+    if (r.value) {
+      this.gateway.emitMeetingState(projectId, dto.liveSessionId, {
+        checklist: r.value.checklist,
+        hint: this.service.getState(dto.liveSessionId)?.hint ?? null,
+        readyForCahier: this.service.getState(dto.liveSessionId)?.readyForCahier ?? false,
+      })
+    }
+    return { ok: true }
   }
 
   // ─── End session ──────────────────────────────────────────────────────────

@@ -1,11 +1,12 @@
 /**
- * @file live-copilot.service.ts — backend orchestrator for the real-time
- * meeting copilot. Holds per-session in-memory state (ring buffer, fire
- * counters, rolling summary) and persists suggestion cards to the
- * `LiveMeetingSuggestion` table so they survive a restart.
+ * @file live-copilot.service.ts — backend orchestrator for the unified
+ * real-time meeting copilot. One agent fire produces BOTH a checklist
+ * (topics-to-collect with status + evidence) AND optional suggestion cards
+ * attached inline to missing/partial items.
  *
- * Phase 1 scope: plumbing only. The `fire()` method is a stub that
- * returns `{ cards: [], summary }` until Phase 2 wires it to the agent.
+ * Per-session state lives in-process; suggestion cards the PM acted on
+ * (asked/dismissed) are persisted to LiveMeetingSuggestion for audit so
+ * a server restart doesn't lose the history.
  */
 
 import { Injectable, Logger } from '@nestjs/common'
@@ -22,19 +23,23 @@ import {
 } from '../ai/agent/tools/project-tools.js'
 import { readGlossaryTool } from '../ai/agent/tools/glossary-tools.js'
 import type { ToolDefinition } from '../ai/agent/agent-types.js'
-import { obj, str, arr } from '../ai/agent/json-schema.js'
+import { obj, str, arr, bool } from '../ai/agent/json-schema.js'
 import { buildLiveCopilotPrompt } from './live-copilot.prompt.js'
 import {
   COPILOT_LIMITS,
   DEFAULT_MEETING_TYPE,
   VALID_CAHIER_SECTIONS,
+  VALID_CHECKLIST_CATEGORIES,
   VALID_MEETING_TYPES,
   type CahierSection,
+  type ChecklistCategory,
+  type ChecklistItem,
+  type ChecklistStatus,
   type LiveCopilotFireResult,
   type LiveSessionState,
   type MeetingType,
-  type SuggestionCard,
   type SuggestionUrgency,
+  type UserItemAction,
 } from './live-copilot.types.js'
 
 @Injectable()
@@ -46,11 +51,11 @@ export class LiveCopilotService {
     private readonly prisma: PrismaService,
     private readonly agentRunner: AgentRunnerService,
   ) {
-    // Idle session sweep — runs every 5 min, evicts sessions older than the cap.
     setInterval(() => this.sweepIdleSessions(), 5 * 60_000).unref()
   }
 
-  /** Start (or re-attach to) a live session. Idempotent. */
+  // ─── Session lifecycle ─────────────────────────────────────────────────────
+
   startSession(
     projectId: string,
     liveSessionId: string,
@@ -59,9 +64,6 @@ export class LiveCopilotService {
   ): Result<LiveSessionState> {
     const existing = this.sessions.get(liveSessionId)
     if (existing) {
-      // Idempotent: same session id already active. Update meetingType in
-      // case the caller chose differently between attach attempts; everything
-      // else is preserved.
       if (VALID_MEETING_TYPES.includes(meetingType)) existing.meetingType = meetingType
       return Result.ok(existing)
     }
@@ -77,8 +79,11 @@ export class LiveCopilotService {
       lastFiredAtOffset: 0,
       lastFiredAtMs: 0,
       summary: '',
+      checklist: [],
+      userActions: new Map<string, UserItemAction>(),
+      hint: null,
+      readyForCahier: false,
       fireCount: 0,
-      cardCount: 0,
       tokenSpend: 0,
       startedAtMs: Date.now(),
       lastChunkHash: '',
@@ -88,12 +93,7 @@ export class LiveCopilotService {
     return Result.ok(state)
   }
 
-  /**
-   * Append a new transcript chunk. Dedupes against the last-100-chars
-   * hash to filter SpeechRecognition restarts. Returns whether a fire is
-   * now warranted (caller uses this as a hint, but `fire()` does its own
-   * checks).
-   */
+  /** Append a transcript chunk; returns whether a fire is now warranted. */
   appendTranscript(liveSessionId: string, chunk: string): Result<{ shouldFire: boolean }> {
     const state = this.sessions.get(liveSessionId)
     if (!state) return Result.fail('Session introuvable.')
@@ -102,8 +102,6 @@ export class LiveCopilotService {
     const tail = chunk.slice(-100)
     const hash = createHash('sha1').update(tail).digest('hex')
     if (hash === state.lastChunkHash) {
-      // Same trailing 100 chars as last append → likely a SpeechRecognition
-      // re-flush of identical text. Skip.
       return Result.ok({ shouldFire: false })
     }
     state.lastChunkHash = hash
@@ -111,7 +109,6 @@ export class LiveCopilotService {
     state.transcriptBuffer = (state.transcriptBuffer + ' ' + chunk).trim()
     state.totalCharsAppended += chunk.length
 
-    // Cap the in-memory buffer.
     if (state.transcriptBuffer.length > COPILOT_LIMITS.TRANSCRIPT_BUFFER_MAX_CHARS) {
       state.transcriptBuffer = state.transcriptBuffer.slice(-COPILOT_LIMITS.TRANSCRIPT_BUFFER_MAX_CHARS)
     }
@@ -120,79 +117,52 @@ export class LiveCopilotService {
     const shouldFire =
       newSinceLastFire >= COPILOT_LIMITS.MIN_CONTENT_CHARS &&
       Date.now() - state.lastFiredAtMs >= COPILOT_LIMITS.MIN_FIRE_INTERVAL_MS &&
-      state.fireCount < COPILOT_LIMITS.MAX_FIRES_PER_MEETING &&
-      state.cardCount < COPILOT_LIMITS.MAX_CARDS_PER_MEETING
+      state.fireCount < COPILOT_LIMITS.MAX_FIRES_PER_MEETING
 
     return Result.ok({ shouldFire })
   }
 
-  /**
-   * Run one copilot agent loop. Returns the new cards (if any) plus the
-   * refreshed rolling summary. Caller is expected to push the cards via
-   * the socket gateway. Errors during the loop are downgraded to
-   * `{ skipped: true, skipReason: 'provider' }` so the calling HTTP path
-   * never 5xx's mid-meeting.
-   */
-  async fire(liveSessionId: string): Promise<Result<LiveCopilotFireResult>> {
-    const state = this.sessions.get(liveSessionId)
-    if (!state) return Result.ok({ cards: [], summary: '', skipped: true, skipReason: 'no_session' })
+  // ─── Fire the agent loop ────────────────────────────────────────────────────
 
-    // Cap checks before agent invocation.
-    if (Date.now() - state.lastFiredAtMs < COPILOT_LIMITS.MIN_FIRE_INTERVAL_MS) {
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'cooldown' })
+  /**
+   * One unified copilot fire. Returns the full meeting state.
+   *
+   * @param force when true, bypass cooldown + min-content gates (PM clicked
+   *   "Rafraîchir"). Caps (max fires, max tokens) still apply.
+   */
+  async fire(liveSessionId: string, force = false): Promise<Result<LiveCopilotFireResult>> {
+    const state = this.sessions.get(liveSessionId)
+    if (!state) {
+      return Result.ok(this.skipResult(null, 'no_session'))
     }
+
+    // Caps that can't be force-bypassed.
     if (state.fireCount >= COPILOT_LIMITS.MAX_FIRES_PER_MEETING) {
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'cap_reached' })
-    }
-    if (state.cardCount >= COPILOT_LIMITS.MAX_CARDS_PER_MEETING) {
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'cap_reached' })
+      return Result.ok(this.skipResult(state, 'cap_reached'))
     }
     if (state.tokenSpend >= COPILOT_LIMITS.MAX_TOKENS_PER_MEETING) {
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'budget' })
+      return Result.ok(this.skipResult(state, 'budget'))
     }
-    const newChars = state.totalCharsAppended - state.lastFiredAtOffset
-    if (newChars < COPILOT_LIMITS.MIN_CONTENT_CHARS) {
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'min_content' })
+
+    if (!force) {
+      if (Date.now() - state.lastFiredAtMs < COPILOT_LIMITS.MIN_FIRE_INTERVAL_MS) {
+        return Result.ok(this.skipResult(state, 'cooldown'))
+      }
+      const newChars = state.totalCharsAppended - state.lastFiredAtOffset
+      if (newChars < COPILOT_LIMITS.MIN_CONTENT_CHARS && state.checklist.length > 0) {
+        return Result.ok(this.skipResult(state, 'min_content'))
+      }
     }
 
     state.fireCount += 1
     state.lastFiredAtMs = Date.now()
     state.lastFiredAtOffset = state.totalCharsAppended
 
-    // Single-emit terminal: emit_suggestions. The summary is updated via a
-    // regular (non-terminal) tool the agent can call mid-loop — keeping a
-    // single terminal emit lets the runner force tool_choice on the final
-    // iteration, which is more reliable than relying on the model to call
-    // multiple emits in the right order.
-    const emitSuggestions: ToolDefinition<{ cards: AgentCard[] }, { cards: AgentCard[] }> = {
-      name: 'emit_suggestions',
-      description: `Final tool. Call this exactly once with 0..${COPILOT_LIMITS.MAX_CARDS_PER_FIRE} new question cards. Empty array is allowed and preferred over filler. After this call, the loop ends.`,
-      parameters: obj(
-        {
-          cards: arr(
-            obj(
-              {
-                question:  str({ description: 'The question to ask, exactly as the PM would phrase it', maxLength: 240 }),
-                rationale: str({ description: 'Why this question now, 1-2 sentences', maxLength: 500 }),
-                urgency:   str({ enum: ['low', 'medium', 'high'] }),
-                section:   str({ enum: [...VALID_CAHIER_SECTIONS] }),
-              },
-              { required: ['question', 'rationale', 'urgency', 'section'] },
-            ),
-            { maxItems: COPILOT_LIMITS.MAX_CARDS_PER_FIRE },
-          ),
-        },
-        { required: ['cards'] },
-      ),
-      handler: async () => ({ cards: [] }),
-    }
+    // ── Tools ────────────────────────────────────────────────────────────────
 
-    // Regular tool — agent can optionally call it BEFORE emit_suggestions to
-    // record a rolling summary. Side-effect persists `state.summary` so the
-    // next fire has memory.
     const writeSummary: ToolDefinition<{ summary: string }, { ok: boolean }> = {
       name: 'write_session_summary',
-      description: 'Persist a short rolling summary (<=600 chars) of what has been covered so far. Optional but recommended before emit_suggestions so the next fire has memory.',
+      description: 'Persist a short rolling summary (<=600 chars) of what has been covered so far. Optional but recommended before emit_meeting_state so the next fire has memory.',
       parameters: obj(
         { summary: str({ description: 'Rolling summary, <= 600 chars, French', maxLength: 600 }) },
         { required: ['summary'] },
@@ -203,31 +173,46 @@ export class LiveCopilotService {
       },
     }
 
-    // Coverage tagging tool — the agent flags which cahier sections have
-    // been substantively discussed in this fire's transcript window. Used
-    // by the frontend coverage gauge to upgrade the keyword baseline with
-    // an LLM-classified signal at zero extra cost (one tool call per fire).
-    const tagCoverage: ToolDefinition<{ sections: CahierSection[] }, { ok: boolean }> = {
-      name: 'tag_coverage',
-      description: 'Flag the cahier sections that were SUBSTANTIVELY discussed (more than a passing mention) in the latest transcript window. Optional but recommended once per fire — feeds the live coverage gauge so the PM sees progress.',
+    const emitMeetingState: ToolDefinition<EmitInput, EmitInput> = {
+      name: 'emit_meeting_state',
+      description: `Final tool. Emit the FULL meeting state for this fire: the complete checklist (1..${COPILOT_LIMITS.MAX_ITEMS_PER_MEETING} items, stable ids, current status/evidence) and an optional one-line hint. After this call, the loop ends.`,
       parameters: obj(
         {
-          sections: arr(
-            str({
-              enum: [...VALID_CAHIER_SECTIONS],
-              description: 'A cahier section discussed in this window.',
-            }),
-            { description: '0..3 sections, no duplicates.', maxItems: 4 },
+          checklist: arr(
+            obj(
+              {
+                id: str({
+                  description: 'Stable id, 3-16 chars, no spaces. REUSE existing ids when the topic matches.',
+                  maxLength: 16,
+                }),
+                topic: str({ description: 'Short topic label (e.g. "Volume documentaire")', maxLength: 80 }),
+                question: str({ description: 'The info to collect, phrased as a question', maxLength: 220 }),
+                category: str({ enum: [...VALID_CHECKLIST_CATEGORIES] }),
+                section: str({ enum: [...VALID_CAHIER_SECTIONS] }),
+                status: str({ enum: ['covered', 'partial', 'missing'] }),
+                evidence: str({
+                  description: 'Quote from transcript when status=covered. Empty string otherwise.',
+                  maxLength: 240,
+                }),
+                suggestion: obj(
+                  {
+                    question: str({ description: 'Question to ask now (80-180 chars)', maxLength: 240 }),
+                    rationale: str({ description: 'Why this question now (1-2 sentences)', maxLength: 500 }),
+                    urgency: str({ enum: ['low', 'medium', 'high'] }),
+                  },
+                  { required: ['question', 'rationale', 'urgency'] },
+                ),
+              },
+              { required: ['id', 'topic', 'question', 'category', 'section', 'status', 'evidence'] },
+            ),
+            { maxItems: COPILOT_LIMITS.MAX_ITEMS_PER_MEETING },
           ),
+          hint: str({ description: 'Optional one-line nudge for the PM. Empty string if no hint.', maxLength: 200 }),
+          readyForCahier: bool('True only when every item is covered/partial AND >=75% covered.'),
         },
-        { required: ['sections'] },
+        { required: ['checklist', 'hint', 'readyForCahier'] },
       ),
-      handler: async (args) => {
-        for (const s of args.sections ?? []) {
-          if (VALID_CAHIER_SECTIONS.includes(s)) state.agentTaggedCoverage.add(s)
-        }
-        return { ok: true }
-      },
+      handler: async () => ({ checklist: [], hint: '', readyForCahier: false }),
     }
 
     const tools = [
@@ -237,78 +222,112 @@ export class LiveCopilotService {
       readGlossaryTool,
       ...buildCopilotTools(state, this),
       writeSummary,
-      tagCoverage,
     ]
 
+    // ── Invoke the agent ─────────────────────────────────────────────────────
+
     try {
-      const result = await this.agentRunner.run<{ cards: AgentCard[] }>({
+      const previousChecklist = state.checklist.length === 0
+        ? '(checklist vide — c\'est le premier appel, génère-la initialement)'
+        : JSON.stringify(
+            state.checklist.map((i) => ({
+              id: i.id,
+              topic: i.topic,
+              question: i.question,
+              category: i.category,
+              section: i.section,
+              status: i.status,
+              evidence: i.evidence,
+            })),
+            null,
+            2,
+          )
+
+      const result = await this.agentRunner.run<EmitInput>({
         systemPrompt: buildLiveCopilotPrompt(state.meetingType),
-        userMessage:
-          'Une nouvelle portion de transcription est disponible. Lis-la (read_live_transcript_window) puis appelle emit_suggestions pour terminer cet appel. Tableau cards vide accepté si rien à proposer. Tu peux aussi appeler write_session_summary avant emit_suggestions.',
+        userMessage: [
+          'Une nouvelle portion de transcription est disponible.',
+          'Lis read_live_transcript_window puis appelle emit_meeting_state.',
+          '',
+          '## Checklist actuelle (à conserver/mettre à jour, garde les ids stables)',
+          previousChecklist,
+        ].join('\n'),
         tools,
-        emitTools: [emitSuggestions],
+        emitTools: [emitMeetingState],
         maxIterations: 6,
         loopTimeoutMs: COPILOT_LIMITS.AGENT_LOOP_TIMEOUT_MS,
         feature: 'meeting-analysis',
         projectId: state.projectId,
       })
 
-      // result.output is the args of emit_suggestions (single-emit mode).
-      const cards = (result.output.cards ?? []).filter(isValidAgentCard)
+      const sanitized = sanitizeEmit(result.output)
+      const merged = this.applyEmitToState(state, sanitized)
 
-      // Persist + tally token spend. write_session_summary and tag_coverage
-      // already mutated state directly via their handlers if the agent called them.
-      const persisted = await this.persistCards(state, cards)
       this.addTokenSpend(liveSessionId, result.iterations * 1_500)
 
       return Result.ok({
-        cards: persisted,
+        checklist: merged.checklist,
+        hint: merged.hint,
+        readyForCahier: merged.readyForCahier,
         summary: state.summary,
-        coveredSections: Array.from(state.agentTaggedCoverage),
       })
     } catch (e) {
       if (e instanceof AgentEmitMissedError) {
         this.logger.warn(`Copilot agent missed emit on ${liveSessionId}: ${e.message}`)
-        return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'provider' })
+        return Result.ok(this.skipResult(state, 'provider'))
       }
       this.logger.warn(`Copilot fire failed on ${liveSessionId}: ${e instanceof Error ? e.message : String(e)}`)
-      return Result.ok({ cards: [], summary: state.summary, skipped: true, skipReason: 'provider' })
+      return Result.ok(this.skipResult(state, 'provider'))
     }
   }
 
-  /** Mark a suggestion as dismissed. */
-  async dismissSuggestion(suggestionId: string): Promise<Result<void>> {
-    try {
-      await this.prisma.liveMeetingSuggestion.update({
-        where: { id: suggestionId },
-        data: { status: 'dismissed' },
-      })
-      return Result.ok()
-    } catch (e) {
-      this.logger.warn(`dismissSuggestion failed: ${e instanceof Error ? e.message : String(e)}`)
-      return Result.fail('Suggestion introuvable.')
-    }
-  }
-
-  /** Mark a suggestion as asked (the PM clicked the "Demander maintenant" button). */
-  async markAsked(suggestionId: string): Promise<Result<void>> {
-    try {
-      await this.prisma.liveMeetingSuggestion.update({
-        where: { id: suggestionId },
-        data: { status: 'asked' },
-      })
-      return Result.ok()
-    } catch (e) {
-      this.logger.warn(`markAsked failed: ${e instanceof Error ? e.message : String(e)}`)
-      return Result.fail('Suggestion introuvable.')
-    }
-  }
+  // ─── PM actions on checklist items ──────────────────────────────────────────
 
   /**
-   * End a session. If `meetingTranscriptId` is provided, the live cards are
-   * patched onto the saved meeting for audit history; otherwise they're
-   * left as orphans linked only by `liveSessionId`.
+   * Record a PM action against a checklist item id. Persists a row in
+   * LiveMeetingSuggestion for audit so the saved meeting carries the trail.
+   * Returns the updated checklist so the caller can re-emit it to the room.
    */
+  async recordItemAction(
+    liveSessionId: string,
+    itemId: string,
+    action: UserItemAction,
+  ): Promise<Result<{ checklist: ChecklistItem[] }>> {
+    const state = this.sessions.get(liveSessionId)
+    if (!state) return Result.fail('Session introuvable.')
+    const item = state.checklist.find((i) => i.id === itemId)
+    if (!item) return Result.fail('Item introuvable.')
+
+    state.userActions.set(itemId, action)
+    item.userAction = action
+
+    // Persist to the audit table when the item carries a suggestion (history
+    // for the saved meeting's "questions asked / dismissed" trail).
+    if (item.suggestion) {
+      try {
+        await this.prisma.liveMeetingSuggestion.create({
+          data: {
+            id: randomUUID(),
+            projectId: state.projectId,
+            liveSessionId: state.liveSessionId,
+            meetingTranscriptId: null,
+            question: item.suggestion.question,
+            rationale: item.suggestion.rationale,
+            urgency: item.suggestion.urgency,
+            section: item.section,
+            status: action,
+          },
+        })
+      } catch (e) {
+        this.logger.warn(`recordItemAction: persistence failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
+    return Result.ok({ checklist: cloneChecklist(state.checklist) })
+  }
+
+  // ─── End session ────────────────────────────────────────────────────────────
+
   async endSession(liveSessionId: string, meetingTranscriptId?: string | null): Promise<Result<void>> {
     const state = this.sessions.get(liveSessionId)
     if (!state) return Result.ok()
@@ -323,83 +342,114 @@ export class LiveCopilotService {
       }
     }
     this.sessions.delete(liveSessionId)
-    this.logger.log(`Copilot session ended: ${liveSessionId} (fires=${state.fireCount}, cards=${state.cardCount})`)
+    this.logger.log(`Copilot session ended: ${liveSessionId} (fires=${state.fireCount}, items=${state.checklist.length})`)
     return Result.ok()
   }
 
-  /** Internal helper used by Phase 2 to persist agent-emitted cards. */
-  async persistCards(
-    state: LiveSessionState,
-    proposed: Array<{
-      question: string
-      rationale: string
-      urgency: SuggestionUrgency
-      section: CahierSection
-    }>,
-  ): Promise<SuggestionCard[]> {
-    if (proposed.length === 0) return []
-    const remainingSlot = Math.max(0, COPILOT_LIMITS.MAX_CARDS_PER_MEETING - state.cardCount)
-    const toPersist = proposed.slice(0, Math.min(COPILOT_LIMITS.MAX_CARDS_PER_FIRE, remainingSlot))
-    if (toPersist.length === 0) return []
+  // ─── Reads for the agent tool factory ──────────────────────────────────────
 
-    const rows = toPersist.map((c) => ({
-      id: randomUUID(),
-      projectId: state.projectId,
-      liveSessionId: state.liveSessionId,
-      meetingTranscriptId: null,
-      question: c.question,
-      rationale: c.rationale,
-      urgency: c.urgency,
-      section: VALID_CAHIER_SECTIONS.includes(c.section) ? c.section : 'contexte',
-      status: 'pending' as const,
-    }))
-    await this.prisma.liveMeetingSuggestion.createMany({ data: rows })
-    state.cardCount += rows.length
-
-    return rows.map((r) => ({
-      id: r.id,
-      question: r.question,
-      rationale: r.rationale,
-      urgency: r.urgency as SuggestionUrgency,
-      section: r.section as CahierSection,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    }))
-  }
-
-  /** Read for the agent: what cards did we already emit on this session? */
-  async fetchEmittedSuggestions(liveSessionId: string): Promise<Array<Pick<SuggestionCard, 'question' | 'section' | 'status'>>> {
+  /**
+   * What questions has the agent already proposed via inline suggestions on
+   * this session, plus their server-recorded user-action status. Filters by
+   * itemId-collected dedupe so the agent doesn't re-suggest the same thing
+   * after the PM dismissed it.
+   */
+  async fetchEmittedSuggestions(liveSessionId: string): Promise<Array<{ question: string; section: string; status: string }>> {
     const rows = await this.prisma.liveMeetingSuggestion.findMany({
       where: { liveSessionId },
       orderBy: { createdAt: 'desc' },
       take: 30,
       select: { question: true, section: true, status: true },
     })
-    return rows.map((r) => ({
-      question: r.question,
-      section: r.section as CahierSection,
-      status: r.status as 'pending' | 'dismissed' | 'asked',
-    }))
+    return rows.map((r) => ({ question: r.question, section: r.section, status: r.status }))
   }
 
-  /** Internal — expose state for the agent tool factory in Phase 2. */
   getState(liveSessionId: string): LiveSessionState | undefined {
     return this.sessions.get(liveSessionId)
   }
 
-  /** Internal — used after agent fire to track cumulative token spend. */
   addTokenSpend(liveSessionId: string, tokens: number): void {
     const state = this.sessions.get(liveSessionId)
     if (state) state.tokenSpend += tokens
   }
 
-  /** Internal — used after agent fire to update the rolling summary. */
   updateSummary(liveSessionId: string, summary: string): void {
     const state = this.sessions.get(liveSessionId)
     if (state) state.summary = summary.slice(0, 600)
   }
 
-  // ─── Internal — idle session sweep ───────────────────────────────────────────
+  // ─── Internal helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Merge the agent-emitted state into the session, preserving:
+   *   - covered status (sticky — the agent should not regress, but if it does
+   *     we override back to covered);
+   *   - per-item user actions (asked/dismissed clicks survive rewrites).
+   */
+  private applyEmitToState(state: LiveSessionState, emit: SanitizedEmit): {
+    checklist: ChecklistItem[]
+    hint: string | null
+    readyForCahier: boolean
+  } {
+    const previousById = new Map<string, ChecklistItem>(state.checklist.map((i) => [i.id, i]))
+
+    const next: ChecklistItem[] = emit.checklist.map((row) => {
+      const prev = previousById.get(row.id)
+      // Sticky covered: don't let the agent regress a covered item.
+      let status: ChecklistStatus = row.status
+      if (prev?.status === 'covered' && row.status !== 'covered') {
+        status = 'covered'
+      }
+      // If now covered, drop any active suggestion (no point asking the question).
+      const suggestion = status === 'covered' ? null : row.suggestion
+      const userAction = state.userActions.get(row.id) ?? null
+      // Rebuild evidence: prefer the new emit's evidence when covered;
+      // fall back to the previous one if the agent forgot.
+      const evidence = status === 'covered'
+        ? (row.evidence || prev?.evidence || null)
+        : null
+
+      return {
+        id: row.id,
+        topic: row.topic,
+        question: row.question,
+        category: row.category,
+        section: row.section,
+        status,
+        evidence,
+        suggestion,
+        userAction,
+      }
+    })
+
+    // Update the agent-tagged coverage signal from the emit (covered + partial sections).
+    for (const i of next) {
+      if (i.status === 'covered' || i.status === 'partial') {
+        state.agentTaggedCoverage.add(i.section)
+      }
+    }
+
+    state.checklist = next
+    state.hint = emit.hint
+    state.readyForCahier = emit.readyForCahier
+
+    return {
+      checklist: cloneChecklist(next),
+      hint: emit.hint,
+      readyForCahier: emit.readyForCahier,
+    }
+  }
+
+  private skipResult(state: LiveSessionState | null, reason: NonNullable<LiveCopilotFireResult['skipReason']>): LiveCopilotFireResult {
+    return {
+      checklist: state ? cloneChecklist(state.checklist) : [],
+      hint: state?.hint ?? null,
+      readyForCahier: state?.readyForCahier ?? false,
+      summary: state?.summary ?? '',
+      skipped: true,
+      skipReason: reason,
+    }
+  }
 
   private sweepIdleSessions(): void {
     const now = Date.now()
@@ -418,19 +468,93 @@ export class LiveCopilotService {
 
 // ─── Internal types ─────────────────────────────────────────────────────────
 
-interface AgentCard {
-  question: string
-  rationale: string
-  urgency: SuggestionUrgency
-  section: CahierSection
+interface EmitInput {
+  checklist: Array<{
+    id: string
+    topic: string
+    question: string
+    category: string
+    section: string
+    status: string
+    evidence: string
+    suggestion?: { question: string; rationale: string; urgency: string }
+  }>
+  hint: string
+  readyForCahier: boolean
 }
 
-function isValidAgentCard(value: unknown): value is AgentCard {
-  if (!value || typeof value !== 'object') return false
-  const c = value as Record<string, unknown>
-  if (typeof c.question !== 'string' || c.question.trim().length === 0) return false
-  if (typeof c.rationale !== 'string') return false
-  if (c.urgency !== 'low' && c.urgency !== 'medium' && c.urgency !== 'high') return false
-  if (typeof c.section !== 'string') return false
-  return VALID_CAHIER_SECTIONS.includes(c.section as CahierSection)
+interface SanitizedEmit {
+  checklist: Array<{
+    id: string
+    topic: string
+    question: string
+    category: ChecklistCategory
+    section: CahierSection
+    status: ChecklistStatus
+    evidence: string
+    suggestion: { question: string; rationale: string; urgency: SuggestionUrgency } | null
+  }>
+  hint: string | null
+  readyForCahier: boolean
+}
+
+const VALID_STATUSES: ChecklistStatus[] = ['covered', 'partial', 'missing']
+const VALID_URGENCIES: SuggestionUrgency[] = ['low', 'medium', 'high']
+
+function sanitizeEmit(raw: EmitInput): SanitizedEmit {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.checklist)) {
+    return { checklist: [], hint: null, readyForCahier: false }
+  }
+
+  const seenIds = new Set<string>()
+  let activeSuggestionCount = 0
+  const MAX_ACTIVE_SUGGESTIONS = 4
+
+  const checklist: SanitizedEmit['checklist'] = []
+  for (const item of raw.checklist.slice(0, COPILOT_LIMITS.MAX_ITEMS_PER_MEETING)) {
+    if (!item || typeof item !== 'object') continue
+    const id = typeof item.id === 'string' ? item.id.trim().slice(0, 16) : ''
+    if (!id || seenIds.has(id)) continue
+    const topic = typeof item.topic === 'string' ? item.topic.trim().slice(0, 200) : ''
+    const question = typeof item.question === 'string' ? item.question.trim().slice(0, 300) : ''
+    if (!topic || !question) continue
+    const category = (VALID_CHECKLIST_CATEGORIES as readonly string[]).includes(item.category)
+      ? (item.category as ChecklistCategory)
+      : 'other'
+    const section = (VALID_CAHIER_SECTIONS as readonly string[]).includes(item.section)
+      ? (item.section as CahierSection)
+      : 'contexte'
+    const status = (VALID_STATUSES as readonly string[]).includes(item.status)
+      ? (item.status as ChecklistStatus)
+      : 'missing'
+    const evidence = typeof item.evidence === 'string' ? item.evidence.trim().slice(0, 240) : ''
+
+    let suggestion: SanitizedEmit['checklist'][number]['suggestion'] = null
+    if (item.suggestion && typeof item.suggestion === 'object' && status !== 'covered' && activeSuggestionCount < MAX_ACTIVE_SUGGESTIONS) {
+      const sQ = typeof item.suggestion.question === 'string' ? item.suggestion.question.trim().slice(0, 240) : ''
+      const sR = typeof item.suggestion.rationale === 'string' ? item.suggestion.rationale.trim().slice(0, 500) : ''
+      const sU = (VALID_URGENCIES as readonly string[]).includes(item.suggestion.urgency)
+        ? (item.suggestion.urgency as SuggestionUrgency)
+        : 'medium'
+      if (sQ && sR) {
+        suggestion = { question: sQ, rationale: sR, urgency: sU }
+        activeSuggestionCount += 1
+      }
+    }
+
+    seenIds.add(id)
+    checklist.push({ id, topic, question, category, section, status, evidence, suggestion })
+  }
+
+  const hint = typeof raw.hint === 'string' && raw.hint.trim().length > 0 ? raw.hint.trim().slice(0, 200) : null
+  const readyForCahier = typeof raw.readyForCahier === 'boolean' ? raw.readyForCahier : false
+
+  return { checklist, hint, readyForCahier }
+}
+
+function cloneChecklist(items: ChecklistItem[]): ChecklistItem[] {
+  return items.map((i) => ({
+    ...i,
+    suggestion: i.suggestion ? { ...i.suggestion } : null,
+  }))
 }

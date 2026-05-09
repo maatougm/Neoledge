@@ -1,5 +1,10 @@
 /**
  * @file live-copilot.types.ts — shared types for the real-time meeting copilot.
+ *
+ * The copilot is now a UNIFIED feature: each fire returns BOTH a project
+ * checklist (topics to collect with status) AND active suggestion cards
+ * (questions to ask now). The frontend renders a single panel where missing
+ * checklist items can carry an inline suggested question with Ask/Ignore.
  */
 
 export type SuggestionUrgency = 'low' | 'medium' | 'high'
@@ -51,28 +56,71 @@ export const VALID_CAHIER_SECTIONS: ReadonlyArray<CahierSection> = [
   'backlog_driver',
 ]
 
-export type SuggestionStatus = 'pending' | 'dismissed' | 'asked'
+/** Coverage status for a checklist topic. */
+export type ChecklistStatus = 'covered' | 'partial' | 'missing'
 
-export interface SuggestionCard {
+/** Free-form category to group checklist items in the UI. */
+export type ChecklistCategory =
+  | 'context'
+  | 'users'
+  | 'features'
+  | 'constraints'
+  | 'integrations'
+  | 'security'
+  | 'timeline'
+  | 'other'
+
+export const VALID_CHECKLIST_CATEGORIES: ReadonlyArray<ChecklistCategory> = [
+  'context',
+  'users',
+  'features',
+  'constraints',
+  'integrations',
+  'security',
+  'timeline',
+  'other',
+]
+
+/** PM action against a checklist item — sticky across fires. */
+export type UserItemAction = 'asked' | 'dismissed'
+
+/** A single topic the PM should collect during the meeting. The agent rewrites
+ *  this list every fire but MUST reuse the same `id` for a topic that already
+ *  exists (semantic match by `topic`). The user-action layer is preserved on
+ *  the server so a rewrite cannot wipe the PM's clicks. */
+export interface ChecklistItem {
   id: string
+  topic: string
+  question: string
+  category: ChecklistCategory
+  section: CahierSection
+  status: ChecklistStatus
+  evidence: string | null
+  /** When status !== 'covered' the agent may attach a question card — that's
+   *  the actionable suggestion the PM can Ask / Ignore. Card lives on the
+   *  same checklist row in the UI. */
+  suggestion: ChecklistSuggestion | null
+  /** PM action recorded by the server. The agent does not see this — it's
+   *  applied in the response builder so a rewrite cannot clobber it. */
+  userAction: UserItemAction | null
+}
+
+export interface ChecklistSuggestion {
   question: string
   rationale: string
   urgency: SuggestionUrgency
-  section: CahierSection
-  status: SuggestionStatus
-  createdAt: string
 }
 
-/** Result of one copilot fire — one row of cards plus an updated rolling summary. */
+/** Result of one copilot fire — the full meeting state. */
 export interface LiveCopilotFireResult {
-  cards: SuggestionCard[]
+  checklist: ChecklistItem[]
+  /** Optional one-line nudge for the PM (top of panel). */
+  hint: string | null
+  /** True when every item is covered/partial AND ≥75% are covered. */
+  readyForCahier: boolean
   summary: string
-  /** Sections the agent flagged as covered during this fire (union of
-   *  per-session agent-tagged coverage so far). */
-  coveredSections?: CahierSection[]
-  /** True when the fire was skipped (cap reached, cooldown, min-content, ...) */
-  skipped?: boolean
   /** When skipped, why. */
+  skipped?: boolean
   skipReason?: 'cooldown' | 'cap_reached' | 'budget' | 'min_content' | 'no_session' | 'provider'
 }
 
@@ -82,48 +130,51 @@ export interface LiveSessionState {
   projectId: string
   userId: string
   meetingType: MeetingType
-  /** Set of cahier sections the agent has explicitly flagged as covered
-   *  during this session (via the `tag_coverage` tool). The frontend
-   *  unions this with its keyword baseline + emitted-suggestion sections. */
+  /** Cahier sections the agent flagged as substantively discussed. Used by
+   *  the frontend coverage gauge. Derived also from per-item status. */
   agentTaggedCoverage: Set<CahierSection>
-  /** Append-only ring buffer of transcript text (capped at 8000 chars). */
+  /** Append-only ring buffer of transcript text (capped). */
   transcriptBuffer: string
-  /** Total chars ever appended (used to compute "new since last fire"). */
   totalCharsAppended: number
-  /** Last char offset the agent has consumed. */
   lastFiredAtOffset: number
-  /** Wall-clock of the last fire (ms epoch). */
   lastFiredAtMs: number
   /** Rolling summary maintained by the agent (its own working memory). */
   summary: string
-  /** Per-meeting fire counter (for the 20-fire cap). */
+  /** The latest checklist the agent emitted. Stable ids — survives between fires. */
+  checklist: ChecklistItem[]
+  /** PM actions per checklist item id. Sticky across rewrites. */
+  userActions: Map<string, UserItemAction>
+  /** Latest one-line hint from the agent. */
+  hint: string | null
+  readyForCahier: boolean
   fireCount: number
-  /** Per-meeting card counter (for the 5-card cap). */
-  cardCount: number
   /** Cumulative input tokens spent on this session. */
   tokenSpend: number
-  /** Created-at (eviction timer). */
   startedAtMs: number
-  /** Last-2-chunks hash to dedupe browser SpeechRecognition restarts. */
+  /** Last-100-chars hash to dedupe browser SpeechRecognition restarts. */
   lastChunkHash: string
 }
 
-/** Hard limits — pinned per the plan. */
+/**
+ * Limits — tuned for "more frequent firing, even if it costs more". The PM
+ * explicitly traded cost for responsiveness, so caps are 3-4x looser than the
+ * original conservative defaults.
+ */
 export const COPILOT_LIMITS = {
-  /** Min chars of NEW transcript before a fire is allowed. */
-  MIN_CONTENT_CHARS: 200,
-  /** Hard floor between fires. */
-  MIN_FIRE_INTERVAL_MS: 30_000,
-  /** Per-meeting fire cap. */
-  MAX_FIRES_PER_MEETING: 20,
-  /** Per-meeting suggestion cap. */
-  MAX_CARDS_PER_MEETING: 5,
-  /** Per-fire suggestion cap (mirrored in the system prompt). */
-  MAX_CARDS_PER_FIRE: 3,
-  /** Per-meeting input-token ceiling. */
-  MAX_TOKENS_PER_MEETING: 40_000,
+  /** Min chars of NEW transcript before a fire is allowed. Loosened for snappier UX. */
+  MIN_CONTENT_CHARS: 80,
+  /** Hard floor between fires. 10s — meaningful pause but not chatty. */
+  MIN_FIRE_INTERVAL_MS: 10_000,
+  /** Per-meeting fire cap. 4× original. */
+  MAX_FIRES_PER_MEETING: 80,
+  /** Per-meeting checklist-item cap (the unified ceiling on output rows). */
+  MAX_ITEMS_PER_MEETING: 32,
+  /** Per-fire NEW item cap — prevents the agent inventing 20 items per fire. */
+  MAX_NEW_ITEMS_PER_FIRE: 6,
+  /** Per-meeting input-token ceiling. 3× original. */
+  MAX_TOKENS_PER_MEETING: 120_000,
   /** Ring-buffer window kept in memory. */
-  TRANSCRIPT_BUFFER_MAX_CHARS: 8_000,
+  TRANSCRIPT_BUFFER_MAX_CHARS: 12_000,
   /** Idle timeout — sessions older than this with no append are evicted. */
   SESSION_IDLE_EVICTION_MS: 30 * 60_000,
   /** Hard wall on agent loop wall-clock per fire. */

@@ -96,7 +96,7 @@
         style="margin-bottom: 12px;"
       />
 
-      <div class="lm__grid lm__grid--copilot" :class="{ 'lm__grid--with-copilot': copilot.enabled.value }">
+      <div class="lm__grid">
         <!-- LEFT: Live transcript -->
         <section class="lm__panel">
           <h3 class="lm__panel-title">
@@ -115,74 +115,20 @@
           </div>
         </section>
 
-        <!-- RIGHT: Checklist -->
-        <section class="lm__panel lm__panel--checklist">
-          <h3 class="lm__panel-title">
-            <i class="pi pi-check-square" /> Checklist projet
-            <span class="lm__chip">{{ coveredCount }}/{{ checklist.length }}</span>
-          </h3>
-
-          <NeoMessage
-            v-if="readyForCahier"
-            severity="success"
-            text="✓ Toutes les informations clés ont été collectées. Vous pouvez maintenant générer un cahier des charges et un backlog optimaux."
-          />
-
-          <NeoMessage
-            v-if="aiHint"
-            severity="info"
-            :text="aiHint"
-          />
-
-          <div v-if="!checklist.length" class="lm__muted">
-            <span v-if="checklistLoading"><i class="pi pi-spin pi-cog" /> Préparation de la checklist…</span>
-            <span v-else>La checklist sera générée dès que la conversation aura assez de matière.</span>
-          </div>
-
-          <ul v-else class="lm__checklist">
-            <li
-              v-for="item in sortedChecklist"
-              :key="item.id"
-              class="lm__chk-item"
-              :class="`lm__chk-item--${item.status}`"
-            >
-              <span class="lm__chk-icon">
-                <i v-if="item.status === 'covered'" class="pi pi-check-circle" />
-                <i v-else-if="item.status === 'partial'" class="pi pi-exclamation-circle" />
-                <i v-else class="pi pi-circle" />
-              </span>
-              <div class="lm__chk-body">
-                <div class="lm__chk-q">{{ item.question }}</div>
-                <div v-if="item.evidence" class="lm__chk-evidence">« {{ item.evidence }} »</div>
-                <div class="lm__chk-meta">
-                  <span class="lm__chk-cat">{{ categoryLabel(item.category) }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-
-          <NeoButton
-            v-if="recording || transcript.length > 50"
-            label="Rafraîchir la checklist"
-            icon="pi pi-refresh"
-            severity="secondary"
-            outlined
-            size="small"
-            :loading="checklistLoading"
-            style="margin-top: 12px;"
-            @click="refreshChecklist"
-          />
-        </section>
-
-        <!-- COPILOT: AI-suggested questions -->
-        <CopilotSuggestionsPanel
-          v-if="copilot.enabled.value"
+        <!-- RIGHT: Unified copilot checklist + inline suggestions -->
+        <CopilotChecklistPanel
           :enabled="copilot.enabled.value"
           :connected="copilot.connected.value"
-          :pending-cards="copilot.pendingCards.value"
+          :refreshing="copilotRefreshing"
+          :checklist="copilot.checklist.value"
+          :hint="copilot.hint.value"
+          :ready-for-cahier="copilot.readyForCahier.value"
           :last-skip-reason="copilot.lastSkipReason.value"
-          @ask="copilot.markAsked"
-          @dismiss="copilot.dismiss"
+          :covered-count="copilot.coveredCount.value"
+          :total-count="copilot.totalCount.value"
+          @ask="copilot.askItem"
+          @dismiss="copilot.dismissItem"
+          @refresh="onForceRefresh"
         />
       </div>
     </div>
@@ -191,31 +137,12 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
+import { NeoButton, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
-import CopilotSuggestionsPanel from '@/components/pm/CopilotSuggestionsPanel.vue'
+import CopilotChecklistPanel from '@/components/pm/CopilotChecklistPanel.vue'
 import CopilotCoverageBar from '@/components/pm/CopilotCoverageBar.vue'
 import { useLiveCopilot, type CahierSection } from '@/composables/useLiveCopilot'
 import { computeCoverage, type DriverField } from '@/lib/copilot/coverage-engine'
-
-type ChecklistStatus = 'covered' | 'partial' | 'missing'
-type ChecklistCategory =
-  | 'context' | 'users' | 'features' | 'constraints'
-  | 'integrations' | 'security' | 'timeline' | 'other'
-
-interface ChecklistItem {
-  id: string
-  category: ChecklistCategory
-  question: string
-  status: ChecklistStatus
-  evidence?: string | null
-}
-
-interface ChecklistResponse {
-  checklist: ChecklistItem[]
-  readyForCahier: boolean
-  hint?: string | null
-}
 
 interface SpeechRecognitionEventLike {
   resultIndex: number
@@ -256,20 +183,14 @@ const transcript = ref('')
 const interim = ref('')
 const startedAt = ref<number | null>(null)
 const tickIntervalId = ref<number | null>(null)
-const checklistTimerId = ref<number | null>(null)
-const initialChecklistTimeoutId = ref<number | null>(null)
 const tick = ref(0)
-
-const checklist = ref<ChecklistItem[]>([])
-const checklistLoading = ref(false)
-const readyForCahier = ref(false)
-const aiHint = ref<string | null>(null)
 const chunkPending = ref(false)
 
-// ── Live copilot state (Phase 4) ─────────────────────────────────────────────
+// ── Live copilot state (unified checklist + suggestions) ─────────────────────
 const copilot = useLiveCopilot(props.projectId)
 const driverFields = ref<DriverField[]>([])
 const lastAppendedLength = ref(0)
+const copilotRefreshing = ref(false)
 let copilotFireTimerId: number | null = null
 let copilotShouldFireSoon = false
 
@@ -299,27 +220,6 @@ const formattedDuration = computed<string>(() => {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 })
 
-const coveredCount = computed(() => checklist.value.filter((i) => i.status === 'covered').length)
-
-const sortedChecklist = computed(() => {
-  const order: Record<ChecklistStatus, number> = { missing: 0, partial: 1, covered: 2 }
-  return [...checklist.value].sort((a, b) => order[a.status] - order[b.status])
-})
-
-const CATEGORY_LABELS: Record<ChecklistCategory, string> = {
-  context: 'Contexte',
-  users: 'Utilisateurs',
-  features: 'Fonctionnalités',
-  constraints: 'Contraintes',
-  integrations: 'Intégrations',
-  security: 'Sécurité',
-  timeline: 'Échéances',
-  other: 'Autre',
-}
-function categoryLabel(c: ChecklistCategory): string {
-  return CATEGORY_LABELS[c] ?? c
-}
-
 function chooseMode(m: 'onsite' | 'online'): void {
   mode.value = m
 }
@@ -329,9 +229,6 @@ function resetMode(): void {
   mode.value = null
   transcript.value = ''
   interim.value = ''
-  checklist.value = []
-  readyForCahier.value = false
-  aiHint.value = null
 }
 
 async function startRecording(): Promise<void> {
@@ -502,58 +399,12 @@ async function uploadChunk(blob: Blob): Promise<void> {
   }
 }
 
-// ── Adaptive checklist refresh ─────────────────────────────────────────────
-// Drive refreshes off transcript growth, not a fixed metronome:
-//   - schedule a refresh as soon as ≥60 new chars have arrived AND
-//     MIN_INTERVAL_MS has elapsed since the last call;
-//   - keep a long-tail safety timer so the checklist still moves during
-//     slow stretches (long pauses, single-speaker monologues).
-const MIN_INTERVAL_MS = 6_000        // never call AI more than once per 6 s
-const NEW_TEXT_TRIGGER = 60          // ~10–15 s of speech in French
-const SAFETY_INTERVAL_MS = 18_000    // hard refresh if growth alone hasn't fired
-const FIRST_CALL_TRIGGER_CHARS = 80  // earliest call once enough text is in
-let lastChecklistCallAt = 0
-let lastChecklistText = ''
-let pendingScheduleId: number | null = null
-function maybeRefreshChecklist(): void {
-  const now = Date.now()
-  const sinceLast = now - lastChecklistCallAt
-  if (sinceLast < MIN_INTERVAL_MS) {
-    if (pendingScheduleId === null) {
-      pendingScheduleId = window.setTimeout(() => {
-        pendingScheduleId = null
-        maybeRefreshChecklist()
-      }, MIN_INTERVAL_MS - sinceLast + 50)
-    }
-    return
-  }
-  void refreshChecklist()
-}
-
-// Trigger a checklist refresh as soon as the transcript has grown enough to
-// be worth re-analysing. The first call fires once we have FIRST_CALL_TRIGGER_CHARS;
-// subsequent calls fire after every NEW_TEXT_TRIGGER chars added since the
-// last call, throttled to at most once per MIN_INTERVAL_MS.
-watch(transcript, (next) => {
-  if (!recording.value) return
-  const trimmed = next.trim()
-  if (trimmed.length < FIRST_CALL_TRIGGER_CHARS && checklist.value.length === 0) return
-  const grown = trimmed.length - lastChecklistText.length
-  if (grown < NEW_TEXT_TRIGGER && lastChecklistText.length > 0) return
-  maybeRefreshChecklist()
-})
-
 function beginSession(): void {
   recording.value = true
   startedAt.value = Date.now()
   tickIntervalId.value = window.setInterval(() => { tick.value += 1 }, 1000)
-  // Long-tail safety: if growth-driven refreshes haven't fired (slow speech,
-  // single speaker), still nudge the checklist every SAFETY_INTERVAL_MS so
-  // the PM sees something move.
-  checklistTimerId.value = window.setInterval(maybeRefreshChecklist, SAFETY_INTERVAL_MS)
 
-  // Live copilot — best-effort start. 404s if feature flag is off (we just
-  // skip; the existing checklist still runs).
+  // Live copilot — best-effort start. 404s if feature flag is off → silently skip.
   void startCopilot()
 }
 
@@ -576,10 +427,12 @@ async function startCopilot(): Promise<void> {
     }
   } catch { /* ignore */ }
 
-  // Heartbeat: try to fire every 60s. Service-side cooldown gates the rest.
+  // Heartbeat: try to fire every 25s. Service-side cooldown still gates the
+  // actual model call (10s floor between fires) but we attempt more often so
+  // the checklist stays fresh during long monologues / pauses.
   copilotFireTimerId = window.setInterval(() => {
     if (copilot.enabled.value) void copilot.fire()
-  }, 60_000)
+  }, 25_000)
 }
 
 // Watch transcript growth: append the diff to the copilot, trigger a fire
@@ -615,27 +468,14 @@ const coverage = computed(() =>
   computeCoverage(transcript.value, driverFields.value, aggregatedSections.value),
 )
 
-async function refreshChecklist(): Promise<void> {
-  if (checklistLoading.value) return
-  const text = transcript.value.trim()
-  if (text.length < 30 && checklist.value.length === 0) return
-  lastChecklistCallAt = Date.now()
-  lastChecklistText = text
-  checklistLoading.value = true
+async function onForceRefresh(): Promise<void> {
+  if (!copilot.enabled.value || copilotRefreshing.value) return
+  copilotRefreshing.value = true
   try {
-    const { data } = await api.post<ChecklistResponse>(
-      `/pm/projects/${props.projectId}/meetings/live/checklist`,
-      { transcript: text, previousChecklist: checklist.value },
-    )
-    if (Array.isArray(data.checklist) && data.checklist.length > 0) {
-      checklist.value = data.checklist
-    }
-    readyForCahier.value = !!data.readyForCahier
-    aiHint.value = data.hint ?? null
-  } catch {
-    // Silent retry next tick
+    await copilot.fire({ force: true })
   } finally {
-    checklistLoading.value = false
+    // Give the gateway a beat to push the resulting state before clearing.
+    setTimeout(() => { copilotRefreshing.value = false }, 1500)
   }
 }
 
@@ -651,14 +491,9 @@ async function stopAndSave(): Promise<void> {
     mediaStream = null
   }
   if (tickIntervalId.value !== null) { window.clearInterval(tickIntervalId.value); tickIntervalId.value = null }
-  if (checklistTimerId.value !== null) { window.clearInterval(checklistTimerId.value); checklistTimerId.value = null }
-  if (initialChecklistTimeoutId.value !== null) { window.clearTimeout(initialChecklistTimeoutId.value); initialChecklistTimeoutId.value = null }
-  if (pendingScheduleId !== null) { window.clearTimeout(pendingScheduleId); pendingScheduleId = null }
-  lastChecklistCallAt = 0
-  lastChecklistText = ''
 
-  // Final checklist refresh so the saved meeting carries the freshest state
-  await refreshChecklist()
+  // One final force-fire so the saved meeting carries the freshest state.
+  if (copilot.enabled.value) await copilot.fire({ force: true })
 
   const text = transcript.value.trim()
   if (text.length < 20) {
@@ -720,9 +555,6 @@ onUnmounted(() => {
   }
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
   if (tickIntervalId.value !== null) window.clearInterval(tickIntervalId.value)
-  if (checklistTimerId.value !== null) window.clearInterval(checklistTimerId.value)
-  if (initialChecklistTimeoutId.value !== null) window.clearTimeout(initialChecklistTimeoutId.value)
-  if (pendingScheduleId !== null) window.clearTimeout(pendingScheduleId)
   if (copilotFireTimerId !== null) window.clearInterval(copilotFireTimerId)
   // The composable's own onBeforeUnmount handles socket teardown.
 })
@@ -817,10 +649,8 @@ onUnmounted(() => {
 }
 @keyframes lm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-.lm__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.lm__grid--with-copilot { grid-template-columns: 1.4fr 1fr 1fr; }
-@media (max-width: 1200px) { .lm__grid--with-copilot { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 900px) { .lm__grid { grid-template-columns: 1fr; } .lm__grid--with-copilot { grid-template-columns: 1fr; } }
+.lm__grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+@media (max-width: 1100px) { .lm__grid { grid-template-columns: 1fr; } }
 
 .lm__panel {
   background: var(--nl-surface);
@@ -829,7 +659,6 @@ onUnmounted(() => {
   padding: 16px;
   min-height: 320px;
 }
-.lm__panel--checklist { background: var(--nl-surface-2, #fafafa); }
 .lm__panel-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 0.9375rem; font-weight: 600; margin: 0 0 12px;
@@ -849,39 +678,6 @@ onUnmounted(() => {
 }
 .lm__transcript-text { margin: 0; white-space: pre-wrap; }
 .lm__interim { margin: 8px 0 0; color: var(--nl-text-3); font-style: italic; white-space: pre-wrap; }
-
-/* ── Checklist ────────────────────────────────────────────────────────────── */
-.lm__checklist { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
-.lm__chk-item {
-  display: flex; gap: 10px; padding: 10px;
-  background: var(--nl-surface);
-  border: 1px solid var(--nl-border);
-  border-radius: var(--nl-radius);
-  transition: background 0.2s, border-color 0.2s;
-}
-.lm__chk-item--covered { background: #ecfdf5; border-color: #a7f3d0; }
-.lm__chk-item--partial { background: #fffbeb; border-color: #fde68a; }
-.lm__chk-item--missing { background: var(--nl-surface); border-color: var(--nl-border); }
-
-.lm__chk-icon { flex-shrink: 0; font-size: 1.125rem; padding-top: 1px; }
-.lm__chk-item--covered .lm__chk-icon { color: #059669; }
-.lm__chk-item--partial .lm__chk-icon { color: #d97706; }
-.lm__chk-item--missing .lm__chk-icon { color: var(--nl-text-3); }
-
-.lm__chk-body { flex: 1; min-width: 0; }
-.lm__chk-q { font-size: 0.875rem; font-weight: 500; }
-.lm__chk-evidence {
-  margin-top: 4px; padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.7);
-  border-left: 2px solid #059669;
-  font-size: 0.8125rem; color: var(--nl-text-2);
-  font-style: italic;
-}
-.lm__chk-meta { margin-top: 4px; font-size: 0.75rem; color: var(--nl-text-3); }
-.lm__chk-cat {
-  background: rgba(0, 0, 0, 0.05);
-  padding: 2px 6px; border-radius: 4px;
-}
 
 .lm__muted { color: var(--nl-text-3); font-size: 0.875rem; padding: 8px 0; }
 </style>

@@ -1,8 +1,11 @@
 /**
- * @file useLiveCopilot.ts — wires the live meeting copilot socket and HTTP.
- * Connects to the `/live-meeting` namespace, joins the project+session
- * room, exposes a reactive list of suggestion cards, and offers the
- * action helpers (start/append/fire/dismiss/ask/end).
+ * @file useLiveCopilot.ts — wires the unified live meeting copilot.
+ * One agent fire produces BOTH a project checklist (topics-to-collect)
+ * AND inline question suggestions attached to missing/partial items.
+ *
+ * Connects to the `/live-meeting` socket namespace, joins the project+session
+ * room, exposes a reactive checklist + hint + ready flag, and offers per-item
+ * action helpers (ask/dismiss) plus session lifecycle (start/append/fire/end).
  */
 
 import { ref, computed, onBeforeUnmount } from 'vue'
@@ -10,6 +13,8 @@ import { io, type Socket } from 'socket.io-client'
 import api, { extractErrorMessage } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useConfigStore } from '@/stores/configStore'
+
+// ─── Types (mirrored from backend live-copilot.types.ts) ───────────────────
 
 export type SuggestionUrgency = 'low' | 'medium' | 'high'
 
@@ -25,38 +30,70 @@ export type CahierSection =
   | 'conclusion'
   | 'backlog_driver'
 
-export interface SuggestionCard {
-  id: string
+export type ChecklistStatus = 'covered' | 'partial' | 'missing'
+
+export type ChecklistCategory =
+  | 'context' | 'users' | 'features' | 'constraints'
+  | 'integrations' | 'security' | 'timeline' | 'other'
+
+export type UserItemAction = 'asked' | 'dismissed'
+
+export interface ChecklistSuggestion {
   question: string
   rationale: string
   urgency: SuggestionUrgency
-  section: CahierSection
-  status: 'pending' | 'dismissed' | 'asked'
-  createdAt: string
 }
 
-export type FireSkipReason = 'cooldown' | 'cap_reached' | 'budget' | 'min_content' | 'no_session' | 'provider'
+export interface ChecklistItem {
+  id: string
+  topic: string
+  question: string
+  category: ChecklistCategory
+  section: CahierSection
+  status: ChecklistStatus
+  evidence: string | null
+  suggestion: ChecklistSuggestion | null
+  userAction: UserItemAction | null
+}
+
+export type FireSkipReason =
+  | 'cooldown' | 'cap_reached' | 'budget' | 'min_content' | 'no_session' | 'provider'
+
+interface MeetingStatePayload {
+  checklist: ChecklistItem[]
+  hint: string | null
+  readyForCahier: boolean
+}
+
+// ─── Composable ────────────────────────────────────────────────────────────
 
 export function useLiveCopilot(projectId: string) {
   const auth = useAuthStore()
   const config = useConfigStore()
 
-  const cards = ref<SuggestionCard[]>([])
+  const checklist = ref<ChecklistItem[]>([])
+  const hint = ref<string | null>(null)
+  const readyForCahier = ref<boolean>(false)
   const lastSkipReason = ref<FireSkipReason | null>(null)
   const connected = ref(false)
   const enabled = ref(false) // false until startSession returns 201
   const liveSessionId = ref<string | null>(null)
-  /** Agent-tagged covered sections — accumulated across fires. The
-   *  frontend coverage engine unions this with its keyword baseline. */
+  /** Cumulative agent-tagged covered sections — drives the coverage gauge. */
   const agentCoverage = ref<CahierSection[]>([])
 
   let socket: Socket | null = null
 
-  // ─── Computed: counts ──────────────────────────────────────────────────────
+  // ─── Computed views ──────────────────────────────────────────────────────
 
-  const pendingCards = computed(() => cards.value.filter((c) => c.status === 'pending'))
+  /** Items with an active (pending) suggestion the PM can Ask / Ignore. */
+  const pendingSuggestions = computed<ChecklistItem[]>(() =>
+    checklist.value.filter((i) => i.suggestion !== null && i.userAction === null),
+  )
 
-  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+  const coveredCount = computed(() => checklist.value.filter((i) => i.status === 'covered').length)
+  const totalCount = computed(() => checklist.value.length)
+
+  // ─── Lifecycle ───────────────────────────────────────────────────────────
 
   async function startSession(sessionId: string, meetingType?: string): Promise<{ ok: boolean; reason?: string }> {
     try {
@@ -69,7 +106,6 @@ export function useLiveCopilot(projectId: string) {
       _connectSocket(sessionId)
       return { ok: true }
     } catch (e: unknown) {
-      // 404 → feature flag is off. Fail soft.
       const msg = extractErrorMessage(e) ?? 'unavailable'
       enabled.value = false
       return { ok: false, reason: msg }
@@ -89,65 +125,43 @@ export function useLiveCopilot(projectId: string) {
     }
   }
 
-  async function fire(): Promise<void> {
+  /** Fire the agent. `force=true` bypasses cooldown + min-content gates. */
+  async function fire(options: { force?: boolean } = {}): Promise<void> {
     if (!enabled.value || !liveSessionId.value) return
     try {
       await api.post(`/pm/projects/${projectId}/meetings/live/copilot/fire`, {
         liveSessionId: liveSessionId.value,
+        ...(options.force ? { force: true } : {}),
       })
     } catch {
-      // The fire endpoint never 5xx's mid-meeting (the service downgrades
-      // any error to a `provider` skip reason that arrives via socket).
+      /* fire never 5xx's mid-meeting — service downgrades to skipReason via socket. */
     }
   }
 
-  async function dismiss(suggestionId: string): Promise<void> {
-    // Optimistic update.
-    const idx = cards.value.findIndex((c) => c.id === suggestionId)
-    if (idx >= 0) {
-      cards.value = [
-        ...cards.value.slice(0, idx),
-        { ...cards.value[idx], status: 'dismissed' },
-        ...cards.value.slice(idx + 1),
-      ]
-    }
+  async function askItem(itemId: string): Promise<void> {
+    if (!enabled.value || !liveSessionId.value) return
+    // Optimistic: mark the item as asked locally.
+    _patchItem(itemId, { userAction: 'asked' })
     try {
       await api.post(
-        `/pm/projects/${projectId}/meetings/live/copilot/suggestions/${suggestionId}/dismiss`,
+        `/pm/projects/${projectId}/meetings/live/copilot/items/${itemId}/ask`,
+        { liveSessionId: liveSessionId.value, itemId },
       )
     } catch {
-      // Revert on failure.
-      if (idx >= 0) {
-        cards.value = [
-          ...cards.value.slice(0, idx),
-          { ...cards.value[idx], status: 'pending' },
-          ...cards.value.slice(idx + 1),
-        ]
-      }
+      _patchItem(itemId, { userAction: null })
     }
   }
 
-  async function markAsked(suggestionId: string): Promise<void> {
-    const idx = cards.value.findIndex((c) => c.id === suggestionId)
-    if (idx >= 0) {
-      cards.value = [
-        ...cards.value.slice(0, idx),
-        { ...cards.value[idx], status: 'asked' },
-        ...cards.value.slice(idx + 1),
-      ]
-    }
+  async function dismissItem(itemId: string): Promise<void> {
+    if (!enabled.value || !liveSessionId.value) return
+    _patchItem(itemId, { userAction: 'dismissed' })
     try {
       await api.post(
-        `/pm/projects/${projectId}/meetings/live/copilot/suggestions/${suggestionId}/ask`,
+        `/pm/projects/${projectId}/meetings/live/copilot/items/${itemId}/dismiss`,
+        { liveSessionId: liveSessionId.value, itemId },
       )
     } catch {
-      if (idx >= 0) {
-        cards.value = [
-          ...cards.value.slice(0, idx),
-          { ...cards.value[idx], status: 'pending' },
-          ...cards.value.slice(idx + 1),
-        ]
-      }
+      _patchItem(itemId, { userAction: null })
     }
   }
 
@@ -162,9 +176,12 @@ export function useLiveCopilot(projectId: string) {
     liveSessionId.value = null
     enabled.value = false
     agentCoverage.value = []
+    checklist.value = []
+    hint.value = null
+    readyForCahier.value = false
   }
 
-  // ─── Socket plumbing ───────────────────────────────────────────────────────
+  // ─── Socket plumbing ─────────────────────────────────────────────────────
 
   function _connectSocket(sessionId: string): void {
     if (!auth.jwt || !config.apiUrl) return
@@ -192,12 +209,11 @@ export function useLiveCopilot(projectId: string) {
       socket?.emit('copilot:join', { projectId, liveSessionId: sessionId })
     })
 
-    socket.on('copilot:suggestions', (payload: unknown) => {
-      if (!isSuggestionsPayload(payload)) return
-      // Append, dedupe by id.
-      const existing = new Set(cards.value.map((c) => c.id))
-      const additions = payload.cards.filter((c) => !existing.has(c.id))
-      if (additions.length > 0) cards.value = [...additions, ...cards.value]
+    socket.on('copilot:meeting-state', (payload: unknown) => {
+      if (!isMeetingStatePayload(payload)) return
+      checklist.value = payload.checklist
+      hint.value = payload.hint
+      readyForCahier.value = payload.readyForCahier
     })
 
     socket.on('copilot:fire-skipped', (payload: unknown) => {
@@ -210,7 +226,6 @@ export function useLiveCopilot(projectId: string) {
       if (!payload || typeof payload !== 'object' || !('sections' in payload)) return
       const sections = (payload as { sections: unknown }).sections
       if (!Array.isArray(sections)) return
-      // Union with existing.
       const next = new Set<CahierSection>(agentCoverage.value)
       for (const s of sections) {
         if (typeof s === 'string') next.add(s as CahierSection)
@@ -228,30 +243,50 @@ export function useLiveCopilot(projectId: string) {
     connected.value = false
   }
 
+  function _patchItem(itemId: string, patch: Partial<ChecklistItem>): void {
+    const idx = checklist.value.findIndex((i) => i.id === itemId)
+    if (idx < 0) return
+    checklist.value = [
+      ...checklist.value.slice(0, idx),
+      { ...checklist.value[idx], ...patch },
+      ...checklist.value.slice(idx + 1),
+    ]
+  }
+
   onBeforeUnmount(() => {
     _disconnectSocket()
   })
 
   return {
-    cards,
-    pendingCards,
+    // state
+    checklist,
+    hint,
+    readyForCahier,
+    pendingSuggestions,
+    coveredCount,
+    totalCount,
     enabled,
     connected,
     lastSkipReason,
     liveSessionId,
     agentCoverage,
+    // actions
     startSession,
     appendChunk,
     fire,
-    dismiss,
-    markAsked,
+    askItem,
+    dismissItem,
     endSession,
   }
 }
 
-function isSuggestionsPayload(value: unknown): value is { cards: SuggestionCard[] } {
-  if (!value || typeof value !== 'object' || !('cards' in value)) return false
-  const cards = (value as { cards: unknown }).cards
-  if (!Array.isArray(cards)) return false
-  return cards.every((c) => c && typeof c === 'object' && 'id' in c && 'question' in c)
+// ─── Type guards ───────────────────────────────────────────────────────────
+
+function isMeetingStatePayload(value: unknown): value is MeetingStatePayload {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  if (!Array.isArray(v.checklist)) return false
+  if (typeof v.readyForCahier !== 'boolean') return false
+  if (v.hint !== null && typeof v.hint !== 'string') return false
+  return v.checklist.every((i) => i && typeof i === 'object' && 'id' in (i as Record<string, unknown>) && 'status' in (i as Record<string, unknown>))
 }

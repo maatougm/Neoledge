@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator'
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator'
 import { VALID_MEETING_TYPES, type MeetingType } from '../live-copilot.types.js'
 
 export class StartCopilotSessionDto {
@@ -26,6 +26,21 @@ export class FireCopilotDto {
   @IsString()
   @MaxLength(80)
   liveSessionId!: string
+
+  /** Bypass cooldown + min-content gates (for the manual "Rafraîchir" button). */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean
+}
+
+export class ChecklistItemActionDto {
+  @IsString()
+  @MaxLength(80)
+  liveSessionId!: string
+
+  @IsString()
+  @MaxLength(16)
+  itemId!: string
 }
 
 export class EndCopilotSessionDto {
