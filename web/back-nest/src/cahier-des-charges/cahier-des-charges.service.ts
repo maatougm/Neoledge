@@ -13,6 +13,8 @@ import type {
   CahierTranscriptInput,
   CahierAiResult,
   CahierDocxPayload,
+  CahierPreflightResult,
+  MissingFieldInfo,
 } from './cahier-des-charges.types.js'
 
 // ─── System prompt for cahier des charges generation ─────────────────────────
@@ -26,7 +28,8 @@ STRUCTURE ATTENDUE (inspiré du modèle NeoLedge interne) :
 - livrables : module intégré (Frontend + Backend), base de données + scripts, documentation technique + guide utilisateur, rapport de projet.
 
 RÈGLES JSON STRICTES : tous les textes sont des strings JSON échappées. Pas de \`**\` ni de \`-\` en dehors des strings. Markdown (\`**gras**\`, listes \`- \`, sauts de ligne \\n) autorisé À L'INTÉRIEUR des strings uniquement.
-RÈGLES CONTENU : français, ton contractuel professionnel, exhaustif. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate si le type de projet le justifie. "À définir" si info manquante. Conclusion = paragraphe synthétique sans liste.
+RÈGLES CONTENU : français, ton contractuel professionnel, exhaustif. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate si le type de projet le justifie. Conclusion = paragraphe synthétique sans liste.
+RÈGLE ANTI-HALLUCINATION CRITIQUE : si une information n'est PAS explicitement fournie dans QUESTIONNAIRE, REUNIONS ou CAHIER_VALIDE_PAR_EQUIPE, NE L'INVENTE PAS. Écris exactement le marqueur \`INFO_MANQUANTE: <sujet précis>\` (ex: "INFO_MANQUANTE: volume documentaire mensuel"). Le PM le remplira manuellement. Mieux vaut un marqueur honnête qu'une donnée inventée.
 
 PRIORITÉ DES SOURCES (du plus prioritaire au moins prioritaire) :
 1. CAHIER_VALIDE_PAR_EQUIPE (si présent) — version corrigée par l'équipe de validation, fait foi. Conserve les phrases telles qu'elles sont rédigées pour les sections qu'ils ont modifiées. NE LES RÉÉCRIS PAS.
@@ -125,6 +128,291 @@ export class CahierDesChargesService {
     }))
 
     return { formData, transcripts }
+  }
+
+  // ─── 1c. Preflight gap analysis ────────────────────────────────────────────
+
+  /**
+   * Inspect questionnaire + meetings + saved cahier and report what's missing
+   * BEFORE generation. Lets the PM either (a) fill the gaps, (b) record more
+   * meetings, or (c) explicitly accept generating with holes — instead of the
+   * AI silently inventing "À définir" placeholders or, worse, hallucinating data.
+   */
+  async runPreflight(projectId: string): Promise<CahierPreflightResult> {
+    const { formData, transcripts } = await this.gatherProjectData(projectId)
+
+    // Pull existing cahier so we can flag remaining INFO_MANQUANTE markers too.
+    const persisted = await this.getPersistedCahier(projectId).catch(() => ({ aiContent: null }))
+
+    // Pull project fields so the UI can deep-link "fill this answer" actions.
+    const fields = await this.prisma.projectField.findMany({
+      where: { projectId },
+      select: { id: true, label: true, isBacklogDriver: true },
+    })
+    const fieldByLabel = new Map(fields.map((f) => [f.label.toLowerCase().trim(), f.id]))
+
+    // 1. Cheap deterministic checks first — these never miss the obvious
+    //    "no questionnaire / no meeting" cases regardless of AI mood.
+    const heuristicGaps = this.collectHeuristicGaps(formData, transcripts, persisted.aiContent, fieldByLabel)
+
+    // 2. Try the LLM for richer, project-specific gap discovery. Failure
+    //    falls back to heuristic-only — never blocks the user.
+    let aiGaps: MissingFieldInfo[] = []
+    let source: 'ai' | 'heuristic' = 'heuristic'
+    if (this.zaiFallback.isConfigured()) {
+      try {
+        aiGaps = await this.runAiPreflight(formData, transcripts, persisted.aiContent, fieldByLabel)
+        source = 'ai'
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        this.logger.warn(`Preflight AI call failed, falling back to heuristic: ${msg.slice(0, 200)}`)
+      }
+    }
+
+    // Merge — dedupe by (section + topic) so AI doesn't re-report what
+    // the heuristic already caught.
+    const seen = new Set<string>()
+    const merged: MissingFieldInfo[] = []
+    for (const g of [...heuristicGaps, ...aiGaps]) {
+      const key = `${g.section}::${g.topic.toLowerCase().trim()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(g)
+    }
+
+    const answeredFields = this.collectAnsweredFields(formData, transcripts, persisted.aiContent)
+
+    // Readiness = answered / (answered + high+medium gaps). Low-severity
+    // gaps don't penalize the score.
+    const weighted = merged.filter((g) => g.severity !== 'low').length
+    const total = answeredFields.length + weighted
+    const readinessScore = total === 0 ? 0 : Math.max(0, Math.min(1, answeredFields.length / total))
+
+    const canGenerate = !merged.some((g) => g.severity === 'high')
+
+    return {
+      readinessScore,
+      missingFields: merged,
+      answeredFields,
+      canGenerate,
+      computedAt: Date.now(),
+      source,
+    }
+  }
+
+  /** Section slugs the cahier expects to populate. */
+  private static readonly REQUIRED_SECTIONS: Array<{ key: string; label: string }> = [
+    { key: 'objectifProjet', label: 'Objectif du projet' },
+    { key: 'contexte', label: 'Contexte' },
+    { key: 'perimetreInclus', label: 'Périmètre — éléments inclus' },
+    { key: 'perimetreExclus', label: 'Périmètre — éléments exclus' },
+    { key: 'exigencesFonctionnelles', label: 'Exigences fonctionnelles' },
+    { key: 'architectureTechnique', label: 'Architecture technique' },
+    { key: 'livrables', label: 'Livrables' },
+  ]
+
+  /** What the project clearly already answers (never invents — based on data). */
+  private collectAnsweredFields(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    saved: unknown,
+  ): string[] {
+    const answered: string[] = []
+    const filledLabels = new Set(
+      formData.fields.filter((f) => f.value && f.value.trim().length > 10).map((f) => f.label),
+    )
+    if (filledLabels.size > 0) answered.push(`Questionnaire (${filledLabels.size} champs remplis)`)
+    if (transcripts.length > 0) {
+      answered.push(`Réunions enregistrées (${transcripts.length})`)
+    }
+    if (saved && typeof saved === 'object') {
+      const s = saved as Record<string, unknown>
+      for (const sec of CahierDesChargesService.REQUIRED_SECTIONS) {
+        const v = s[sec.key]
+        const filled =
+          (typeof v === 'string' && v.trim().length > 20 && !v.includes('INFO_MANQUANTE') && !/à définir/i.test(v)) ||
+          (Array.isArray(v) && v.length > 0)
+        if (filled) answered.push(sec.label)
+      }
+    }
+    return answered
+  }
+
+  /**
+   * Deterministic gap list — catches the obvious "the user hasn't answered"
+   * cases without spending an LLM call. Always runs, even when AI mode is on.
+   */
+  private collectHeuristicGaps(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    saved: unknown,
+    fieldByLabel: Map<string, string>,
+  ): MissingFieldInfo[] {
+    const gaps: MissingFieldInfo[] = []
+    const filledFields = formData.fields.filter((f) => f.value && f.value.trim().length > 0)
+
+    if (filledFields.length === 0 && transcripts.length === 0) {
+      gaps.push({
+        id: 'h-no-data',
+        section: 'global',
+        topic: 'Aucune donnée projet disponible',
+        severity: 'high',
+        suggestedQuestion:
+          'Le projet n\'a ni questionnaire rempli ni réunion enregistrée. Remplissez d\'abord le questionnaire ou enregistrez une réunion de cadrage.',
+      })
+      return gaps
+    }
+
+    // Empty backlog-driver fields are always high severity — they're flagged
+    // as required by the PM.
+    for (const f of formData.fields) {
+      const trimmed = (f.value ?? '').trim()
+      if (trimmed.length === 0) {
+        gaps.push({
+          id: `h-field-${f.label}`,
+          section: 'questionnaire',
+          topic: f.label,
+          severity: 'high',
+          suggestedQuestion: `Renseignez le champ « ${f.label} » dans le questionnaire.`,
+          relatedFieldId: fieldByLabel.get(f.label.toLowerCase().trim()) ?? null,
+        })
+      }
+    }
+
+    // Markers left by previous generations — must be resolved before regen.
+    if (saved && typeof saved === 'object') {
+      const s = saved as Record<string, unknown>
+      for (const sec of CahierDesChargesService.REQUIRED_SECTIONS) {
+        const v = s[sec.key]
+        if (typeof v === 'string') {
+          const matches = v.match(/INFO_MANQUANTE:\s*([^\n]+)/g)
+          if (matches) {
+            for (const [idx, m] of matches.entries()) {
+              const topic = m.replace(/INFO_MANQUANTE:\s*/, '').trim()
+              gaps.push({
+                id: `h-marker-${sec.key}-${idx}`,
+                section: sec.key,
+                topic,
+                severity: 'high',
+                suggestedQuestion: `Section « ${sec.label} » : marqueur "${topic}" laissé par la précédente génération.`,
+              })
+            }
+          }
+        }
+      }
+    }
+
+    // Zero meetings is medium — backlog can be inferred from the questionnaire alone
+    // but the cahier is much weaker without any meeting context.
+    if (transcripts.length === 0) {
+      gaps.push({
+        id: 'h-no-meetings',
+        section: 'reunions',
+        topic: 'Aucune réunion enregistrée',
+        severity: 'medium',
+        suggestedQuestion:
+          'Aucune réunion de cadrage avec le client n\'est enregistrée. Le cahier sera généré uniquement à partir du questionnaire.',
+      })
+    }
+
+    return gaps
+  }
+
+  /**
+   * Ask the LLM to identify project-specific gaps a heuristic can't see —
+   * e.g. "le client mentionne un module IA mais sans détailler les cas d'usage".
+   * Returns at most 8 gaps. Throws on AI failure (caller falls back to heuristic).
+   */
+  private async runAiPreflight(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    saved: unknown,
+    fieldByLabel: Map<string, string>,
+  ): Promise<MissingFieldInfo[]> {
+    const PREFLIGHT_SYSTEM = `Tu es expert NeoLedge en analyse de complétude de cahiers des charges. À partir des données projet, identifie les informations CLAIREMENT MANQUANTES qui empêcheraient de rédiger un cahier des charges contractuel honnête.
+
+Retourne UNIQUEMENT un JSON valide avec ce format strict :
+{
+  "missingFields": [
+    {
+      "section": "objectifProjet" | "contexte" | "perimetreInclus" | "perimetreExclus" | "exigencesFonctionnelles" | "architectureTechnique" | "livrables" | "global",
+      "topic": "<3-8 mots décrivant ce qui manque>",
+      "severity": "high" | "medium" | "low",
+      "suggestedQuestion": "<question concrète à poser au client en réunion ou réponse à fournir dans le questionnaire>"
+    }
+  ]
+}
+
+RÈGLES :
+- Maximum 8 entrées. Privilégie ce qui bloque vraiment la rédaction (severity=high).
+- "high" : information critique manquante (périmètre exclu non défini, formats de livrables, technologies imposées, volume métier, calendrier, contraintes réglementaires).
+- "medium" : information utile mais inférable (exemples concrets, KPIs, profils utilisateurs).
+- "low" : nice-to-have (anecdotes, contexte historique).
+- Ne signale PAS ce qui est déjà fourni. Lis attentivement avant de demander.
+- Pas d'invention : si tu n'es pas certain qu'une info manque, ne la signale pas.
+- Français concis et professionnel.`
+
+    const userPrompt = (() => {
+      const parts: string[] = []
+      parts.push(`# PROJET\nnom: ${formData.projectName}\nclient: ${formData.clientName}\npriorite: ${formData.priority}\nstatut: ${formData.status}`)
+      if (formData.fields.length > 0) {
+        parts.push(`\n# QUESTIONNAIRE[${formData.fields.length}]{label,type,value}:`)
+        for (const f of formData.fields) {
+          parts.push(`${this.toonCell(f.label)},${this.toonCell(f.fieldType)},${this.toonCell(f.value)}`)
+        }
+      }
+      if (transcripts.length > 0) {
+        parts.push(`\n# REUNIONS[${transcripts.length}]`)
+        for (const t of transcripts) {
+          parts.push(`\n## ${t.title} | ${t.recordedAt}`)
+          if (t.aiSummary) parts.push(`resume: ${t.aiSummary.trim().slice(0, 600)}`)
+          if (t.decisions.length > 0) {
+            parts.push(`decisions[${t.decisions.length}]:`)
+            for (const d of t.decisions.slice(0, 8)) parts.push(`- ${d.category}: ${d.description}`)
+          }
+        }
+      } else {
+        parts.push(`\n# REUNIONS: aucune`)
+      }
+      if (saved && typeof saved === 'object') {
+        const json = JSON.stringify(saved)
+        const trimmed = json.length > 4000 ? json.slice(0, 4000) + ' [trunc]' : json
+        parts.push(`\n# CAHIER_ACTUEL (référence — flag les marqueurs INFO_MANQUANTE):\n${trimmed}`)
+      }
+      return parts.join('\n')
+    })()
+
+    const raw = await this.zaiFallback.chat(PREFLIGHT_SYSTEM, userPrompt, { maxTokens: 1500, temperature: 0.2 })
+    const cleaned = this.stripFences(raw)
+    let parsed: { missingFields?: unknown } = {}
+    try {
+      parsed = JSON.parse(cleaned) as typeof parsed
+    } catch (e) {
+      throw new Error(`Preflight returned invalid JSON: ${(e as Error).message}`)
+    }
+
+    const list = Array.isArray(parsed.missingFields) ? parsed.missingFields : []
+    const out: MissingFieldInfo[] = []
+    for (const [idx, item] of list.entries()) {
+      if (!item || typeof item !== 'object') continue
+      const r = item as Record<string, unknown>
+      const section = typeof r.section === 'string' ? r.section : 'global'
+      const topic = typeof r.topic === 'string' ? r.topic.trim() : ''
+      if (!topic) continue
+      const severity: MissingFieldInfo['severity'] =
+        r.severity === 'high' || r.severity === 'medium' || r.severity === 'low' ? r.severity : 'medium'
+      const suggestedQuestion = typeof r.suggestedQuestion === 'string' ? r.suggestedQuestion.trim() : ''
+      out.push({
+        id: `ai-${section}-${idx}`,
+        section,
+        topic: topic.slice(0, 200),
+        severity,
+        suggestedQuestion: (suggestedQuestion || `Précisez : ${topic}`).slice(0, 400),
+        relatedFieldId: fieldByLabel.get(topic.toLowerCase().trim()) ?? null,
+      })
+      if (out.length >= 8) break
+    }
+    return out
   }
 
   // ─── 1b. Fetch past feedback for AI learning ────────────────────────────────

@@ -42,6 +42,21 @@ export class CahierDesChargesController {
   }
 
   /**
+   * GET /pm/projects/:projectId/cahier-des-charges/preflight
+   *
+   * Inspect questionnaire + meetings + saved cahier and report what's missing
+   * BEFORE generation. The PM can then either fill the gaps, schedule another
+   * meeting, or proceed anyway. Prevents the AI from inventing content for
+   * sections where no source data exists.
+   */
+  @Get('pm/projects/:projectId/cahier-des-charges/preflight')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async preflightCahier(@Param('projectId') projectId: string) {
+    return this.cahierService.runPreflight(projectId)
+  }
+
+  /**
    * GET /pm/projects/:projectId/cahier-des-charges/preview
    *
    * Returns the AI-generated content as JSON (for preview in frontend before download).

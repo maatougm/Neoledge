@@ -79,3 +79,36 @@ export interface CahierDocxPayload {
   aiContent: CahierAiResult
   generatedAt: string
 }
+
+// ─── Preflight gap analysis ─────────────────────────────────────────────────
+
+/** One missing piece of information identified before cahier generation. */
+export interface MissingFieldInfo {
+  /** Section of the cahier this gap belongs to (e.g. "perimetreExclus", "exigencesFonctionnelles"). */
+  section: string
+  /** Short human-readable label of what's missing. */
+  topic: string
+  /** Severity — 'high' blocks generation by default, 'medium'/'low' are warnings. */
+  severity: 'high' | 'medium' | 'low'
+  /** A concrete question the PM should answer (or ask in a meeting). */
+  suggestedQuestion: string
+  /** Stable id so the UI can attach actions / dismissals to a specific row. */
+  id: string
+  /** Optional id of a ProjectField that, if filled, would close this gap. */
+  relatedFieldId?: string | null
+}
+
+export interface CahierPreflightResult {
+  /** 0..1 — proportion of expected sections covered. */
+  readinessScore: number
+  /** All identified gaps (high + medium + low). */
+  missingFields: MissingFieldInfo[]
+  /** Sections the AI considers complete. */
+  answeredFields: string[]
+  /** True when no high-severity gaps remain. */
+  canGenerate: boolean
+  /** Unix ms — timestamp the preflight was computed. */
+  computedAt: number
+  /** Origin: 'ai' (LLM call) or 'heuristic' (fallback when AI fails). */
+  source: 'ai' | 'heuristic'
+}

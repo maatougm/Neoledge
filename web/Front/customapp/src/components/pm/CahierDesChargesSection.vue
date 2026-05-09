@@ -18,7 +18,7 @@
           size="small"
           :loading="generating"
           :disabled="generating"
-          @click="handleGenerate"
+          @click="openPreflight"
         />
         <i :class="['pi', expanded ? 'pi-chevron-up' : 'pi-chevron-down', 'chevron']" />
       </div>
@@ -44,7 +44,7 @@
           <i class="pi pi-exclamation-triangle" />
           <span>{{ error }}</span>
         </div>
-        <NeoButton label="Réessayer" icon="pi pi-refresh" size="small" @click="handleGenerate" />
+        <NeoButton label="Réessayer" icon="pi pi-refresh" size="small" @click="openPreflight" />
       </div>
 
       <!-- Success state: inline preview + download + feedback -->
@@ -277,6 +277,12 @@
         </p>
       </div>
     </div>
+
+    <CahierPreflightModal
+      v-model:visible="preflightVisible"
+      :project-id="projectId"
+      @proceed="onPreflightProceed"
+    />
   </div>
 </template>
 
@@ -286,6 +292,7 @@ import { NeoButton, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/compo
 import api from '@/lib/api'
 import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
+import CahierPreflightModal from './CahierPreflightModal.vue'
 import { formatRelative } from '@/lib/formatDate'
 
 interface CahierSection {
@@ -335,8 +342,19 @@ function confirmRegenerate(): void {
     header: 'Régénérer le cahier des charges',
     acceptLabel: 'Régénérer',
     rejectLabel: 'Annuler',
-    accept: () => { void handleGenerate() },
+    accept: () => { openPreflight() },
   })
+}
+
+const preflightVisible = ref(false)
+
+function openPreflight(): void {
+  preflightVisible.value = true
+}
+
+function onPreflightProceed(_force: boolean): void {
+  preflightVisible.value = false
+  void handleGenerate()
 }
 
 const expanded = ref(true)
