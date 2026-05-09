@@ -453,14 +453,15 @@ watch(transcript, async (next) => {
 })
 
 // ── Coverage gauge ───────────────────────────────────────────────────────────
-// Three signals fed to the coverage engine:
+// Two signals fed to the coverage engine:
 //   1. Frontend keyword baseline (computed inside computeCoverage from transcript).
-//   2. Sections of every emitted suggestion card (the agent already mentioned them).
-//   3. Sections the agent EXPLICITLY tagged via tag_coverage (LLM-classified
-//      replacement for the keyword baseline — strongest signal).
+//   2. Sections from the unified checklist where status is covered/partial,
+//      plus the agent-tagged coverage broadcast (legacy fallback).
 const aggregatedSections = computed<CahierSection[]>(() => {
   const set = new Set<CahierSection>()
-  for (const c of copilot.cards.value) set.add(c.section)
+  for (const item of copilot.checklist.value) {
+    if (item.status !== 'missing') set.add(item.section)
+  }
   for (const s of copilot.agentCoverage.value) set.add(s)
   return Array.from(set)
 })
