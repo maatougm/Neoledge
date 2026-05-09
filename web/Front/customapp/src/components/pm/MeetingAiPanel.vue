@@ -90,8 +90,20 @@
           </p>
         </div>
 
-        <!-- Tab: Action items — card per item -->
+        <!-- Tab: Action items — card per item, convert-to-WP button at top -->
         <div v-if="activeTab === 'actions'" class="tab-panel">
+          <div v-if="pendingActions.length > 0" class="action-toolbar">
+            <NeoButton
+              label="Convertir en tâches"
+              icon="pi pi-arrow-circle-right"
+              size="small"
+              :disabled="convertingActions || pendingActions.length === 0"
+              @click="openConvertModal"
+            />
+            <span class="action-toolbar-hint">
+              {{ pendingActions.length }} action(s) à convertir en WorkPackages.
+            </span>
+          </div>
           <div v-if="results.actionItems.length === 0" class="empty-state">
             Aucune action identifiée.
           </div>
@@ -120,11 +132,69 @@
                     <i class="pi pi-calendar" />
                     {{ formatShortDate(item.dueDate) }}
                   </span>
+                  <span v-if="item.isCompleted" class="action-converted-tag">
+                    <i class="pi pi-check-circle" /> Convertie en tâche
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        <AppModal
+          v-model:visible="showConvertModal"
+          header="Convertir les actions en tâches"
+          width="640px"
+        >
+          <p class="convert-help">
+            Sélectionne les actions à convertir en WorkPackages. L'assignataire est
+            déduit du nom mentionné dans la transcription (correspondance approximative
+            avec les membres du projet) ; tu pourras toujours réassigner ensuite.
+          </p>
+          <ul class="convert-list">
+            <li
+              v-for="a in pendingActions"
+              :key="a.id"
+              class="convert-row"
+              :class="{ 'convert-row--checked': selectedActionIds.has(a.id) }"
+              @click="toggleAction(a.id)"
+            >
+              <input
+                type="checkbox"
+                :checked="selectedActionIds.has(a.id)"
+                @click.stop
+                @change="toggleAction(a.id)"
+              />
+              <div class="convert-row-body">
+                <span class="convert-row-desc">{{ a.description }}</span>
+                <div class="convert-row-meta">
+                  <span v-if="a.assigneeName" class="convert-row-chip">
+                    <i class="pi pi-user" /> {{ a.assigneeName }}
+                  </span>
+                  <span v-if="a.dueDate" class="convert-row-chip">
+                    <i class="pi pi-calendar" /> {{ formatShortDate(a.dueDate) }}
+                  </span>
+                </div>
+              </div>
+            </li>
+          </ul>
+          <template #footer>
+            <NeoButton
+              label="Annuler"
+              severity="secondary"
+              outlined
+              :disabled="convertingActions"
+              @click="showConvertModal = false"
+            />
+            <NeoButton
+              label="Convertir la sélection"
+              icon="pi pi-check"
+              :loading="convertingActions"
+              :disabled="selectedActionIds.size === 0 || convertingActions"
+              @click="confirmConvert"
+            />
+          </template>
+        </AppModal>
 
         <!-- Tab: Decisions & risks — two column -->
         <div v-if="activeTab === 'decisions'" class="tab-panel">
@@ -158,10 +228,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { NeoButton, NeoTag } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
+import api, { extractErrorMessage } from '@/lib/api'
 import { usePmStore } from '@/stores/pmStore'
+import AppModal from '@/components/common/AppModal.vue'
 import { sanitize } from '@/lib/sanitize'
 import type { AiResults } from '@/types/pm.types'
 
@@ -303,6 +375,57 @@ onMounted(async () => {
 onUnmounted(() => {
   store.stopAiPolling()
 })
+
+// ─── Convert action items to WorkPackages ────────────────────────────────────
+
+const showConvertModal = ref(false)
+const convertingActions = ref(false)
+const selectedActionIds = reactive(new Set<string>())
+
+const pendingActions = computed(() =>
+  (results.value?.actionItems ?? []).filter((a) => !a.isCompleted),
+)
+
+function openConvertModal(): void {
+  selectedActionIds.clear()
+  // Pre-select all pending actions by default — typical case is "convert everything".
+  for (const a of pendingActions.value) selectedActionIds.add(a.id)
+  showConvertModal.value = true
+}
+
+function toggleAction(id: string): void {
+  if (selectedActionIds.has(id)) selectedActionIds.delete(id)
+  else selectedActionIds.add(id)
+}
+
+async function confirmConvert(): Promise<void> {
+  const ids = Array.from(selectedActionIds)
+  if (ids.length === 0) return
+  convertingActions.value = true
+  try {
+    const { data } = await api.post<{ created: number; skipped: number }>(
+      `/pm/projects/${props.projectId}/meetings/${props.meetingId}/actions/convert`,
+      { actionItemIds: ids },
+    )
+    toast.add({
+      severity: 'success',
+      detail: `${data.created} tâche(s) créée(s)${data.skipped ? ` (${data.skipped} ignorée[s])` : ''}.`,
+      life: 4000,
+    })
+    showConvertModal.value = false
+    selectedActionIds.clear()
+    // Refresh ai-results so converted items are flagged as completed.
+    await store.fetchAiResults(props.projectId, props.meetingId).catch(() => undefined)
+  } catch (e: unknown) {
+    toast.add({
+      severity: 'error',
+      detail: extractErrorMessage(e) ?? 'Échec de la conversion.',
+      life: 4000,
+    })
+  } finally {
+    convertingActions.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -706,5 +829,69 @@ onUnmounted(() => {
   color: var(--nl-text-3);
   padding: 1rem 0;
   margin: 0;
+}
+
+/* Action-toolbar (convert-to-WP) */
+.action-toolbar {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+  background: var(--nl-accent-light, #ecfdf5);
+  border: 1px solid var(--nl-accent);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+}
+.action-toolbar-hint { color: var(--nl-text-2); }
+.action-converted-tag {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--nl-success, #059669);
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--nl-accent-light, #ecfdf5);
+}
+
+/* Convert modal */
+.convert-help {
+  margin: 0 0 1rem 0;
+  font-size: 0.8125rem; color: var(--nl-text-2);
+  line-height: 1.4;
+}
+.convert-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  max-height: 50vh; overflow-y: auto;
+}
+.convert-row {
+  display: flex; align-items: flex-start; gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--nl-border);
+  border-radius: 6px;
+  background: var(--nl-card-bg, #fff);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.convert-row:hover { border-color: var(--nl-accent); }
+.convert-row--checked {
+  background: var(--nl-accent-light, #ecfdf5);
+  border-color: var(--nl-accent);
+}
+.convert-row input[type="checkbox"] {
+  margin-top: 0.2rem; cursor: pointer;
+}
+.convert-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.convert-row-desc {
+  font-size: 0.875rem; color: var(--nl-text-1);
+  line-height: 1.35;
+}
+.convert-row-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.convert-row-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.6875rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--nl-surface-2, #f3f4f6);
+  color: var(--nl-text-3);
 }
 </style>

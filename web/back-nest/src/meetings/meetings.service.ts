@@ -625,4 +625,109 @@ export class MeetingsService {
       })),
     })
   }
+
+  /**
+   * Convert selected MeetingActionItem rows into WorkPackages.
+   * Each action item becomes a WorkPackage of type='Task', priority='Normal',
+   * status='New', with `aiGeneratedFrom='meeting-actions:<meetingId>'` for
+   * traceability. The `assigneeName` is fuzzy-matched against project
+   * members (case-insensitive substring on first / last / full name);
+   * unmatched names produce an unassigned task.
+   */
+  async convertActionItemsToWPs(
+    projectId: string,
+    meetingId: string,
+    actionItemIds: string[],
+    authorId: string,
+    sprintId: string | null,
+  ) {
+    if (actionItemIds.length === 0) {
+      return Result.fail<{ created: number; skipped: number }>('Aucun élément sélectionné.')
+    }
+
+    // Verify meeting belongs to project + load matching action items.
+    const transcript = await this.prisma.meetingTranscript.findFirst({
+      where: { id: meetingId, projectId },
+      select: { id: true },
+    })
+    if (!transcript) return Result.fail<{ created: number; skipped: number }>('Réunion introuvable sur ce projet.')
+
+    const items = await this.prisma.meetingActionItem.findMany({
+      where: { id: { in: actionItemIds }, transcriptId: meetingId },
+    })
+    if (items.length === 0) return Result.fail<{ created: number; skipped: number }>('Aucune action correspondante.')
+
+    // Validate sprint belongs to project (when provided).
+    let safeSprintId: string | null = null
+    if (sprintId) {
+      const sprint = await this.prisma.sprint.findFirst({
+        where: {
+          id: sprintId,
+          board: { projectId },
+        },
+        select: { id: true },
+      })
+      if (sprint) safeSprintId = sprint.id
+    }
+
+    // Pull project members for fuzzy match.
+    const memberRows = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    })
+
+    function matchAssignee(rawName: string | null): string | null {
+      if (!rawName || rawName.trim().length < 2) return null
+      const needle = rawName.trim().toLowerCase()
+      const tokens = needle.split(/\s+/).filter((t) => t.length >= 2)
+      for (const m of memberRows) {
+        const first = m.user.firstName.toLowerCase()
+        const last = m.user.lastName.toLowerCase()
+        const full = `${first} ${last}`
+        if (full === needle) return m.userId
+        if (tokens.every((t) => full.includes(t))) return m.userId
+      }
+      // Fallback: any member whose first OR last name is fully contained in the input
+      for (const m of memberRows) {
+        const first = m.user.firstName.toLowerCase()
+        const last = m.user.lastName.toLowerCase()
+        if (first && needle.includes(first)) return m.userId
+        if (last && needle.includes(last)) return m.userId
+      }
+      return null
+    }
+
+    let created = 0
+    const tag = `meeting-actions:${meetingId}`
+    await this.prisma.$transaction(async (tx) => {
+      for (const a of items) {
+        const assigneeId = matchAssignee(a.assigneeName)
+        // Title trimmed to 200 chars (DB cap), description holds the full text.
+        const title = a.description.length > 200 ? a.description.slice(0, 197) + '...' : a.description
+        await tx.workPackage.create({
+          data: {
+            projectId,
+            authorId,
+            title,
+            description: a.description,
+            type: 'Task',
+            status: 'New',
+            priority: 'Normal',
+            assigneeId,
+            dueDate: a.dueDate ?? null,
+            sprintId: safeSprintId,
+            aiGeneratedFrom: tag,
+          },
+        })
+        created += 1
+        // Mark the action item as completed so it stops surfacing in the modal.
+        await tx.meetingActionItem.update({
+          where: { id: a.id },
+          data: { isCompleted: true },
+        })
+      }
+    })
+
+    return Result.ok({ created, skipped: actionItemIds.length - created })
+  }
 }

@@ -203,4 +203,28 @@ export class MeetingsController {
     })
     return new StreamableFile(createReadStream(filePath))
   }
+
+  /**
+   * POST /pm/projects/:projectId/meetings/:id/actions/convert
+   * Convert selected meeting action items into WorkPackages. The
+   * `assigneeName` on each action is fuzzy-matched against the project's
+   * members (case-insensitive substring on first/last/full name); falls
+   * back to no assignee when no member matches.
+   */
+  @Post(':id/actions/convert')
+  @Roles('Admin', 'ProjectManager')
+  async convertActionItems(
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+    @Body() body: { actionItemIds?: string[]; sprintId?: string | null },
+    @CurrentUser() user: { userId: string },
+  ) {
+    const ids = Array.isArray(body?.actionItemIds) ? body.actionItemIds.slice(0, 50) : []
+    if (ids.length === 0) throw new BadRequestException('Aucun élément à convertir.')
+    const result = await this.service.convertActionItemsToWPs(
+      projectId, id, ids, user.userId, body?.sprintId ?? null,
+    )
+    if (result.isFailure) throw new BadRequestException(result.error)
+    return result.value
+  }
 }
