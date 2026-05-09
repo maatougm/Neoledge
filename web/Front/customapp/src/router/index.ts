@@ -62,21 +62,31 @@ const router = createRouter({
       component: () => import('@/layouts/AppShell.vue'),
       meta: { requiresAuth: true },
       children: [
-        // Unified Home (inbox/today view for PM + team roles).
-        // Admins are redirected to their dashboard via the beforeEnter hook
-        // below — they don't need the personal inbox, their landing IS the
-        // command-center KPIs.
+        // Role-aware landing route. Each role has a dedicated dashboard:
+        //   Admin               → admin-dashboard (KPI command-center)
+        //   ProjectManager      → pm-dashboard (portfolio + tasks)
+        //   SpecificationTeam   → spec-dashboard (validation queue)
+        //   Member              → team-home (today's tasks + sprints)
+        // The route has no component — it pure-redirects in beforeEnter.
         {
           path: '',
           name: 'app-home',
-          component: () => import('@/views/HomeView.vue'),
-          beforeEnter: (_to, _from, next) => {
+          redirect: () => ({ name: 'app-home-redirect' }),
+        },
+        {
+          // Hidden internal anchor used as a redirect target. The
+          // beforeEach guard above sends each role to its real dashboard.
+          path: '_home',
+          name: 'app-home-redirect',
+          redirect: () => {
             const auth = useAuthStore()
-            if (auth.userRole === 'Admin') {
-              next({ name: 'admin-dashboard' })
-              return
+            switch (auth.userRole) {
+              case 'Admin':             return { name: 'admin-dashboard' }
+              case 'ProjectManager':    return { name: 'pm-dashboard' }
+              case 'SpecificationTeam': return { name: 'spec-dashboard' }
+              case 'Member':            return { name: 'team-home' }
+              default:                  return { name: 'login' }
             }
-            next()
           },
         },
         {
@@ -152,7 +162,12 @@ const router = createRouter({
           children: [
             {
               path: '',
-              redirect: { name: 'pm-projects' },
+              redirect: { name: 'pm-dashboard' },
+            },
+            {
+              path: 'dashboard',
+              name: 'pm-dashboard',
+              component: () => import('@/views/PMDashboardView.vue'),
             },
             {
               path: 'projects',
@@ -295,16 +310,27 @@ const router = createRouter({
             {
               path: '',
               name: 'team-home',
-              // Member lands on the new dashboard; SpecificationTeam is
-              // redirected to the existing project list as their entrypoint.
+              // Member lands on the dedicated MemberDashboardView;
+              // SpecificationTeam is redirected to their dedicated dashboard.
               component: () => import('@/views/team/MemberDashboardView.vue'),
               beforeEnter: (_to, _from, next) => {
                 const auth = useAuthStore()
                 if (auth.userRole === 'SpecificationTeam') {
-                  next({ name: 'team-projects' })
+                  next({ name: 'spec-dashboard' })
                 } else {
                   next()
                 }
+              },
+            },
+            {
+              path: 'dashboard',
+              name: 'spec-dashboard',
+              component: () => import('@/views/team/SpecTeamDashboardView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
               },
             },
             {

@@ -84,8 +84,8 @@ const adminNav: NavSection[] = [
 
 const pmNav: NavSection[] = [
   { items: [
-      { key: 'app-home',        label: 'Accueil',        icon: 'pi-inbox',     to: '/app' },
-      { key: 'pm-projects',     label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/pm/projects' },
+      { key: 'pm-dashboard',    label: 'Tableau de bord', icon: 'pi-home',      to: '/app/pm/dashboard' },
+      { key: 'pm-projects',     label: 'Mes projets',     icon: 'pi-briefcase', to: '/app/pm/projects' },
   ]},
   { heading: 'Travail', items: [
       { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
@@ -108,7 +108,7 @@ const pmNav: NavSection[] = [
 // NAV_VERSION is bumped any time the nav SHAPE changes — entries cached by
 // older versions never collide with the new layout, so we don't need a
 // `.clear()` call (which would defeat the LRU). Bump on every reorder.
-const NAV_VERSION = 'v3'
+const NAV_VERSION = 'v4'
 const PROJECT_NAV_CACHE_MAX = 50
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
@@ -170,7 +170,7 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
 // SpecificationTeam-specific nav — keeps full validation surface.
 const specTeamNav: NavSection[] = [
   { items: [
-      { key: 'app-home',             label: 'Accueil',           icon: 'pi-inbox',        to: '/app' },
+      { key: 'spec-dashboard',       label: 'Tableau de bord',   icon: 'pi-home',         to: '/app/team/dashboard'       },
       { key: 'team-pending-reviews', label: 'Cahiers à valider', icon: 'pi-check-square', to: '/app/team/pending-reviews' },
       { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
       { key: 'team-validations',     label: 'Mes validations',   icon: 'pi-check-circle', to: '/app/team/validations'     },
