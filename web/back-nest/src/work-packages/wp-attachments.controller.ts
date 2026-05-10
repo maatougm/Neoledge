@@ -28,8 +28,9 @@ export class WpAttachmentsController {
 
   @Get()
   @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
-  async list(@Param('wpId') wpId: string) {
-    return this.service.list(wpId);
+  async list(@Param('wpId') wpId: string, @Req() req: Request) {
+    const { userId, role } = readUser(req);
+    return this.service.list(wpId, userId, role);
   }
 
   @Post()
@@ -50,9 +51,9 @@ export class WpAttachmentsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ) {
-    const userId = (req as unknown as { user?: { userId?: string } }).user?.userId ?? '';
+    const { userId, role } = readUser(req);
     if (!file) throw new BadRequestException('Fichier requis.');
-    return this.service.upload(wpId, userId, {
+    return this.service.upload(wpId, userId, role, {
       buffer: file.buffer,
       originalname: file.originalname,
       mimetype: file.mimetype,
@@ -64,9 +65,11 @@ export class WpAttachmentsController {
   @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async download(
     @Param('attachmentId') attachmentId: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const meta = await this.service.getDownload(attachmentId);
+    const { userId, role } = readUser(req);
+    const meta = await this.service.getDownload(attachmentId, userId, role);
     const data = await fs.readFile(meta.absolutePath);
     res.setHeader('Content-Type', meta.contentType);
     res.setHeader(
@@ -86,8 +89,13 @@ export class WpAttachmentsController {
     @Param('attachmentId') attachmentId: string,
     @Req() req: Request,
   ): Promise<{ success: true }> {
-    const userId = (req as unknown as { user?: { userId?: string } }).user?.userId ?? '';
-    await this.service.softDelete(attachmentId, userId);
+    const { userId, role } = readUser(req);
+    await this.service.softDelete(attachmentId, userId, role);
     return { success: true };
   }
+}
+
+function readUser(req: Request): { userId: string; role: string | undefined } {
+  const u = (req as unknown as { user?: { userId?: string; role?: string } }).user;
+  return { userId: u?.userId ?? '', role: u?.role };
 }

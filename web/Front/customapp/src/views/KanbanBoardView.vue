@@ -57,6 +57,7 @@
                 :class="{ 'kb-card--urgent': wp.priority === 'Urgent' || wp.priority === 'Immediate' }"
                 draggable="true"
                 @dragstart="onDragStart(wp.id)"
+                @dragend="onDragEnd()"
                 @click="goToWp(wp.id)"
               >
                 <div class="kb-card__top">
@@ -206,6 +207,12 @@ onUnmounted(() => {
 
 function onDragStart(wpId: string) {
   draggedWpId.value = wpId
+}
+
+// Mandatory reset — without this, draggedWpId leaks if the drop is cancelled
+// (Esc, drop outside columns) and the next drop assigns the wrong WP.
+function onDragEnd() {
+  draggedWpId.value = null
 }
 
 async function onDrop(e: DragEvent, columnId: string) {

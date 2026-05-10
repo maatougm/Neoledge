@@ -520,6 +520,25 @@ export class WorkPackagesService {
 
       // C3: detect circular dependencies via DFS from `toWpId` following existing deps.
       // If we can reach `fromWpId`, adding fromWpId -> toWpId would close a cycle.
+      // Pull the project's full adjacency once instead of one query per node —
+      // the loop used to issue O(graph) DB round-trips.
+      const wp = await this.prisma.workPackage.findUnique({
+        where: { id: toWpId },
+        select: { projectId: true },
+      });
+      if (!wp) return Result.fail('Work package introuvable.');
+
+      const allDeps = await this.prisma.workPackageDependency.findMany({
+        where: { fromWp: { projectId: wp.projectId } },
+        select: { fromWpId: true, toWpId: true },
+      });
+      const adjacency = new Map<string, string[]>();
+      for (const d of allDeps) {
+        const list = adjacency.get(d.fromWpId);
+        if (list) list.push(d.toWpId);
+        else adjacency.set(d.fromWpId, [d.toWpId]);
+      }
+
       const visited = new Set<string>();
       const stack: string[] = [toWpId];
       while (stack.length > 0) {
@@ -529,12 +548,11 @@ export class WorkPackagesService {
         }
         if (visited.has(current)) continue;
         visited.add(current);
-        const outgoing = await this.prisma.workPackageDependency.findMany({
-          where: { fromWpId: current },
-          select: { toWpId: true },
-        });
-        for (const dep of outgoing) {
-          if (!visited.has(dep.toWpId)) stack.push(dep.toWpId);
+        const outgoing = adjacency.get(current);
+        if (outgoing) {
+          for (const next of outgoing) {
+            if (!visited.has(next)) stack.push(next);
+          }
         }
       }
 

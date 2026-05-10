@@ -1,13 +1,16 @@
 import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { BacklogService } from './backlog.service.js';
 import type { ProposedBacklog } from './backlog.service.js';
 
 @Controller('pm/projects/:projectId/ai')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
+@ProjectAccess('projectId')
 export class BacklogController {
   constructor(private readonly service: BacklogService) {}
 

@@ -15,6 +15,7 @@
           class="bl-card"
           draggable="true"
           @dragstart="draggedWp = wp.id"
+          @dragend="draggedWp = null"
         >
           <div class="bl-card__title">{{ wp.title }}</div>
           <PriorityDot :priority="wp.priority" />

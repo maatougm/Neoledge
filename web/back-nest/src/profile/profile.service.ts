@@ -166,9 +166,17 @@ export class ProfileService {
   async getAvatarPath(userId: string) {
     const user = await this.prisma.appUser.findUnique({ where: { id: userId }, select: { avatarPath: true } });
     if (!user || !user.avatarPath) return Result.fail<string>('Avatar non trouvé.');
-    const filePath = path.join(process.cwd(), user.avatarPath);
+    // Defence-in-depth: ensure the stored avatarPath cannot escape the avatar
+    // upload root, even if the DB row is tampered with. Returns the absolute
+    // path so the controller can pass it directly to res.sendFile (no { root }
+    // option) and Express won't traverse outside this directory.
+    const avatarRoot = path.resolve(process.cwd(), 'uploads', 'avatars');
+    const filePath = path.resolve(process.cwd(), user.avatarPath.replace(/^\/+/, ''));
+    if (!filePath.startsWith(avatarRoot + path.sep) && filePath !== avatarRoot) {
+      return Result.fail<string>('Chemin avatar invalide.');
+    }
     if (!fs.existsSync(filePath)) return Result.fail<string>('Fichier avatar introuvable.');
-    return Result.ok(user.avatarPath);
+    return Result.ok(filePath);
   }
 
   async getPreferences(userId: string) {
@@ -192,9 +200,15 @@ export class ProfileService {
     });
     if (!user) return Result.fail('Utilisateur non trouvé.');
 
-    const current: Record<string, unknown> = user.preferences
-      ? (JSON.parse(user.preferences) as Record<string, unknown>)
-      : {};
+    let current: Record<string, unknown> = {};
+    if (user.preferences) {
+      try {
+        current = JSON.parse(user.preferences) as Record<string, unknown>;
+      } catch {
+        // Corrupt preferences blob — start from empty rather than crashing.
+        current = {};
+      }
+    }
     const merged = { ...current, ...prefs };
 
     await this.prisma.appUser.update({

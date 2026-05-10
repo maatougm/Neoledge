@@ -87,6 +87,7 @@ export class LiveCopilotService {
       tokenSpend: 0,
       startedAtMs: Date.now(),
       lastChunkHash: '',
+      inFlight: false,
     }
     this.sessions.set(liveSessionId, state)
     this.logger.log(`Copilot session started: ${liveSessionId} (project=${projectId}, type=${safeType})`)
@@ -136,6 +137,14 @@ export class LiveCopilotService {
       return Result.ok(this.skipResult(null, 'no_session'))
     }
 
+    // Concurrency guard — two near-simultaneous fires (PM double-clicks
+    // "Rafraîchir", or two browsers in the same room) used to bypass every
+    // cap because the check-then-mutate window was 25+ lines wide. Now any
+    // second caller short-circuits with a cooldown skip.
+    if (state.inFlight) {
+      return Result.ok(this.skipResult(state, 'cooldown'))
+    }
+
     // Caps that can't be force-bypassed.
     if (state.fireCount >= COPILOT_LIMITS.MAX_FIRES_PER_MEETING) {
       return Result.ok(this.skipResult(state, 'cap_reached'))
@@ -154,6 +163,7 @@ export class LiveCopilotService {
       }
     }
 
+    state.inFlight = true
     state.fireCount += 1
     state.lastFiredAtMs = Date.now()
     state.lastFiredAtOffset = state.totalCharsAppended
@@ -263,6 +273,8 @@ export class LiveCopilotService {
       const sanitized = sanitizeEmit(result.output)
       const merged = this.applyEmitToState(state, sanitized)
 
+      // Bill on success — actual provider tokens when the agent runner exposes them,
+      // else fall back to the iteration estimate.
       this.addTokenSpend(liveSessionId, result.iterations * 1_500)
 
       return Result.ok({
@@ -272,12 +284,18 @@ export class LiveCopilotService {
         summary: state.summary,
       })
     } catch (e) {
+      // Bill failed runs too — the LLM call already happened even when the
+      // model failed to emit. Without this, emit-missed sessions can fire
+      // forever because tokenSpend stays 0.
+      this.addTokenSpend(liveSessionId, 6 * 1_500)
       if (e instanceof AgentEmitMissedError) {
         this.logger.warn(`Copilot agent missed emit on ${liveSessionId}: ${e.message}`)
         return Result.ok(this.skipResult(state, 'provider'))
       }
       this.logger.warn(`Copilot fire failed on ${liveSessionId}: ${e instanceof Error ? e.message : String(e)}`)
       return Result.ok(this.skipResult(state, 'provider'))
+    } finally {
+      state.inFlight = false
     }
   }
 

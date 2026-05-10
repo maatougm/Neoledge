@@ -115,6 +115,20 @@ export const useGanttStore = defineStore('gantt', () => {
     }
   }
 
+  /**
+   * Optimistic in-place patch of a workPackage by id.
+   * Used by GanttView during drag — replaces the array slot with a new
+   * spread copy so reactivity tracks the change without the component
+   * mutating the store directly.
+   */
+  function patchWorkPackage(id: string, patch: Partial<WorkPackage>): void {
+    const idx = workPackages.value.findIndex((w) => w.id === id)
+    if (idx < 0) return
+    const next = workPackages.value.slice()
+    next[idx] = { ...next[idx], ...patch }
+    workPackages.value = next
+  }
+
   // ─── Logout reset ────────────────────────────────────────────────────────────
 
   function reset(): void {
@@ -132,6 +146,7 @@ export const useGanttStore = defineStore('gantt', () => {
     workPackages, milestones, dependencies, baselines, loading, error,
     fetchGantt, createMilestone, updateMilestone, deleteMilestone,
     fetchBaselines, captureBaseline, compareBaseline,
+    patchWorkPackage,
     reset,
   }
 })

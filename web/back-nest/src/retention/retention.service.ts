@@ -54,17 +54,19 @@ export class RetentionService {
       return
     }
 
-    let deleted = 0
+    // File deletion remains per-row (it's filesystem I/O); the DB column nulling
+    // collapses to a single updateMany so the cron doesn't hold a connection
+    // open for hundreds of sequential UPDATEs.
     for (const t of expired) {
       if (t.audioPath && fs.existsSync(t.audioPath)) {
         try { fs.unlinkSync(t.audioPath) } catch { /* file already gone */ }
       }
-      await this.prisma.meetingTranscript.update({
-        where: { id: t.id },
-        data: { audioPath: null, audioMimeType: null, audioSize: null },
-      })
-      deleted++
     }
+    const ids = expired.map((t) => t.id)
+    const { count: deleted } = await this.prisma.meetingTranscript.updateMany({
+      where: { id: { in: ids } },
+      data: { audioPath: null, audioMimeType: null, audioSize: null },
+    })
     this.logger.log(
       `Audio retention sweep: purged ${deleted} recording(s) older than ${days} days`,
     )

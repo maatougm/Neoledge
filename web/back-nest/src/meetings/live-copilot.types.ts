@@ -153,6 +153,9 @@ export interface LiveSessionState {
   startedAtMs: number
   /** Last-100-chars hash to dedupe browser SpeechRecognition restarts. */
   lastChunkHash: string
+  /** True while a fire() agent loop is in flight. Prevents two concurrent
+   *  fires for the same session bypassing the per-meeting fire/token caps. */
+  inFlight: boolean
 }
 
 /**

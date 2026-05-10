@@ -32,6 +32,8 @@ Règles strictes :
 - Type tâche parmi : Task, Feature, Bug.
 - Langue : français. Sois concis, factuel, orienté livrable.
 
+RÈGLE ANTI-HALLUCINATION CRITIQUE : N'invente AUCUNE exigence qui ne soit ni dans le questionnaire, ni dans le cahier, ni dans les réunions. Si une zone fonctionnelle est mentionnée mais sans détails, émets un epic minimal "Investigation: <topic>" avec une seule tâche "Définir <topic> avec le client" plutôt que de fabriquer du périmètre. Mieux vaut un backlog plus court et honnête qu'un backlog enflé de tâches inventées.
+
 Réponds UNIQUEMENT en JSON brut (pas de markdown, pas de code-fence), au format exact :
 {
   "epics": [

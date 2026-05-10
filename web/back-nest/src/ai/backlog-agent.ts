@@ -39,7 +39,9 @@ Règles strictes pour la proposition :
 - Langue : français. Concis, factuel, orienté livrable.
 
 NE répète PAS d'epics qui existent déjà dans read_past_backlogs.
-NE fabrique PAS d'exigences qui ne sont ni dans le questionnaire ni dans le cahier ni dans les réunions.`
+NE fabrique PAS d'exigences qui ne sont ni dans le questionnaire ni dans le cahier ni dans les réunions.
+
+RÈGLE ANTI-HALLUCINATION CRITIQUE : si une zone fonctionnelle est mentionnée mais sans détails (ex: "module IA" sans cas d'usage explicite), émets un epic minimal "Investigation: <topic>" avec une tâche "Définir <topic> avec le client" — n'invente PAS de tâches qui parlent de fonctionnalités jamais discutées.`
 
 const PRIORITY_ENUM = ['Low', 'Normal', 'High', 'Critical']
 const TYPE_ENUM = ['Task', 'Feature', 'Bug']

@@ -37,7 +37,9 @@ model Team {
   createdAt     DateTime  @default(now())
 
   members AppUser[] @relation("TeamMembers")
+  manager AppUser?  @relation("TeamManager", fields: [managerUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@index([managerUserId])
   @@map("Teams")
 }
 
@@ -96,6 +98,9 @@ model AppUser {
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
   cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
   projectMemberships ProjectMember[]      @relation("ProjectMemberships")
+  managedTeams       Team[]               @relation("TeamManager")
+  ackedWorkPackages  WorkPackage[]        @relation("WpAcker")
+  escalatedWorkPackages WorkPackage[]     @relation("WpEscalation")
 
   @@map("AppUsers")
 }
@@ -228,10 +233,12 @@ model ProjectActivity {
 
   // Relations
   project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([projectId])
   @@index([createdAt])
+  @@index([userId])
+  @@index([projectId, createdAt])
   @@map("ProjectActivities")
 }
 
@@ -273,7 +280,7 @@ model ProjectComment {
   userId          String
   content         String    @db.Text
   createdAt       DateTime  @default(now())
-  updatedAt       DateTime?
+  updatedAt       DateTime? @updatedAt
   isDeleted       Boolean   @default(false)
   parentCommentId String?
   mentions        String?   @db.VarChar(500)
@@ -534,7 +541,7 @@ model AiUsage {
   completionTokens  Int      @default(0)
   totalTokens       Int      @default(0)
   audioSeconds      Int      @default(0)       // For STT calls
-  costEstimateUsd   Float    @default(0)
+  costEstimateUsd   Decimal  @default(0) @db.Decimal(12, 6)
   durationMs        Int      @default(0)
   success           Boolean  @default(true)
   errorMessage      String?  @db.VarChar(500)
@@ -546,6 +553,7 @@ model AiUsage {
   @@index([projectId, createdAt])
   @@index([feature, createdAt])
   @@index([createdAt])
+  @@index([userId])
   @@map("AiUsages")
 }
 
@@ -678,6 +686,8 @@ model WorkPackage {
   project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   author          AppUser                  @relation("WpAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ackedBy         AppUser?                 @relation("WpAcker", fields: [ackedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  escalatedTo     AppUser?                 @relation("WpEscalation", fields: [escalatedToUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   parent          WorkPackage?             @relation("WpHierarchy", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children        WorkPackage[]            @relation("WpHierarchy")
   sprint          Sprint?                  @relation(fields: [sprintId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -703,6 +713,8 @@ model WorkPackage {
   @@index([versionId])
   @@index([boardColumnId])
   @@index([slaDeadline, slaBreached])
+  @@index([ackedByUserId])
+  @@index([escalatedToUserId])
   @@map("WorkPackages")
 }
 
@@ -894,7 +906,7 @@ model WorkPackageComment {
   userId        String
   content       String   @db.Text
   createdAt     DateTime @default(now())
-  updatedAt     DateTime?
+  updatedAt     DateTime? @updatedAt
   isDeleted     Boolean  @default(false)
 
   workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)

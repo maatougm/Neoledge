@@ -100,7 +100,14 @@ export class PmController {
    * (no flag) stays unchanged for legacy callers.
    */
   @Get('users')
-  async getUsers(@Query('forMembers') forMembers?: string) {
+  async getUsers(@CurrentUser() user: JwtUser, @Query('forMembers') forMembers?: string) {
+    // Restricted to staff who legitimately need a user list:
+    //  - Admins (system-wide).
+    //  - PMs (need an assignable user list to build their team).
+    // Members and SpecificationTeam never need to enumerate the directory.
+    if (user.role !== 'Admin' && user.role !== 'ProjectManager') {
+      throw new ForbiddenException('Accès réservé aux administrateurs et chefs de projet.');
+    }
     const result = await this.usersService.getAll(0, 500);
     if (result.isFailure) return [];
     const items = (result.value as unknown as { items: any[] }).items;
@@ -110,12 +117,35 @@ export class PmController {
     );
   }
 
-  /** All active projects — used by team-member roles who are not project managers */
+  /**
+   * Projects the caller is a member of (PM, ProjectMember row, or — for Admins —
+   * everything). Used by the team home / non-PM landing.
+   * Closes the leak where any auth'd user could enumerate every project.
+   */
   @Get('team-projects')
-  async getTeamProjects() {
-    const result = await this.service.getProjectsPaged(0, 200);
-    if (result.isFailure) return [];
-    return (result.value as { items: unknown[] }).items;
+  async getTeamProjects(@CurrentUser() user: JwtUser) {
+    if (user.role === 'Admin') {
+      const result = await this.service.getProjectsPaged(0, 200);
+      if (result.isFailure) return [];
+      return (result.value as { items: unknown[] }).items;
+    }
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId: user.userId },
+      select: { projectId: true },
+    });
+    const memberIds = memberships.map((m) => m.projectId);
+    const projects = await this.prisma.project.findMany({
+      where: {
+        isDeleted: false,
+        OR: [
+          { projectManagerId: user.userId },
+          { id: { in: memberIds } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return projects;
   }
 
   /**

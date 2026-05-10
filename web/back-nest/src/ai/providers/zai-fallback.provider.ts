@@ -1,18 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AiAnalysisResult } from '../ai.types.js'
+import { redactPii } from '../../common/pii-redact.js'
+import { wrapTranscriptForLlm, TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT } from '../prompts/transcript-prompt.js'
 
 // Shared fallback provider that targets Z.AI's OpenAI-compatible endpoint.
 // Used when the primary AI provider (OpenAI or Gemini) errors out. Configured
 // by AI_FALLBACK_* env vars so operators can override without touching the
 // primary AI_PROVIDER wiring.
-const SYSTEM_PROMPT = `Tu es un assistant expert en gestion de projet. Analyse la transcription de réunion suivante et retourne un JSON structuré (sans markdown, juste le JSON brut) avec exactement ce format:
-{
-  "summary": "compte-rendu en markdown (# titres, ## sections, - listes)",
-  "actionItems": [{ "description": "...", "assigneeName": "nom ou null", "dueDate": "YYYY-MM-DD ou null" }],
-  "decisions": [{ "description": "...", "category": "decision" | "risk" }]
-}
-Langue: français. Sois concis et factuel.`
+const SYSTEM_PROMPT = TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT
 
 @Injectable()
 export class ZaiFallbackProvider {
@@ -33,6 +29,9 @@ export class ZaiFallbackProvider {
     const apiKey = this.config.get<string>('AI_FALLBACK_API_KEY')
     if (!apiKey) throw new Error('AI_FALLBACK_API_KEY not configured')
 
+    const { text: redacted } = redactPii(transcriptText)
+    const safeUserMessage = wrapTranscriptForLlm(redacted)
+
     const baseUrl =
       this.config.get<string>('AI_FALLBACK_BASE_URL') ?? 'https://api.z.ai/api/coding/paas/v4'
 
@@ -47,7 +46,7 @@ export class ZaiFallbackProvider {
         model: this.modelName,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: transcriptText },
+          { role: 'user', content: safeUserMessage },
         ],
         temperature: 0.3,
         max_tokens: 4096,
@@ -70,6 +69,20 @@ export class ZaiFallbackProvider {
 
   /** Plain chat-completion for the cahier-des-charges generator. */
   async chat(systemPrompt: string, userPrompt: string, opts?: { maxTokens?: number; temperature?: number }): Promise<string> {
+    const { content } = await this.chatWithUsage(systemPrompt, userPrompt, opts)
+    return content
+  }
+
+  /**
+   * Like `chat()` but also returns the prompt/completion token counts the
+   * provider reports. Use this when accurate cost tracking matters — the
+   * char-count fallback is wildly off for compressed prompts.
+   */
+  async chatWithUsage(
+    systemPrompt: string,
+    userPrompt: string,
+    opts?: { maxTokens?: number; temperature?: number },
+  ): Promise<{ content: string; promptTokens: number; completionTokens: number }> {
     const apiKey = this.config.get<string>('AI_FALLBACK_API_KEY')
     if (!apiKey) throw new Error('AI_FALLBACK_API_KEY not configured')
 
@@ -103,8 +116,16 @@ export class ZaiFallbackProvider {
 
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
     }
-    return data?.choices?.[0]?.message?.content ?? ''
+    if (!Array.isArray(data?.choices) || data.choices.length === 0) {
+      throw new Error('Z.AI fallback chat error: empty response')
+    }
+    return {
+      content: data.choices[0]?.message?.content ?? '',
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+    }
   }
 
   private parseResult(content: string): AiAnalysisResult {

@@ -194,10 +194,15 @@ export class AuthService {
       return;
     }
 
-    // If 2FA setup started but never enabled (totpEnabled=false, secret present),
-    // we still let the user clear the orphan secret WITHOUT a code — it's a
-    // stuck state, not an active protection.
+    // 2FA setup started but never enabled (totpEnabled=false, secret present).
+    // We still require proof-of-possession via a valid TOTP code computed against
+    // the in-progress secret. Otherwise a stolen JWT could silently wipe a
+    // pending setup so the attacker can re-enroll their own device.
     if (!user.totpEnabled) {
+      const isValidPending = await this.totpService.verify(code, user.totpSecret);
+      if (!isValidPending) {
+        throw new UnauthorizedException(this.authFailureMessage('Code TOTP invalide.'));
+      }
       await this.prisma.appUser.update({
         where: { id: userId },
         data: {

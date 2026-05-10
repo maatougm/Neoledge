@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
-// ThrottlerModule removed — was causing stale 429s due to DI complications
+import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
+import { WhitelistedThrottlerGuard } from './common/guards/whitelisted-throttler.guard.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -38,8 +40,15 @@ import { AiUsageModule } from './ai-usage/ai-usage.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 
 @Module({
-  providers: [],
+  providers: [
+    // Global rate limiting via the IP-whitelist-aware guard.
+    // Default 120 req/min/IP; per-route @Throttle() can tighten it (auth, AI).
+    { provide: APP_GUARD, useClass: WhitelistedThrottlerGuard },
+  ],
   imports: [
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 120 }],
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate(config: Record<string, unknown>) {

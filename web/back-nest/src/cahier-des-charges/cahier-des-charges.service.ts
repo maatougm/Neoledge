@@ -924,11 +924,33 @@ RÈGLES :
 
   // ─── 3. Call AI provider ───────────────────────────────────────────────────
 
+  /** Rough prompt-token estimate (~4 chars/token) without building the full prompt. */
+  private estimateCahierPromptTokens(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+  ): number {
+    let chars = 1_000 // baseline overhead for system prompt + form metadata
+    for (const f of formData.fields) chars += (f.label?.length ?? 0) + (f.value?.length ?? 0) + 8
+    for (const t of transcripts) chars += Math.min(t.fullText?.length ?? 0, 8_000) + 200
+    return Math.ceil(chars / 4)
+  }
+
   async generateCahierContent(
     formData: CahierFormData,
     transcripts: CahierTranscriptInput[],
     projectId?: string,
   ): Promise<CahierAiResult> {
+    // Pre-flight gates — must run BEFORE the agent-mode branch so turning on
+    // AI_AGENT_MODE doesn't silently disable the safety net.
+    if (projectId) {
+      // Driver-fields gate — block if any "alimente l'IA" field has no answer.
+      await this.assertDriverFieldsFilled(projectId)
+      // Sized daily-budget assertion — both single-shot and agent loops can
+      // burn 30k+ tokens with tools. Estimate generously: prompt + 12k for tools.
+      const promptBudget = this.estimateCahierPromptTokens(formData, transcripts)
+      await this.aiUsage.assertWithinDailyBudget(projectId, promptBudget + 12_000)
+    }
+
     // Agent mode — model fetches questionnaire/meetings/feedback via tools.
     // Fall through to single-shot only on AgentEmitMissedError. Other agent
     // errors propagate (cost / token / network issues) — same shape the
@@ -960,11 +982,6 @@ RÈGLES :
     // AI_FALLBACK_PROVIDER (default 'openai') auto-engages on Z.AI failure.
     const provider = (this.config.get<string>('AI_PROVIDER') ?? 'zai').toLowerCase()
 
-    // Driver-fields gate — block if any field marked "alimente l'IA" has no answer.
-    if (projectId) {
-      await this.assertDriverFieldsFilled(projectId)
-    }
-
     // Fetch past feedback to inject into prompt (AI learning)
     let pastFeedback: string[] = []
     let previousCorrectedCahier: unknown = null
@@ -991,11 +1008,8 @@ RÈGLES :
 
     this.logger.log(`Generating cahier des charges (provider: ${provider}, prompt length: ${userPrompt.length} chars)`)
 
-    // Hard budget check — cahier generation is the most expensive single call.
-    if (projectId) {
-      await this.aiUsage.assertWithinDailyBudget(projectId, Math.ceil(userPrompt.length / 4) + 4_000)
-    }
-
+    // Daily-budget assertion was already done in the unified pre-flight gate
+    // above (with a generous estimate that covers both single-shot and agent).
     const startedAt = Date.now()
     // Pick model name for logging — Z.AI primary uses AI_FALLBACK_MODEL (kept
     // for backward compat with the env var name), OpenAI/Gemini paths use the
@@ -1015,16 +1029,15 @@ RÈGLES :
     })()
 
     try {
-      const result = await this.callCahierProvider(provider, userPrompt)
+      const { result, promptTokens, completionTokens } = await this.callCahierProvider(provider, userPrompt)
       void this.aiUsage.log({
         projectId: projectId ?? null,
         provider,
         model: modelName,
         feature: 'cahier',
-        // We don't get token counts back from the helpers today — estimate
-        // from char count (~4 chars/token).
-        promptTokens: Math.ceil(userPrompt.length / 4),
-        completionTokens: 1_500,
+        // Real provider-reported usage when available; fall back to char-based estimate.
+        promptTokens: promptTokens > 0 ? promptTokens : Math.ceil(userPrompt.length / 4),
+        completionTokens: completionTokens > 0 ? completionTokens : 1_500,
         durationMs: Date.now() - startedAt,
         success: true,
       })
@@ -1048,7 +1061,7 @@ RÈGLES :
       }
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
       this.logger.warn(`Primary cahier provider (${provider}) failed: ${msg.slice(0, 200)} — falling back to ${fallbackProvider}`)
-      const result = await this.callCahierProvider(fallbackProvider, userPrompt)
+      const fb = await this.callCahierProvider(fallbackProvider, userPrompt)
       const fallbackModel = fallbackProvider === 'zai'
         ? (this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air')
         : (this.config.get<string>('CAHIER_AI_MODEL') ?? this.config.get<string>('AI_MODEL') ?? 'gpt-4o-mini')
@@ -1057,12 +1070,12 @@ RÈGLES :
         provider: `${fallbackProvider}-fallback`,
         model: fallbackModel,
         feature: 'cahier',
-        promptTokens: Math.ceil(userPrompt.length / 4),
-        completionTokens: 1_500,
+        promptTokens: fb.promptTokens > 0 ? fb.promptTokens : Math.ceil(userPrompt.length / 4),
+        completionTokens: fb.completionTokens > 0 ? fb.completionTokens : 1_500,
         durationMs: Date.now() - startedAt,
         success: true,
       })
-      return result
+      return fb.result
     }
   }
 
@@ -1070,17 +1083,29 @@ RÈGLES :
    * Dispatch one cahier completion call by provider name. Z.AI uses the
    * existing `chat()` helper (forces JSON mode); OpenAI/Gemini use the
    * older private call helpers below.
+   *
+   * Returns both the parsed result and the real token usage so AiUsage logs
+   * actual spend, not a fixed 1500-token estimate.
    */
-  private async callCahierProvider(name: string, userPrompt: string): Promise<CahierAiResult> {
+  private async callCahierProvider(
+    name: string,
+    userPrompt: string,
+  ): Promise<{ result: CahierAiResult; promptTokens: number; completionTokens: number }> {
     if (name === 'zai') {
-      const content = await this.zaiFallback.chat(SYSTEM_PROMPT, userPrompt)
-      return this.parseCahierResult(content)
+      const usage = await this.zaiFallback.chatWithUsage(SYSTEM_PROMPT, userPrompt)
+      return {
+        result: this.parseCahierResult(usage.content),
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+      }
     }
     if (name === 'gemini') return this.callGemini(userPrompt)
     return this.callOpenAi(userPrompt)
   }
 
-  private async callOpenAi(userPrompt: string): Promise<CahierAiResult> {
+  private async callOpenAi(
+    userPrompt: string,
+  ): Promise<{ result: CahierAiResult; promptTokens: number; completionTokens: number }> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')
     if (!apiKey) throw new BadRequestException('OPENAI_API_KEY non configurée')
 
@@ -1130,12 +1155,19 @@ RÈGLES :
 
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
     }
     const content = data?.choices?.[0]?.message?.content ?? ''
-    return this.parseCahierResult(content)
+    return {
+      result: this.parseCahierResult(content),
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+    }
   }
 
-  private async callGemini(userPrompt: string): Promise<CahierAiResult> {
+  private async callGemini(
+    userPrompt: string,
+  ): Promise<{ result: CahierAiResult; promptTokens: number; completionTokens: number }> {
     const apiKey = this.config.get<string>('GEMINI_API_KEY')
     if (!apiKey) throw new BadRequestException('GEMINI_API_KEY non configurée')
 
@@ -1160,19 +1192,27 @@ RÈGLES :
 
     const data = (await response.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number }
     }
     const content = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-    return this.parseCahierResult(content)
+    return {
+      result: this.parseCahierResult(content),
+      promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
+      completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+    }
   }
 
   /** Coerce AI output (which may be string, array, object) into a markdown string.
    *  The system prompt asks for markdown strings but some models (e.g. glm-4.5-air)
    *  sometimes return arrays/objects — normalize them so downstream consumers see a string. */
   private coerceToMarkdown(v: unknown): string {
-    if (v === null || v === undefined) return 'À définir'
+    // Anti-hallucination: when the AI omits a key entirely we surface a
+    // marker the next preflight catches, instead of a silent "À définir"
+    // which masks the gap and lets a half-baked cahier ship.
+    if (v === null || v === undefined) return 'INFO_MANQUANTE: section absente du retour IA'
     if (typeof v === 'string') return v
     if (Array.isArray(v)) {
-      if (v.length === 0) return 'À définir'
+      if (v.length === 0) return 'INFO_MANQUANTE: section vide dans le retour IA'
       // Array of strings → bullet list
       if (v.every((item) => typeof item === 'string')) {
         return v.map((item) => `- ${item}`).join('\n')

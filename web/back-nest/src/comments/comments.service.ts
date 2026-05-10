@@ -170,7 +170,17 @@ export class CommentsService {
       updatedAt: c.updatedAt,
       parentCommentId: c.parentCommentId,
       replies: (c.replies ?? []).map((r: any) => this.toDto(r)),
-      mentions: c.mentions ? JSON.parse(c.mentions) : [],
+      mentions: parseMentions(c.mentions),
     };
+  }
+}
+
+function parseMentions(raw: unknown): unknown[] {
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
 }

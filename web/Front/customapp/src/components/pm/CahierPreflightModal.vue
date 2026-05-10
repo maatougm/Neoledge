@@ -153,6 +153,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
 import AppModal from '@/components/common/AppModal.vue'
@@ -182,6 +183,7 @@ const emit = defineEmits<{
 }>()
 
 const toast = useNeoToast()
+const router = useRouter()
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -309,9 +311,9 @@ async function saveInlineAnswer(item: MissingFieldInfo): Promise<void> {
 }
 
 function goToMeetings(): void {
-  // Close the modal and let the parent route to the meetings tab.
+  // Close the modal and route via vue-router so Pinia state survives.
   emit('update:visible', false)
-  window.location.href = `/app/pm/projects/${props.projectId}/meetings`
+  void router.push(`/app/pm/projects/${props.projectId}/meetings`)
 }
 
 function onClose(_v: boolean): void {
