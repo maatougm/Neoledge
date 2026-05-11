@@ -251,7 +251,7 @@ interface WorkPackage {
   assignee: { id: string; firstName: string; lastName: string } | null
 }
 interface Milestone  { id: string; title: string; date: string; isReached: boolean }
-interface Activity   { action: string; details: string | null; userName: string | null; createdAt: string }
+interface Activity   { action: string; details: string | null; userName: string | null; timestamp: string }
 interface Sprint     { id: string; name: string; isActive: boolean; startDate: string; endDate: string }
 interface AssignableUser { id: string; firstName: string; lastName: string; role: string }
 interface Responsibilities {

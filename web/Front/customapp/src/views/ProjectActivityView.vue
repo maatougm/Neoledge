@@ -25,7 +25,7 @@ import { formatDateTime as formatDate } from '@/lib/formatDate'
 
 const props = defineProps<{ id: string }>()
 
-interface Activity { id: string; action: string; detail: string | null; createdAt: string }
+interface Activity { id: string; action: string; detail: string | null; timestamp: string }
 const activities = ref<Activity[]>([])
 
 onMounted(async () => {
