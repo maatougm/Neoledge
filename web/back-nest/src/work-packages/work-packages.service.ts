@@ -325,10 +325,28 @@ export class WorkPackagesService {
     }
   }
 
-  async update(id: string, projectId: string, dto: UpdateWorkPackageDto, actorId?: string) {
+  async update(id: string, projectId: string, dto: UpdateWorkPackageDto, actorId?: string, actorRole?: string) {
     try {
       const existing = await this.prisma.workPackage.findFirst({ where: { id, projectId, isDeleted: false } });
       if (!existing) return Result.fail('Work package introuvable.');
+
+      // Members can only edit their own tasks, and only progress-related
+      // fields. Reassignment / priority / dates / parenting / sprint moves
+      // stay PM/Admin-only. This closes the gap where Member role in
+      // @Roles('Admin','ProjectManager','Member') let any team member
+      // mass-reassign colleagues' tasks.
+      if (actorRole === 'Member') {
+        if (existing.assigneeId !== actorId) {
+          return Result.fail('Vous ne pouvez modifier que vos propres tâches.');
+        }
+        const MEMBER_ALLOWED_FIELDS = new Set(['status', 'percentDone', 'spentHours', 'description']);
+        const forbidden = Object.keys(dto).filter(
+          (k) => dto[k as keyof UpdateWorkPackageDto] !== undefined && !MEMBER_ALLOWED_FIELDS.has(k),
+        );
+        if (forbidden.length > 0) {
+          return Result.fail(`Champs non autorisés pour le rôle Member: ${forbidden.join(', ')}.`);
+        }
+      }
 
       // C2: reject self-parent cycles. null/undefined mean "no change" or "clear" — OK.
       if (dto.parentId !== undefined && dto.parentId !== null) {
@@ -368,8 +386,14 @@ export class WorkPackagesService {
       // watcher blast explicitly skips that user to avoid double-notifying.
       if (actorId) {
         const newAssignee = dto.assigneeId;
-        const assigneeChanged =
-          newAssignee !== undefined && newAssignee !== existing.assigneeId && !!newAssignee;
+        // Detect both directions:
+        //  - reassign (was X → is Y, both non-null)
+        //  - newly assigned (was null → is Y)
+        //  - unassigned (was X → is null)
+        const assigneeWasSet = !!existing.assigneeId;
+        const assigneeProvided = newAssignee !== undefined; // explicit change in DTO
+        const assigneeChanged = assigneeProvided && newAssignee !== existing.assigneeId && !!newAssignee;
+        const assigneeRemoved = assigneeProvided && newAssignee === null && assigneeWasSet;
         const statusChanged = dto.status !== undefined && dto.status !== existing.status;
 
         if (assigneeChanged) {
@@ -387,6 +411,40 @@ export class WorkPackagesService {
             actorId,
             link: `/app/team/my-tasks?projectId=${projectId}`,
           }).catch((e) => this.logger.error('notifyEnhanced (wp reassign) failed', e));
+          void this.logActivity(
+            projectId,
+            actorId,
+            'work_package_assigned',
+            `"${wp.title}" assigné à ${newAssignee as string}`,
+          );
+        }
+
+        // Notify the previous assignee they lost the task (re-assign OR explicit unassign).
+        // Without this the task silently disappears from their "Mes tâches".
+        if (assigneeWasSet && (assigneeChanged || assigneeRemoved) && existing.assigneeId !== actorId) {
+          void this.notifications.notifyEnhanced({
+            userId: existing.assigneeId as string,
+            type: 'work_package_unassigned',
+            title: 'Tâche retirée',
+            message: assigneeRemoved
+              ? `"${wp.title}" vous a été retirée.`
+              : `"${wp.title}" a été réassignée.`,
+            projectId,
+            reason: 'Assignee',
+            entityType: 'work_package',
+            entityId: id,
+            actorId,
+            link: `/app/pm/projects/${projectId}/workpackages`,
+          }).catch((e) => this.logger.error('notifyEnhanced (wp unassign) failed', e));
+        }
+
+        if (assigneeRemoved) {
+          void this.logActivity(
+            projectId,
+            actorId,
+            'work_package_unassigned',
+            `"${wp.title}" : assigné retiré`,
+          );
         }
 
         if (statusChanged) {
@@ -436,12 +494,18 @@ export class WorkPackagesService {
     }
   }
 
-  async moveCard(id: string, dto: MoveWorkPackageDto) {
+  async moveCard(id: string, dto: MoveWorkPackageDto, projectId?: string) {
     try {
       // H2: verify target column (if provided) belongs to a board in the same project as the WP.
       // Also C1/C2 guard on parent moves.
-      const wpExisting = await this.prisma.workPackage.findUnique({
-        where: { id },
+      // When projectId is provided (always from PM controller now), enforce
+      // it matches the WP's project — closes the cross-project move IDOR
+      // where a Member of project A could pass a wpId of project B and
+      // succeed because the service only used wp.projectId, not the URL.
+      const wpExisting = await this.prisma.workPackage.findFirst({
+        where: projectId
+          ? { id, projectId, isDeleted: false }
+          : { id, isDeleted: false },
         select: { id: true, projectId: true },
       });
       if (!wpExisting) throw new BadRequestException('Work package introuvable.');
@@ -655,7 +719,10 @@ export class WorkPackagesService {
       sprintName = sprint.name;
     }
 
-    // Validate all non-null assignees are real, active users.
+    // Validate all non-null assignees are real, active users AND members of
+    // this project. Without the membership check, a PM could assign a WP to
+    // someone outside the project who would then 403 trying to open it
+    // (ghost assignment).
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
@@ -666,6 +733,25 @@ export class WorkPackagesService {
       });
       if (users.length !== uniqueAssignees.length) {
         return Result.fail('Certains utilisateurs sont introuvables ou inactifs.');
+      }
+      // Resolve project membership in two queries (PM of project + ProjectMember rows).
+      const [projectRow, members] = await Promise.all([
+        this.prisma.project.findUnique({
+          where: { id: projectId },
+          select: { projectManagerId: true },
+        }),
+        this.prisma.projectMember.findMany({
+          where: { projectId, userId: { in: uniqueAssignees } },
+          select: { userId: true },
+        }),
+      ]);
+      const memberIds = new Set(members.map((m) => m.userId));
+      if (projectRow?.projectManagerId) memberIds.add(projectRow.projectManagerId);
+      const outsiders = uniqueAssignees.filter((id) => !memberIds.has(id));
+      if (outsiders.length > 0) {
+        return Result.fail(
+          `Certains utilisateurs ne sont pas membres du projet : ${outsiders.length} ID(s).`,
+        );
       }
     }
 

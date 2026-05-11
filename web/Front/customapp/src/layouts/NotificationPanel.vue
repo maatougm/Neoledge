@@ -25,7 +25,8 @@
           <button
             v-if="notifStore.unreadCount > 0"
             class="notif-panel__mark-all"
-            @click="notifStore.markAllAsRead()"
+            :disabled="markingAll"
+            @click="handleMarkAll"
           >
             Tout marquer lu
           </button>
@@ -112,9 +113,27 @@ function close(): void {
   open.value = false
 }
 
+// Per-id in-flight guard — without this, a rapid double-click sends two
+// PATCH /:id/read requests and the second can 404 (already read) which
+// the axios 5xx interceptor doesn't toast for, but a refactor of that
+// interceptor could surface as a confusing user error.
+const markInFlight = new Set<string>()
+const markingAll = ref(false)
+
+async function handleMarkAll(): Promise<void> {
+  if (markingAll.value) return
+  markingAll.value = true
+  try {
+    await Promise.resolve(notifStore.markAllAsRead())
+  } finally {
+    markingAll.value = false
+  }
+}
+
 function handleItemClick(id: string, isRead: boolean): void {
-  if (!isRead) {
-    notifStore.markAsRead(id)
+  if (!isRead && !markInFlight.has(id)) {
+    markInFlight.add(id)
+    void Promise.resolve(notifStore.markAsRead(id)).finally(() => markInFlight.delete(id))
   }
 
   const notif = notifStore.notifications.find(n => n.id === id)

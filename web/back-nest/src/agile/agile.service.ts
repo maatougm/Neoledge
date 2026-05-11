@@ -242,9 +242,28 @@ export class AgileService {
     }
   }
 
-  async moveCard(workPackageId: string, boardColumnId: string | null, position: number) {
+  async moveCard(projectId: string, workPackageId: string, boardColumnId: string | null, position: number) {
     try {
-      const col = boardColumnId ? await this.prisma.boardColumn.findUnique({ where: { id: boardColumnId } }) : null;
+      // Verify the WP belongs to the URL's project — prevents cross-project moves
+      // when a malicious client posts another project's wpId to this endpoint.
+      const wpExisting = await this.prisma.workPackage.findFirst({
+        where: { id: workPackageId, projectId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!wpExisting) return Result.fail('Work package introuvable.');
+
+      // If a target column is provided, verify it also belongs to the same project.
+      let col: { mapStatus: string | null; board: { projectId: string } } | null = null;
+      if (boardColumnId) {
+        col = await this.prisma.boardColumn.findUnique({
+          where: { id: boardColumnId },
+          select: { mapStatus: true, board: { select: { projectId: true } } },
+        });
+        if (!col || col.board.projectId !== projectId) {
+          return Result.fail('Colonne introuvable ou hors projet.');
+        }
+      }
+
       const data: Record<string, unknown> = { boardColumnId, position };
       if (col?.mapStatus) data.status = col.mapStatus;
       const wp = await this.prisma.workPackage.update({ where: { id: workPackageId }, data });

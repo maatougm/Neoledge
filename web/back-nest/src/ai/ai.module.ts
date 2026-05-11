@@ -7,8 +7,10 @@ import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
 import { BacklogService } from './backlog.service.js'
 import { BacklogController } from './backlog.controller.js'
 import { AgentRunnerService } from './agent/agent-runner.service.js'
+import { NotificationsModule } from '../notifications/notifications.module.js'
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [BacklogController],
   providers: [
     AiService,

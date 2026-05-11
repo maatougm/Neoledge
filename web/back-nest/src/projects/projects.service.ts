@@ -259,6 +259,18 @@ export class ProjectsService {
     });
     void this.audit.log('Project', id, 'DELETE', userId, undefined, { soft: true })
       .catch((e) => this.logger.error('audit softDelete failed', e));
+
+    // Clear deep-links on unread notifications for this project — without
+    // this, clicking a stale notification routes through ProjectAccessGuard
+    // → 404 (the guard filters `isDeleted: false`). Wiping `link` lets the
+    // panel still render the title/message but disables the click-through.
+    void this.prisma.notification
+      .updateMany({
+        where: { projectId: id, isRead: false },
+        data: { link: null },
+      })
+      .catch((e) => this.logger.warn(`clear notification links on softDelete failed: ${e instanceof Error ? e.message : String(e)}`));
+
     return Result.ok();
   }
 

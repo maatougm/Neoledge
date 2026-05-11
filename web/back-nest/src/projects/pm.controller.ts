@@ -410,8 +410,19 @@ export class PmController {
 
     for (const admin of admins) {
       if (admin.id !== submitterId) {
+        // skipScopeCheck — we already know this user is an active Admin,
+        // so the per-target assertProjectMember (which fires 3 parallel
+        // queries) would just confirm the same thing N times.
         notifyTargets.push(
-          this.notifications.notify(admin.id, type, title, message, projectId),
+          this.notifications.notify(
+            admin.id,
+            type,
+            title,
+            message,
+            projectId,
+            submitterId,
+            { skipScopeCheck: true },
+          ),
         );
       }
     }

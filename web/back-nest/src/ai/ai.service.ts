@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
 import { AgentRunnerService } from './agent/agent-runner.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
 import { runTranscriptAgent } from './transcript-agent.js'
 import { AgentEmitMissedError } from './agent/agent-errors.js'
 import type { AiAnalysisResult } from './ai.types.js'
@@ -29,6 +30,7 @@ export class AiService implements OnModuleInit {
     private readonly providerFactory: AiProviderFactory,
     private readonly config: ConfigService,
     private readonly agentRunner: AgentRunnerService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** True when the transcript agent loop should run instead of the legacy single-shot path. */
@@ -171,6 +173,30 @@ export class AiService implements OnModuleInit {
           },
         })
         .catch(() => { /* non-fatal */ })
+
+      // Notify the project PM that the AI analysis is ready — without this,
+      // long-running analyses (30+ minute meetings) leave the PM polling the
+      // tab indefinitely with no signal when results land.
+      void this.prisma.project
+        .findUnique({
+          where: { id: transcript.projectId },
+          select: { projectManagerId: true, name: true },
+        })
+        .then((project) => {
+          if (!project?.projectManagerId) return
+          return this.notifications.notifyEnhanced({
+            userId: project.projectManagerId,
+            type: 'meeting_ai_completed',
+            reason: 'System',
+            title: 'Analyse IA terminée',
+            message: `L'analyse de la réunion est prête (${result.actionItems.length} action(s), ${result.decisions.length} décision(s)).`,
+            projectId: transcript.projectId,
+            entityType: 'meeting',
+            entityId: transcriptId,
+            link: `/app/pm/projects/${transcript.projectId}/meetings?transcriptId=${transcriptId}`,
+          })
+        })
+        .catch((e) => this.logger.warn(`AI completion notify failed: ${e instanceof Error ? e.message : String(e)}`))
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
       this.logger.error(`AI analysis failed for transcript ${transcriptId}: ${message}`)

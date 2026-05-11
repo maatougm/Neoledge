@@ -90,10 +90,11 @@ export class AgileController {
 
   @Patch('boards/:id/cards/:wpId/move')
   async moveCard(
+    @Param('projectId') projectId: string,
     @Param('wpId') wpId: string,
     @Body() body: MoveCardDto,
   ) {
-    const r = await this.service.moveCard(wpId, body.columnId ?? null, body.position ?? 0);
+    const r = await this.service.moveCard(projectId, wpId, body.columnId ?? null, body.position ?? 0);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

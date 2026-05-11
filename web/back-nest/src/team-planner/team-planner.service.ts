@@ -128,13 +128,40 @@ export class TeamPlannerService {
     }
   }
 
-  async reassign(wpId: string, dto: { assigneeId: string; startDate?: string; dueDate?: string }, actorId?: string) {
+  async reassign(
+    wpId: string,
+    dto: { assigneeId: string; startDate?: string; dueDate?: string },
+    actorId: string,
+    actorRole?: string,
+  ) {
     try {
       const existing = await this.prisma.workPackage.findUnique({
         where: { id: wpId },
-        select: { id: true, title: true, projectId: true, assigneeId: true, isDeleted: true },
+        select: {
+          id: true, title: true, projectId: true, assigneeId: true, isDeleted: true,
+          project: { select: { projectManagerId: true, isDeleted: true } },
+        },
       });
-      if (!existing || existing.isDeleted) return Result.fail('Work package introuvable.');
+      if (!existing || existing.isDeleted || existing.project.isDeleted) {
+        return Result.fail('Work package introuvable.');
+      }
+
+      // Scope check — Admin passes; everyone else must be PM of the WP's project.
+      if (actorRole !== 'Admin' && existing.project.projectManagerId !== actorId) {
+        return Result.fail('Work package introuvable.');
+      }
+
+      // Validate target assignee actually belongs to this project — prevents
+      // ghost assignments where the new assignee can't open the WP because
+      // ProjectAccessGuard rejects them.
+      const memberHit = await this.prisma.projectMember.findFirst({
+        where: { userId: dto.assigneeId, projectId: existing.projectId },
+        select: { id: true },
+      });
+      const isPmOfProject = existing.project.projectManagerId === dto.assigneeId;
+      if (!memberHit && !isPmOfProject) {
+        return Result.fail("L'utilisateur doit être membre du projet pour recevoir cette tâche.");
+      }
 
       const data: Record<string, unknown> = { assigneeId: dto.assigneeId };
       if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);

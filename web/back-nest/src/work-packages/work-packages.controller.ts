@@ -111,7 +111,10 @@ export class WorkPackagesController {
     @Body() dto: UpdateWorkPackageDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const r = await this.service.update(id, projectId, dto, user.userId);
+    // Members can only edit their own tasks and only a whitelisted set of
+    // fields (status / progress / spent hours / description). Reassignment,
+    // priority, dates, parenting all stay PM/Admin-only.
+    const r = await this.service.update(id, projectId, dto, user.userId, user.role);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
@@ -126,8 +129,12 @@ export class WorkPackagesController {
 
   @Patch(':id/move')
   @Roles('Admin', 'ProjectManager', 'Member')
-  async move(@Param('id') id: string, @Body() dto: MoveWorkPackageDto) {
-    const r = await this.service.moveCard(id, dto);
+  async move(
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+    @Body() dto: MoveWorkPackageDto,
+  ) {
+    const r = await this.service.moveCard(id, dto, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
@@ -192,7 +199,7 @@ export class WorkPackagesController {
   }
 
   @Post('bulk-assign')
-  @Roles('Admin', 'ProjectManager', 'Member')
+  @Roles('Admin', 'ProjectManager')
   async bulkAssign(
     @Param('projectId') projectId: string,
     @Body() dto: BulkAssignDto,

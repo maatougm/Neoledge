@@ -86,6 +86,10 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   const addNotification = (notification: Notification): void => {
+    // Dedupe by id — without this, a notification that arrives via socket
+    // first and then again via the polling refresh ends up rendered twice
+    // and Vue warns about duplicate :key, and unreadCount over-counts.
+    if (notifications.value.some((n) => n.id === notification.id)) return
     notifications.value = [notification, ...notifications.value]
   }
 

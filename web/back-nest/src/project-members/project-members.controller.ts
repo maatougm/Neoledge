@@ -101,6 +101,7 @@ export class ProjectMembersController {
     const opts = {
       force: force === 'true' || force === '1',
       reassignTo: reassignTo || undefined,
+      actorId: actor.userId,
     }
     const result = await this.service.remove(memberId, opts)
     if (result.isFailure) {

@@ -62,6 +62,13 @@ export class CommentsService {
     // Notify mentioned users who are active members of the project.
     void this.notifyMentions(projectId, userId, comment.id, mentions);
 
+    // If this is a reply, also notify the parent comment's author — a reply
+    // without an explicit @-mention used to silently drop on the floor.
+    if (parentCommentId) {
+      void this.notifyParentAuthor(projectId, userId, parentCommentId, comment.id, content)
+        .catch((e) => this.logger.warn(`reply notification failed: ${e instanceof Error ? e.message : String(e)}`));
+    }
+
     // Project activity row so admin/activity feed + project activity tab update live
     void this.prisma.projectActivity
       .create({
@@ -122,6 +129,38 @@ export class CommentsService {
     } catch (e) {
       this.logger.error('notifyMentions failed', e);
     }
+  }
+
+  /**
+   * Notify the author of a parent comment when someone replies to them.
+   * The actor is excluded automatically (notifyEnhanced self-skip).
+   */
+  private async notifyParentAuthor(
+    projectId: string,
+    actorId: string,
+    parentCommentId: string,
+    replyCommentId: string,
+    replyContent: string,
+  ): Promise<void> {
+    const parent = await this.prisma.projectComment.findUnique({
+      where: { id: parentCommentId },
+      select: { userId: true, isDeleted: true },
+    });
+    if (!parent || parent.isDeleted) return;
+    if (parent.userId === actorId) return;
+    const snippet = replyContent.length > 120 ? replyContent.slice(0, 120) + '…' : replyContent;
+    await this.notifications.notifyEnhanced({
+      userId: parent.userId,
+      type: 'comment_reply',
+      reason: 'Comment',
+      title: 'Réponse à votre commentaire',
+      message: snippet,
+      projectId,
+      entityType: 'comment',
+      entityId: replyCommentId,
+      actorId,
+      link: `/app/pm/projects/${projectId}/activity`,
+    });
   }
 
   async update(commentId: string, userId: string, isAdmin: boolean, content: string) {
