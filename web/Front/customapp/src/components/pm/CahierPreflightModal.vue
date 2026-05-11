@@ -155,7 +155,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 import AppModal from '@/components/common/AppModal.vue'
 
 interface MissingFieldInfo {
@@ -262,8 +262,7 @@ async function runPreflight(): Promise<void> {
     )
     result.value = data
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-    error.value = msg ?? 'Impossible d\'analyser la complétude du projet.'
+    error.value = extractErrorMessage(e) ?? 'Impossible d\'analyser la complétude du projet.'
   } finally {
     loading.value = false
   }
@@ -303,8 +302,11 @@ async function saveInlineAnswer(item: MissingFieldInfo): Promise<void> {
     // Refresh preflight so the just-answered item drops off the list.
     await runPreflight()
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-    toast.add({ severity: 'error', detail: msg ?? 'Erreur lors de l\'enregistrement.', life: 5000 })
+    toast.add({
+      severity: 'error',
+      detail: extractErrorMessage(e) ?? 'Erreur lors de l\'enregistrement.',
+      life: 5000,
+    })
   } finally {
     savingAnswer.value = false
   }

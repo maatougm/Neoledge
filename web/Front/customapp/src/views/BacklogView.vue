@@ -149,17 +149,31 @@ async function onDrop() {
 
 async function startSprint() {
   if (!activeSprintId.value) return
-  await agileStore.startSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  try {
+    await agileStore.startSprint(props.id, activeSprintId.value)
+    toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Échec du démarrage du sprint.', life: 5000 })
+  }
 }
 
 async function closeSprint() {
   if (!activeSprintId.value) return
-  await agileStore.closeSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint clôturé.', life: 3000 })
+  try {
+    await agileStore.closeSprint(props.id, activeSprintId.value)
+    toast.add({ severity: 'success', detail: 'Sprint clôturé.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Échec de la clôture du sprint.', life: 5000 })
+  }
 }
 
-onMounted(load)
+onMounted(() => {
+  // Reset per-project stores first so we never flash the previous project's
+  // sprints / unassigned WPs while the new fetch is in flight.
+  agileStore.reset()
+  wpStore.reset()
+  void load()
+})
 </script>
 
 <style scoped>

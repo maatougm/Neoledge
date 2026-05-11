@@ -167,6 +167,3 @@ Pas de pression — la rétro est un espace de parole. Suggestions surtout pour 
 export function buildLiveCopilotPrompt(meetingType: MeetingType): string {
   return BASE_PROMPT + (PRESET_SECTIONS[meetingType] ?? '')
 }
-
-/** @deprecated Kept for backwards compatibility — prefer buildLiveCopilotPrompt(). */
-export const LIVE_COPILOT_SYSTEM_PROMPT = BASE_PROMPT

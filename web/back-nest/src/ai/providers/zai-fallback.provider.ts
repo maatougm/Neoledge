@@ -59,11 +59,21 @@ export class ZaiFallbackProvider {
       throw new Error(`Z.AI fallback error ${response.status}`)
     }
 
-    const data: unknown = await response.json()
-    const content =
-      ((data as Record<string, unknown[]>)?.['choices']?.[0] as Record<string, Record<string, string>>)
-        ?.['message']?.['content'] ?? ''
-
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>
+      error?: { message?: string }
+    }
+    // Distinguish a real failure (rate limit, server error rendered as a 200
+    // body with { error: { ... } }) from a parseable response. Without this,
+    // an empty `content` parses as "Invalid JSON" and the meaningful error
+    // is lost — and the upstream fallback chain stays inactive.
+    if (data?.error?.message) {
+      throw new Error(`Z.AI fallback error (200 body): ${data.error.message.slice(0, 200)}`)
+    }
+    if (!Array.isArray(data?.choices) || data.choices.length === 0) {
+      throw new Error('Z.AI fallback error: empty choices in response')
+    }
+    const content = data.choices[0]?.message?.content ?? ''
     return this.parseResult(content)
   }
 

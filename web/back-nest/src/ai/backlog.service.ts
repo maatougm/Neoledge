@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadGatewayException, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   generateBacklogViaOpenAi,
@@ -108,19 +109,31 @@ export class BacklogService {
     const safe = sanitizeBacklog(backlog);
     if (safe.epics.length === 0) return { created: 0 };
 
+    // Pre-generate parent IDs client-side so we can batch tasks under each epic
+    // with a single createMany — was previously 1 insert per epic + 1 insert
+    // per task, holding the transaction open for dozens of round-trips.
+    const epicsWithIds = safe.epics.map((epic) => ({ epic, id: randomUUID() }));
+
     let created = 0;
     await this.prisma.$transaction(async (tx) => {
-      for (const epic of safe.epics) {
-        const epicRow = await tx.workPackage.create({
-          data: this.toWpCreate(projectId, authorId, epic, 'Epic', null),
-        });
-        created += 1;
+      // 1. All epics in one shot.
+      const epicRows = epicsWithIds.map(({ epic, id }) => ({
+        id,
+        ...this.toWpCreate(projectId, authorId, epic, 'Epic', null),
+      }));
+      const epicResult = await tx.workPackage.createMany({ data: epicRows });
+      created += epicResult.count;
+
+      // 2. All tasks in one shot (with the epic id we generated above as parentId).
+      const taskRows: ReturnType<typeof this.toWpCreate>[] = [];
+      for (const { epic, id: epicId } of epicsWithIds) {
         for (const task of epic.children) {
-          await tx.workPackage.create({
-            data: this.toWpCreate(projectId, authorId, task, task.type, epicRow.id),
-          });
-          created += 1;
+          taskRows.push(this.toWpCreate(projectId, authorId, task, task.type, epicId));
         }
+      }
+      if (taskRows.length > 0) {
+        const taskResult = await tx.workPackage.createMany({ data: taskRows });
+        created += taskResult.count;
       }
     });
     this.logger.log(`accepted backlog for project ${projectId}: ${created} WP(s) created`);

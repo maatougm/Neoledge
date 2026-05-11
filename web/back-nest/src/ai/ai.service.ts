@@ -60,8 +60,18 @@ export class AiService implements OnModuleInit {
       data: { aiStatus: 'processing', aiError: null, aiStartedAt: new Date() },
     })
     if (count === 0) {
-      // Either the row doesn't exist or it's already processing — bail out.
-      this.logger.warn(`analyzeTranscript: transcript ${transcriptId} is already processing or missing — skipping.`)
+      // Distinguish "row missing" (the transcript was deleted between trigger
+      // and analyze — log error so ops see it) from "already processing"
+      // (legitimate concurrent invocation — info-level skip).
+      const exists = await this.prisma.meetingTranscript.findUnique({
+        where: { id: transcriptId },
+        select: { id: true, aiStatus: true },
+      })
+      if (!exists) {
+        this.logger.error(`analyzeTranscript: transcript ${transcriptId} is missing — caller will poll forever`)
+      } else {
+        this.logger.warn(`analyzeTranscript: transcript ${transcriptId} is already processing (status=${exists.aiStatus}) — skipping`)
+      }
       return
     }
 

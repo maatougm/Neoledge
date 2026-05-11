@@ -9,6 +9,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { sanitize } from '@/lib/sanitize'
 
 const props = withDefaults(
   defineProps<{
@@ -54,7 +55,11 @@ const renderedHtml = computed(() => {
     })
     .join('')
 
-  return html
+  // Defence-in-depth: even though we already HTML-escape the raw input
+  // before applying inline-bold markdown, run the result through the
+  // shared DOMPurify pipeline. AI output through this path is otherwise
+  // the one v-html consumer that bypasses sanitize().
+  return sanitize(html)
 })
 </script>
 

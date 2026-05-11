@@ -65,12 +65,6 @@ export class AiProviderFactory {
     }
   }
 
-  // ── Back-compat — single-provider callers from before the swap. ─────────
-  /** @deprecated Use getPrimary() instead. Kept for old callers. */
-  getProvider(): IAiProvider {
-    return this.getPrimary()
-  }
-
   private normalizeName(raw: string | undefined, fallback: ProviderName): ProviderName {
     const lower = (raw ?? '').toLowerCase()
     return VALID_PROVIDERS.has(lower as ProviderName) ? (lower as ProviderName) : fallback

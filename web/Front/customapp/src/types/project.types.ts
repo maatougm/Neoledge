@@ -142,8 +142,6 @@ export interface ProjectActivity {
   projectId: string | null
   projectName: string | null
   projectClientName: string | null
-  /** @deprecated use timestamp */
-  createdAt?: string
 }
 
 export interface ActivityStats {

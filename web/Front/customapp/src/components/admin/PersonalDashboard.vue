@@ -92,7 +92,7 @@
             <span class="pdash__activity-detail">{{ entry.detail ?? entry.action }}</span>
             <span v-if="entry.projectName" class="pdash__activity-project">{{ entry.projectName }}</span>
           </div>
-          <span class="pdash__activity-time">{{ formatTime(entry.timestamp ?? entry.createdAt ?? '') }}</span>
+          <span class="pdash__activity-time">{{ formatTime(entry.timestamp) }}</span>
         </li>
       </ul>
     </div>

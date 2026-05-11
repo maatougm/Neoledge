@@ -197,6 +197,9 @@ watch(collab.remoteCardMove, (payload) => {
 })
 
 onMounted(async () => {
+  // Reset per-project stores first so we never flash the previous project's
+  // board while the new fetch is in flight.
+  agileStore.reset()
   // Join project room for real-time events (sidebar already connects the socket)
   collab.joinProject(props.id)
   await load()

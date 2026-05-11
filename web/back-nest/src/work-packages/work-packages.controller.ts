@@ -125,6 +125,7 @@ export class WorkPackagesController {
   }
 
   @Patch(':id/move')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async move(@Param('id') id: string, @Body() dto: MoveWorkPackageDto) {
     const r = await this.service.moveCard(id, dto);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -183,6 +184,7 @@ export class WorkPackagesController {
   }
 
   @Put(':id/custom-values')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async upsertCustomValues(@Param('id') id: string, @Body() dto: UpsertCustomValuesDto) {
     const r = await this.service.upsertCustomValues(id, dto.values || []);
     if (r.isFailure) throw new BadRequestException(r.error);

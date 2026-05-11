@@ -8,7 +8,7 @@
           <div class="pa-item__body">
             <div class="pa-item__action">{{ a.action }}</div>
             <div v-if="a.detail" class="pa-item__detail">{{ a.detail }}</div>
-            <div class="pa-item__time">{{ formatDate(a.createdAt) }}</div>
+            <div class="pa-item__time">{{ formatDate(a.timestamp) }}</div>
           </div>
         </li>
         <li v-if="!activities.length" class="pa-empty">Aucune activité.</li>

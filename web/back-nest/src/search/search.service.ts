@@ -81,18 +81,44 @@ export class SearchService {
           orderBy: { updatedAt: 'desc' },
           take,
         }),
-        this.prisma.appUser.findMany({
-          where: {
-            isActive: true,
-            OR: [
-              { firstName: { contains: query } },
-              { lastName: { contains: query } },
-              { email: { contains: query } },
-            ],
-          },
-          select: { id: true, firstName: true, lastName: true, email: true, role: true },
-          take: Math.min(4, take),
-        }),
+        // User search is scoped: Admin sees everyone; everyone else only sees
+        // users they share at least one project with. Closes the directory
+        // enumeration where any auth'd Member could lookup any user by email.
+        accessibleProjectIds === null
+          ? this.prisma.appUser.findMany({
+              where: {
+                isActive: true,
+                OR: [
+                  { firstName: { contains: query } },
+                  { lastName: { contains: query } },
+                  { email: { contains: query } },
+                ],
+              },
+              select: { id: true, firstName: true, lastName: true, email: true, role: true },
+              take: Math.min(4, take),
+            })
+          : this.prisma.appUser.findMany({
+              where: {
+                isActive: true,
+                OR: [
+                  { firstName: { contains: query } },
+                  { lastName: { contains: query } },
+                  { email: { contains: query } },
+                ],
+                AND: [
+                  {
+                    OR: [
+                      // PM of an accessible project
+                      { managedProjects: { some: { id: { in: accessibleProjectIds } } } },
+                      // Member of an accessible project
+                      { projectMemberships: { some: { projectId: { in: accessibleProjectIds } } } },
+                    ],
+                  },
+                ],
+              },
+              select: { id: true, firstName: true, lastName: true, email: true, role: true },
+              take: Math.min(4, take),
+            }),
       ]);
 
       const hits: SearchHit[] = [

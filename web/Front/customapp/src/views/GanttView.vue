@@ -382,6 +382,10 @@ onMounted(() => ganttStore.fetchGantt(props.id))
 onUnmounted(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
+  // Drop any in-progress drag so the next mount starts clean and an
+  // abandoned wpStore.update call doesn't leak optimistic visual state.
+  dragState = null
+  draggingWpId.value = null
 })
 </script>
 

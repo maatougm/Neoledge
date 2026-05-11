@@ -162,7 +162,7 @@
                     {{ activityLabel(a.action) }}
                     <span v-if="a.details">— {{ a.details }}</span>
                   </div>
-                  <div class="po__activity-time">{{ formatRelative(a.createdAt) }}</div>
+                  <div class="po__activity-time">{{ formatRelative(a.timestamp) }}</div>
                 </div>
               </li>
             </ul>

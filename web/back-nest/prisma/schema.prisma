@@ -955,6 +955,7 @@ model CahierFeedback {
   user    AppUser? @relation("CahierFeedbackUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([projectId, createdAt])
+  @@index([projectId, status])
   @@map("CahierFeedback")
 }
 
