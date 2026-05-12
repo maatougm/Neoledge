@@ -1015,7 +1015,12 @@ RÈGLES :
           durationMs: Date.now() - startedAt,
           success: true,
         })
-        return out
+        // The agent path previously skipped grounding + critique because it
+        // returned `out` directly. Real prod test caught hallucinated tech
+        // names (React/Vue.js/etc.) coming out of this branch. Run the same
+        // two-layer defence here.
+        const agentGrounded = this.applyGroundingCheck(out, this.buildSourceCorpus(formData, transcripts, undefined))
+        return await this.runSelfCritique(agentGrounded, formData, transcripts, projectId).catch(() => agentGrounded)
       } catch (e: unknown) {
         if (e instanceof AgentEmitMissedError) {
           this.logger.warn(`cahier agent emit missed; falling through to single-shot: ${e.message}`)
@@ -1299,49 +1304,63 @@ RÈGLES :
    * source corpus, we rewrite the mention to an INFO_MANQUANTE marker.
    * We never object to a name we don't know about — that's the prompt's job.
    */
+  // Tech / product names. Removed bare-3-letter or French-collision names
+  // ("vue", "java", "ruby", "rust", "tableau", "express", "remix", "sap",
+  // "rails", "sns", "mongo", "saml") that false-positive on common French
+  // text. Use the disambiguated long form ("vue.js", "java spring",
+  // "tableau software") which is what an actual cahier should say anyway.
   private static readonly KNOWN_TECH_NAMES = [
     // Databases
-    'postgresql', 'postgres', 'mysql', 'mariadb', 'sql server', 'mssql', 'oracle',
-    'mongodb', 'mongo', 'redis', 'elasticsearch', 'cassandra', 'dynamodb', 'firebase',
+    'postgresql', 'postgres', 'mysql', 'mariadb', 'sql server', 'mssql',
+    'mongodb', 'redis', 'elasticsearch', 'cassandra', 'dynamodb', 'firebase',
     // Cloud
     'aws', 'azure', 'gcp', 'google cloud', 'ovh', 'scaleway', 'digitalocean', 'heroku',
     // Containers
     'docker', 'kubernetes', 'k8s', 'openshift', 'rancher',
-    // Frontend frameworks
-    'vue', 'vue.js', 'react', 'angular', 'svelte', 'next.js', 'nuxt', 'remix',
+    // Frontend frameworks (disambiguated)
+    'vue.js', 'reactjs', 'react.js', 'angular', 'svelte', 'next.js', 'nuxt',
     // Backend frameworks
-    '.net core', 'asp.net', 'nestjs', 'express', 'spring boot', 'django', 'fastapi',
-    'laravel', 'symfony', 'rails',
-    // Languages
-    'typescript', 'javascript', 'python', 'java', 'c#', 'golang', 'rust', 'php', 'ruby',
+    '.net core', 'asp.net', 'nestjs', 'spring boot', 'django', 'fastapi',
+    'laravel', 'symfony',
+    // Languages (disambiguated when ambiguous)
+    'typescript', 'javascript', 'golang', 'c#',
     // Messaging / streaming
-    'kafka', 'rabbitmq', 'sqs', 'sns', 'pubsub',
+    'kafka', 'rabbitmq',
     // Auth / payment
-    'oauth', 'saml', 'okta', 'auth0', 'stripe', 'paypal', 'adyen',
+    'oauth', 'okta', 'auth0', 'stripe', 'paypal', 'adyen',
     // Doc / signature
     'docusign', 'adobe sign', 'yousign',
     // Enterprise
-    'salesforce', 'sharepoint', 'sap', 'oracle erp', 'dynamics 365',
+    'salesforce', 'sharepoint', 'oracle erp', 'dynamics 365',
     // Analytics
-    'power bi', 'tableau', 'looker', 'metabase', 'grafana',
-    // AI providers (the ones we might confuse with each other)
+    'power bi', 'looker', 'metabase', 'grafana',
+    // AI providers
     'openai', 'anthropic', 'gemini', 'azure openai', 'mistral',
   ]
 
   /**
    * Scan a string for ungrounded tech/product names and replace each with
    * an INFO_MANQUANTE marker. Idempotent — running it twice gives the same
-   * result. Case-insensitive substring match.
+   * result.
+   *
+   * BOTH the corpus and the output use word-boundary matching. Without
+   * boundaries on the corpus side, common French words become false
+   * positives: "vue" in "point de vue", "tableau" (the French word),
+   * "java" inside "javascript". Those would all silently mark a tech
+   * mention as "grounded" when nothing tech-related was actually said.
    */
   private rewriteUngroundedString(input: string, corpus: string): string {
     if (!input) return input
     let out = input
     for (const tech of CahierDesChargesService.KNOWN_TECH_NAMES) {
-      if (corpus.includes(tech)) continue
-      // Match the tech name as a word (allow surrounding punctuation, French diacritics).
       const escaped = tech.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const re = new RegExp(`(^|[^a-zA-Z0-9])(${escaped})(?=[^a-zA-Z0-9]|$)`, 'gi')
-      out = out.replace(re, (_m, lead) => `${lead}[INFO_MANQUANTE: ${tech} non confirmé dans la source]`)
+      // Whole-word check against the corpus: tech must appear as a token,
+      // not as a substring of an unrelated French word.
+      const corpusRe = new RegExp(`(^|[^a-zA-Z0-9])${escaped}(?=[^a-zA-Z0-9]|$)`, 'i')
+      if (corpusRe.test(corpus)) continue
+      // Same boundary rule applied to the AI output.
+      const outRe = new RegExp(`(^|[^a-zA-Z0-9])(${escaped})(?=[^a-zA-Z0-9]|$)`, 'gi')
+      out = out.replace(outRe, (_m, lead) => `${lead}[INFO_MANQUANTE: ${tech} non confirmé dans la source]`)
     }
     return out
   }
