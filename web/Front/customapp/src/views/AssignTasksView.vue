@@ -70,8 +70,7 @@
           <i class="pi pi-spin pi-spinner" /> Chargement…
         </div>
         <div v-else-if="!members.length" class="at__no-members">
-          <p>Aucun membre dans ce projet — ajoutez des membres pour pouvoir leur assigner des tâches.</p>
-          <NeoButton label="Ajouter des membres" icon="pi pi-user-plus" @click="goToMembers" />
+          <p>Aucun utilisateur disponible — créez d'abord un compte utilisateur dans l'espace administrateur.</p>
         </div>
         <div v-else-if="visibleTasks.length === 0" class="at__empty-state">
           Aucune tâche dans ce sprint pour les filtres en cours.
@@ -209,11 +208,12 @@ interface WpRow {
   assigneeId: string | null
   sprintId: string | null
 }
+// Since the per-project team selection was removed, the assignment view now
+// reads from /assignable-users (every active user with an assignable role)
+// instead of /members. The shape is flat — no per-project label.
 interface MemberRow {
-  id: string
   userId: string
-  label: string
-  user: { id: string; firstName: string; lastName: string; email: string }
+  user: { id: string; firstName: string; lastName: string; role: string }
 }
 
 const NO_SPRINT = '__no_sprint__' as const
@@ -252,11 +252,21 @@ const sprintOptions = computed(() => {
   return opts
 })
 
+const ROLE_LABELS: Record<string, string> = {
+  Admin: 'Admin',
+  ProjectManager: 'Chef de projet',
+  SpecificationTeam: 'Équipe spec.',
+  Member: 'Membre',
+}
+
 const memberOptions = computed(() => {
-  const opts: Array<{ label: string; value: string }> = members.value.map((m) => ({
-    label: `${m.user.firstName} ${m.user.lastName}${m.label ? ` — ${m.label}` : ''}`,
-    value: m.userId,
-  }))
+  const opts: Array<{ label: string; value: string }> = members.value.map((m) => {
+    const role = ROLE_LABELS[m.user.role] ?? m.user.role
+    return {
+      label: `${m.user.firstName} ${m.user.lastName} — ${role}`,
+      value: m.userId,
+    }
+  })
   opts.unshift({ label: '— Désassigner —', value: UNASSIGN })
   return opts
 })
@@ -310,9 +320,6 @@ function assigneeLabel(id: string | null): string {
   return `${m.user.firstName} ${m.user.lastName}`
 }
 
-function goToMembers(): void {
-  void router.push({ name: 'pm-members', params: { id: props.id } })
-}
 
 async function onAssign(): Promise<void> {
   if (!canAssign.value) return
@@ -416,17 +423,17 @@ onMounted(async () => {
       })
     }
 
-    // Endpoint returns `{ members: [...], projectManagerId }` — not a flat
-    // array. Without this unwrap, members.value was being set to the whole
-    // envelope and the assignment lanes silently rendered empty.
-    const membersRes = await api.get<MemberRow[] | { members: MemberRow[]; projectManagerId: string | null }>(
-      `/pm/projects/${props.id}/members`,
+    // Per-project team selection was removed: the assignment view now lists
+    // every active user with an assignable role, not just ProjectMember rows.
+    const assignableRes = await api.get<Array<{ id: string; firstName: string; lastName: string; role: string }>>(
+      `/pm/projects/${props.id}/assignable-users`,
     )
     if (!isMounted) return
     allTasks.value = aggregated.filter((t) => t.type !== 'Epic')
-    members.value = Array.isArray(membersRes.data)
-      ? membersRes.data
-      : (membersRes.data?.members ?? [])
+    members.value = (assignableRes.data ?? []).map((u) => ({
+      userId: u.id,
+      user: { id: u.id, firstName: u.firstName, lastName: u.lastName, role: u.role },
+    }))
 
     // Auto-select first sprint if any exist; else the "Hors sprint" bucket.
     if (agile.sprints.length > 0) {

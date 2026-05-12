@@ -66,19 +66,29 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
   }
 
   // ── read_project_members ───────────────────────────────────────────────────
+  // Per product decision to drop per-project team selection, this tool now
+  // enumerates EVERY active user with an assignable role rather than only the
+  // ProjectMember rows. The user's platform role (Member / SpecificationTeam
+  // / ProjectManager) replaces the dropped per-project label and is still a
+  // useful coarse skill signal for the model. Auto-membership upsert at
+  // assignment time keeps ProjectAccessGuard happy.
   const readMembers: ToolDefinition<Record<string, never>, { members: MemberContext[] }> = {
     name: 'read_project_members',
-    description: "List every member of this project with their label (e.g. 'Senior backend', 'QA', 'Frontend lead'), current in-progress task count, and total tasks ever assigned to them on this project. Use the labels to match skills against task content.",
+    description: "List every user eligible to be assigned a task on this project. `label` carries the user's platform role ('Member' / 'SpecificationTeam' / 'ProjectManager') — coarse skill signal. Use it together with the task title to match skills. Also includes current in-progress task count on this project and total tasks ever assigned here.",
     parameters: obj({}, {}),
     handler: async (_args, ctx: ToolContext) => {
       const prisma = ctx.prisma as PrismaService
-      const members = await prisma.projectMember.findMany({
-        where: { projectId },
-        include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      const users = await prisma.appUser.findMany({
+        where: {
+          isActive: true,
+          role: { in: ['SpecificationTeam', 'Member', 'ProjectManager'] },
+        },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
       })
-      if (members.length === 0) return { members: [] }
+      if (users.length === 0) return { members: [] }
 
-      const userIds = members.map((m) => m.userId)
+      const userIds = users.map((u) => u.id)
       const [inProgressCounts, totalCounts] = await Promise.all([
         prisma.workPackage.groupBy({
           by: ['assigneeId'],
@@ -102,14 +112,14 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
       const totalMap = new Map(totalCounts.map((c) => [c.assigneeId, c._count._all]))
 
       return {
-        members: members.map((m) => ({
-          memberId: m.id,
-          userId: m.userId,
-          fullName: `${m.user.firstName} ${m.user.lastName}`.trim(),
-          email: m.user.email,
-          label: m.label ?? '',
-          inProgressCount: inProgMap.get(m.userId) ?? 0,
-          totalAssignedThisProject: totalMap.get(m.userId) ?? 0,
+        members: users.map((u) => ({
+          memberId: u.id, // no separate ProjectMember row to expose anymore
+          userId: u.id,
+          fullName: `${u.firstName} ${u.lastName}`.trim(),
+          email: u.email,
+          label: u.role,
+          inProgressCount: inProgMap.get(u.id) ?? 0,
+          totalAssignedThisProject: totalMap.get(u.id) ?? 0,
         })),
       }
     },
