@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -126,5 +127,19 @@ export class UsersController {
     }
 
     return { message: 'Utilisateur réactivé.' };
+  }
+
+  @Delete(':id')
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    const result = await this.usersService.delete(id, user.userId);
+
+    if (result.isFailure) {
+      throw new BadRequestException(result.error);
+    }
+
+    return { message: 'Utilisateur supprimé.' };
   }
 }

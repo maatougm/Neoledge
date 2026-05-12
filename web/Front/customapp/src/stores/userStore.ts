@@ -131,6 +131,33 @@ export const useUserStore = defineStore('users', () => {
     }
   }
 
+  /**
+   * Hard delete an account. The backend rejects the call with a 400 when
+   * the user has history rows that block FK deletion (managed projects,
+   * authored tasks, time entries, comments, attachments) — the caller is
+   * expected to surface that message via the toast.
+   */
+  const deleteUser = async (id: string): Promise<boolean> => {
+    loading.value = true
+    error.value = null
+    try {
+      await api.delete(`/admin/appuser/${id}`)
+      users.value = users.value.filter((u) => u.id !== id)
+      return true
+    } catch (e: unknown) {
+      const fromAxios =
+        typeof e === 'object' && e !== null && 'response' in e
+          ? ((e as { response?: { data?: { message?: string } } }).response?.data?.message ?? null)
+          : null
+      error.value =
+        fromAxios ??
+        (e instanceof Error ? e.message : 'Erreur lors de la suppression.')
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   // ─── Logout reset ────────────────────────────────────────────────────────────
 
   /** Wipe per-user state on logout. */
@@ -155,6 +182,7 @@ export const useUserStore = defineStore('users', () => {
     resetPassword,
     deactivateUser,
     reactivateUser,
+    deleteUser,
     reset,
   }
 })

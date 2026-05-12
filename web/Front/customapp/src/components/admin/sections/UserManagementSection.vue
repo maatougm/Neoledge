@@ -75,6 +75,7 @@
       @reset-password="um.handleResetPassword"
       @deactivate="um.handleDeactivate"
       @reactivate="um.handleReactivate"
+      @delete="um.handleDelete"
     />
 
     <!-- Create dialog -->

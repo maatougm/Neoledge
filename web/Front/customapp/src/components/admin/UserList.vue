@@ -117,6 +117,14 @@
                   title="Réactiver"
                   @click="emit('reactivate', user.id)"
                 />
+                <NeoButton
+                  icon="pi pi-trash"
+                  severity="danger"
+                  text
+                  size="small"
+                  title="Supprimer définitivement"
+                  @click="emit('delete', user)"
+                />
               </div>
             </td>
           </tr>
@@ -146,6 +154,7 @@ const emit = defineEmits<{
   'reset-password': [id: string]
   deactivate: [user: UserResponse]
   reactivate: [id: string]
+  delete: [user: UserResponse]
 }>()
 
 onMounted(() => store.fetchAll())
