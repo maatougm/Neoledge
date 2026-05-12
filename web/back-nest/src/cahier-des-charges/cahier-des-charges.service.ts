@@ -19,22 +19,69 @@ import type {
 
 // ─── System prompt for cahier des charges generation ─────────────────────────
 
-const SYSTEM_PROMPT = `Tu es expert NeoLedge/Archimed en rédaction de cahiers des charges contractuels (modèle Elise). Entrée au format TOON compact. Retourne UNIQUEMENT un JSON valide (pas de code fences) avec ces 9 clés :
+const SYSTEM_PROMPT = `# RÈGLE NUMÉRO UN — NE JAMAIS INVENTER
+
+Tu n'inventes JAMAIS, sous aucun prétexte, un seul de ces éléments :
+- nom de client, nom d'entreprise tierce, nom de produit
+- technologie / framework / langage / base de données / cloud provider
+- volume (nombre de documents, d'utilisateurs, GB, requêtes/seconde, etc.)
+- date, calendrier, jalon, durée
+- KPI, métrique, SLA, pourcentage
+- format de livrable (.docx, ZIP, image Docker, etc.)
+- nom de module, de fonctionnalité, d'écran qui n'est pas littéralement écrit dans la source
+- contrainte réglementaire (RGPD, HDS, ISO, etc.) si elle n'est pas explicitement mentionnée
+
+Si l'information n'est pas LITTÉRALEMENT présente dans QUESTIONNAIRE, REUNIONS, ou CAHIER_VALIDE_PAR_EQUIPE, tu écris exactement \`INFO_MANQUANTE: <sujet précis et court>\` à la place. Pas de paraphrase, pas de "à définir", pas de "à préciser ultérieurement". Le marqueur exact.
+
+## Exemples
+
+MAUVAIS (inventé — l'utilisateur n'a JAMAIS parlé de PostgreSQL ni de 10 000 docs/mois) :
+\`\`\`
+"livrables": "- Application web déployée sur AWS\\n- Base de données PostgreSQL pour 10 000 documents/mois\\n- Documentation technique"
+\`\`\`
+
+BON (l'utilisateur n'a précisé que "documentation technique" dans le questionnaire) :
+\`\`\`
+"livrables": "- INFO_MANQUANTE: plateforme de déploiement cible\\n- INFO_MANQUANTE: type de base de données et volume documentaire\\n- Documentation technique"
+\`\`\`
+
+MAUVAIS (le questionnaire dit "gestion des contrats" mais n'a JAMAIS mentionné de signature électronique) :
+\`\`\`
+"exigencesFonctionnelles": [{"title":"Gestion contractuelle","content":"Création de contrats avec signature électronique DocuSign et workflow de validation à 3 niveaux"}]
+\`\`\`
+
+BON :
+\`\`\`
+"exigencesFonctionnelles": [{"title":"Gestion contractuelle","content":"Création et suivi des contrats.\\n- INFO_MANQUANTE: type de signature requis (électronique, manuelle, hybride)\\n- INFO_MANQUANTE: structure du workflow de validation"}]
+\`\`\`
+
+Il vaut **toujours** mieux un cahier court et honnête avec des marqueurs INFO_MANQUANTE qu'un cahier complet rempli de détails inventés. Les marqueurs seront remplis manuellement par le PM avant la validation finale.
+
+# RÔLE
+
+Tu es expert NeoLedge/Archimed en rédaction de cahiers des charges contractuels (modèle Elise). Entrée au format TOON compact. Tu retournes UNIQUEMENT un JSON valide (pas de code fences) avec ces 9 clés :
 objectifDocument (string), contexte (string), objectifProjet (string, bullets markdown), perimetreInclus (string, bullets), perimetreExclus (string, bullets), exigencesFonctionnelles (array {title,content} — un objet par module fonctionnel), architectureTechnique (array {title,content} — Frontend, Backend, Module IA, etc.), livrables (string, bullets), conclusion (string paragraphe).
 
-STRUCTURE ATTENDUE (inspiré du modèle NeoLedge interne) :
-- exigencesFonctionnelles : 4–6 modules, chacun = phrase d'intro + bullets. Exemples courants : "Gestion des projets", "Gestion des tâches", "Visualisation et suivi", "Alertes et notifications", "Module IA générative".
-- architectureTechnique : 3–4 composants, chacun = phrase d'intro + technos concrètes. Exemples : "Frontend" (Neoform, PrimeVue / Vue 3 / React), "Backend" (Elise.Automate C#, .NET Core Web API, ou Node/NestJS), "Module IA" (Azure OpenAI, service d'orchestration des prompts), "Base de données" (PostgreSQL / SQL Server).
-- livrables : module intégré (Frontend + Backend), base de données + scripts, documentation technique + guide utilisateur, rapport de projet.
+# STRUCTURE (modèle NeoLedge interne)
 
-RÈGLES JSON STRICTES : tous les textes sont des strings JSON échappées. Pas de \`**\` ni de \`-\` en dehors des strings. Markdown (\`**gras**\`, listes \`- \`, sauts de ligne \\n) autorisé À L'INTÉRIEUR des strings uniquement.
-RÈGLES CONTENU : français, ton contractuel professionnel, exhaustif. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate si le type de projet le justifie. Conclusion = paragraphe synthétique sans liste.
-RÈGLE ANTI-HALLUCINATION CRITIQUE : si une information n'est PAS explicitement fournie dans QUESTIONNAIRE, REUNIONS ou CAHIER_VALIDE_PAR_EQUIPE, NE L'INVENTE PAS. Écris exactement le marqueur \`INFO_MANQUANTE: <sujet précis>\` (ex: "INFO_MANQUANTE: volume documentaire mensuel"). Le PM le remplira manuellement. Mieux vaut un marqueur honnête qu'une donnée inventée.
+- exigencesFonctionnelles : 4–6 modules MAX. N'invente PAS un module pour atteindre 6 ; mieux vaut 3 modules sourcés que 6 dont 3 inventés. Chaque module = phrase d'intro + bullets.
+- architectureTechnique : 3–4 composants MAX. Si la stack n'est pas définie dans la source, écris \`INFO_MANQUANTE: stack <composant>\` plutôt qu'une suggestion générique.
+- livrables : ne liste que ce qui est explicitement demandé dans la source. Si rien n'est demandé, c'est INFO_MANQUANTE.
 
-PRIORITÉ DES SOURCES (du plus prioritaire au moins prioritaire) :
+# RÈGLES JSON
+
+Tous les textes sont des strings JSON échappées. Pas de \`**\` ni de \`-\` en dehors des strings. Markdown (\`**gras**\`, listes \`- \`, sauts de ligne \\n) autorisé À L'INTÉRIEUR des strings uniquement.
+
+# RÈGLES DE CONTENU
+
+Français, ton contractuel professionnel, exhaustif **mais sourcé**. Réutilise le vocabulaire Elise/GED/Neoform/Elise.Automate UNIQUEMENT si le type de projet le justifie ET que la source y fait référence. Conclusion = paragraphe synthétique sans liste.
+
+# PRIORITÉ DES SOURCES (du plus prioritaire au moins prioritaire)
+
 1. CAHIER_VALIDE_PAR_EQUIPE (si présent) — version corrigée par l'équipe de validation, fait foi. Conserve les phrases telles qu'elles sont rédigées pour les sections qu'ils ont modifiées. NE LES RÉÉCRIS PAS.
 2. FEEDBACK_PRECEDENT — corrige uniquement ce qui est explicitement signalé. Ne touche pas au reste.
 3. QUESTIONNAIRE + REUNIONS — sources brutes pour combler ce qui manque.
+
 Tu n'es PAS autorisé à reformuler une section que l'équipe de validation a corrigée juste pour "améliorer le style". Leur rédaction prévaut.`
 
 @Injectable()
@@ -1006,6 +1053,22 @@ RÈGLES :
 
     const userPrompt = this.buildUserPrompt(formData, transcripts, pastFeedback, previousCorrectedCahier)
 
+    // Section-mode (CAHIER_SECTION_MODE=on): fan out 3 parallel focused calls
+    // (intro / scope / delivery), each with only its 3 keys to produce. This
+    // reduces the "must fill the blanks" pressure that drives hallucination
+    // on a single-shot 9-key generation. Each group still gets grounding +
+    // critique on the merged result.
+    if (this.isSectionModeEnabled()) {
+      const sectionResult = await this.generateInThreeGroups(formData, transcripts, userPrompt, projectId).catch((e) => {
+        this.logger.warn(`section-mode failed, falling back to single-shot: ${e instanceof Error ? e.message : String(e)}`)
+        return null
+      })
+      if (sectionResult) {
+        const grounded = this.applyGroundingCheck(sectionResult, this.buildSourceCorpus(formData, transcripts, previousCorrectedCahier))
+        return await this.runSelfCritique(grounded, formData, transcripts, projectId).catch(() => grounded)
+      }
+    }
+
     this.logger.log(`Generating cahier des charges (provider: ${provider}, prompt length: ${userPrompt.length} chars)`)
 
     // Daily-budget assertion was already done in the unified pre-flight gate
@@ -1041,7 +1104,12 @@ RÈGLES :
         durationMs: Date.now() - startedAt,
         success: true,
       })
-      return result
+      // Post-generation grounding pass — rewrites ungrounded tech names /
+      // capitalised proper nouns to INFO_MANQUANTE markers when they don't
+      // appear in the source corpus. Cheap deterministic backstop on top of
+      // the prompt-level anti-hallucination rule.
+      const grounded = this.applyGroundingCheck(result, this.buildSourceCorpus(formData, transcripts, previousCorrectedCahier))
+      return await this.runSelfCritique(grounded, formData, transcripts, projectId).catch(() => grounded)
     } catch (primaryErr: unknown) {
       const fallbackAvailable = fallbackProvider === 'zai'
         ? this.zaiFallback.isConfigured()
@@ -1075,7 +1143,304 @@ RÈGLES :
         durationMs: Date.now() - startedAt,
         success: true,
       })
-      return fb.result
+      const groundedFb = this.applyGroundingCheck(fb.result, this.buildSourceCorpus(formData, transcripts, previousCorrectedCahier))
+      return await this.runSelfCritique(groundedFb, formData, transcripts, projectId).catch(() => groundedFb)
+    }
+  }
+
+  /** True when CAHIER_SECTION_MODE=on — splits generation into 3 focused calls. */
+  private isSectionModeEnabled(): boolean {
+    return (this.config.get<string>('CAHIER_SECTION_MODE') ?? 'off').toLowerCase() === 'on'
+  }
+
+  /** Per-group system prompt — shares the anti-hallucination preamble with the
+   *  full SYSTEM_PROMPT but narrows the output schema to just the group's keys. */
+  private buildGroupSystemPrompt(group: 'intro' | 'scope' | 'delivery'): string {
+    const preamble = SYSTEM_PROMPT.split('# RÔLE')[0]
+    const schemas: Record<typeof group, string> = {
+      intro: `Tu retournes UNIQUEMENT un JSON valide avec ces 3 clés (et rien d'autre) :
+- objectifDocument (string markdown court, 2-4 lignes)
+- contexte (string markdown, 1-2 paragraphes)
+- objectifProjet (string markdown, bullets)`,
+      scope: `Tu retournes UNIQUEMENT un JSON valide avec ces 3 clés (et rien d'autre) :
+- perimetreInclus (string markdown, bullets)
+- perimetreExclus (string markdown, bullets)
+- exigencesFonctionnelles (array {title,content} — 3-6 modules; INFO_MANQUANTE si moins de modules sourcés)`,
+      delivery: `Tu retournes UNIQUEMENT un JSON valide avec ces 3 clés (et rien d'autre) :
+- architectureTechnique (array {title,content} — 2-4 composants; INFO_MANQUANTE si la stack n'est pas dans la source)
+- livrables (string markdown, bullets)
+- conclusion (string paragraphe synthétique sans liste)`,
+    }
+    return `${preamble}\n# RÔLE\n\nTu es expert NeoLedge en rédaction contractuelle. Entrée au format TOON.\n\n${schemas[group]}\n\nRespecte les règles d'anti-hallucination ci-dessus à la lettre.`
+  }
+
+  /**
+   * 3-call mode: parallel fan-out for intro / scope / delivery. Each call
+   * shares the full source TOON but only owns 3 keys. The output is merged
+   * into a single CahierAiResult.
+   */
+  private async generateInThreeGroups(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    userPrompt: string,
+    projectId?: string,
+  ): Promise<CahierAiResult> {
+    if (!this.zaiFallback.isConfigured()) {
+      throw new Error('section mode requires Z.AI provider (AI_FALLBACK_API_KEY)')
+    }
+    const startedAt = Date.now()
+    const groups = ['intro', 'scope', 'delivery'] as const
+    const responses = await Promise.all(
+      groups.map(async (g) => {
+        const sys = this.buildGroupSystemPrompt(g)
+        const usage = await this.zaiFallback.chatWithUsage(sys, userPrompt, {
+          maxTokens: 4096,
+          temperature: 0.1,
+        })
+        return { group: g, content: usage.content, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens }
+      }),
+    )
+
+    // Aggregate AiUsage across the 3 calls into a single log row.
+    const totals = responses.reduce(
+      (acc, r) => ({ pt: acc.pt + r.promptTokens, ct: acc.ct + r.completionTokens }),
+      { pt: 0, ct: 0 },
+    )
+    void this.aiUsage.log({
+      projectId: projectId ?? null,
+      provider: 'zai-section-mode',
+      model: this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air',
+      feature: 'cahier',
+      promptTokens: totals.pt,
+      completionTokens: totals.ct,
+      durationMs: Date.now() - startedAt,
+      success: true,
+    })
+
+    // Parse each group's JSON; coerce missing keys to INFO_MANQUANTE markers.
+    const partial: Partial<CahierAiResult> = {}
+    for (const r of responses) {
+      let parsed: Record<string, unknown> = {}
+      try {
+        parsed = JSON.parse(this.stripFences(r.content)) as Record<string, unknown>
+      } catch (e) {
+        this.logger.warn(`section-mode parse failed for ${r.group}: ${e instanceof Error ? e.message : String(e)}`)
+      }
+      if (r.group === 'intro') {
+        partial.objectifDocument = this.coerceToMarkdown(parsed.objectifDocument)
+        partial.contexte = this.coerceToMarkdown(parsed.contexte)
+        partial.objectifProjet = this.coerceToMarkdown(parsed.objectifProjet)
+      } else if (r.group === 'scope') {
+        partial.perimetreInclus = this.coerceToMarkdown(parsed.perimetreInclus)
+        partial.perimetreExclus = this.coerceToMarkdown(parsed.perimetreExclus)
+        partial.exigencesFonctionnelles = Array.isArray(parsed.exigencesFonctionnelles)
+          ? (parsed.exigencesFonctionnelles as CahierAiResult['exigencesFonctionnelles'])
+          : []
+      } else {
+        partial.architectureTechnique = Array.isArray(parsed.architectureTechnique)
+          ? (parsed.architectureTechnique as CahierAiResult['architectureTechnique'])
+          : []
+        partial.livrables = this.coerceToMarkdown(parsed.livrables)
+        partial.conclusion = this.coerceToMarkdown(parsed.conclusion)
+      }
+    }
+
+    // Build a final result, defaulting any missing key to INFO_MANQUANTE so
+    // a broken group doesn't produce silent empty fields.
+    return {
+      objectifDocument: partial.objectifDocument ?? 'INFO_MANQUANTE: section absente du retour IA',
+      contexte: partial.contexte ?? 'INFO_MANQUANTE: section absente du retour IA',
+      objectifProjet: partial.objectifProjet ?? 'INFO_MANQUANTE: section absente du retour IA',
+      perimetreInclus: partial.perimetreInclus ?? 'INFO_MANQUANTE: section absente du retour IA',
+      perimetreExclus: partial.perimetreExclus ?? 'INFO_MANQUANTE: section absente du retour IA',
+      exigencesFonctionnelles: partial.exigencesFonctionnelles ?? [],
+      architectureTechnique: partial.architectureTechnique ?? [],
+      livrables: partial.livrables ?? 'INFO_MANQUANTE: section absente du retour IA',
+      conclusion: partial.conclusion ?? 'INFO_MANQUANTE: section absente du retour IA',
+    }
+  }
+
+  // ─── Grounding pass — defensive backstop on the prompt anti-hallucination rule ─
+
+  /**
+   * Build a normalized lowercase corpus from every source the model was given.
+   * Used to test whether a claim in the AI output is actually sourced.
+   */
+  private buildSourceCorpus(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    previousCorrectedCahier?: unknown,
+  ): string {
+    const parts: string[] = []
+    parts.push(formData.projectName, formData.clientName, formData.projectManagerName)
+    for (const f of formData.fields) {
+      if (f.label) parts.push(f.label)
+      if (f.value) parts.push(f.value)
+    }
+    for (const t of transcripts) {
+      if (t.fullText) parts.push(t.fullText)
+      if (t.aiSummary) parts.push(t.aiSummary)
+      for (const a of t.actionItems) parts.push(a.description)
+      for (const d of t.decisions) parts.push(d.description)
+    }
+    if (previousCorrectedCahier && typeof previousCorrectedCahier === 'object') {
+      try {
+        parts.push(JSON.stringify(previousCorrectedCahier))
+      } catch {
+        /* ignore */
+      }
+    }
+    return parts.filter(Boolean).join('\n').toLowerCase()
+  }
+
+  /**
+   * The list of tech/product names we screen for. The check is one-way: if
+   * the AI mentions a name from this list AND it doesn't appear in the
+   * source corpus, we rewrite the mention to an INFO_MANQUANTE marker.
+   * We never object to a name we don't know about — that's the prompt's job.
+   */
+  private static readonly KNOWN_TECH_NAMES = [
+    // Databases
+    'postgresql', 'postgres', 'mysql', 'mariadb', 'sql server', 'mssql', 'oracle',
+    'mongodb', 'mongo', 'redis', 'elasticsearch', 'cassandra', 'dynamodb', 'firebase',
+    // Cloud
+    'aws', 'azure', 'gcp', 'google cloud', 'ovh', 'scaleway', 'digitalocean', 'heroku',
+    // Containers
+    'docker', 'kubernetes', 'k8s', 'openshift', 'rancher',
+    // Frontend frameworks
+    'vue', 'vue.js', 'react', 'angular', 'svelte', 'next.js', 'nuxt', 'remix',
+    // Backend frameworks
+    '.net core', 'asp.net', 'nestjs', 'express', 'spring boot', 'django', 'fastapi',
+    'laravel', 'symfony', 'rails',
+    // Languages
+    'typescript', 'javascript', 'python', 'java', 'c#', 'golang', 'rust', 'php', 'ruby',
+    // Messaging / streaming
+    'kafka', 'rabbitmq', 'sqs', 'sns', 'pubsub',
+    // Auth / payment
+    'oauth', 'saml', 'okta', 'auth0', 'stripe', 'paypal', 'adyen',
+    // Doc / signature
+    'docusign', 'adobe sign', 'yousign',
+    // Enterprise
+    'salesforce', 'sharepoint', 'sap', 'oracle erp', 'dynamics 365',
+    // Analytics
+    'power bi', 'tableau', 'looker', 'metabase', 'grafana',
+    // AI providers (the ones we might confuse with each other)
+    'openai', 'anthropic', 'gemini', 'azure openai', 'mistral',
+  ]
+
+  /**
+   * Scan a string for ungrounded tech/product names and replace each with
+   * an INFO_MANQUANTE marker. Idempotent — running it twice gives the same
+   * result. Case-insensitive substring match.
+   */
+  private rewriteUngroundedString(input: string, corpus: string): string {
+    if (!input) return input
+    let out = input
+    for (const tech of CahierDesChargesService.KNOWN_TECH_NAMES) {
+      if (corpus.includes(tech)) continue
+      // Match the tech name as a word (allow surrounding punctuation, French diacritics).
+      const escaped = tech.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const re = new RegExp(`(^|[^a-zA-Z0-9])(${escaped})(?=[^a-zA-Z0-9]|$)`, 'gi')
+      out = out.replace(re, (_m, lead) => `${lead}[INFO_MANQUANTE: ${tech} non confirmé dans la source]`)
+    }
+    return out
+  }
+
+  /**
+   * Apply the grounding check to every text field in the cahier result.
+   * Tech/product names that don't appear in the source corpus are replaced
+   * with explicit INFO_MANQUANTE markers so the PM can spot inventions.
+   */
+  private applyGroundingCheck(result: CahierAiResult, corpus: string): CahierAiResult {
+    const groundString = (s: string): string => this.rewriteUngroundedString(s, corpus)
+    return {
+      objectifDocument: groundString(result.objectifDocument),
+      contexte: groundString(result.contexte),
+      objectifProjet: groundString(result.objectifProjet),
+      perimetreInclus: groundString(result.perimetreInclus),
+      perimetreExclus: groundString(result.perimetreExclus),
+      exigencesFonctionnelles: result.exigencesFonctionnelles.map((s) => ({
+        title: groundString(s.title),
+        content: groundString(s.content),
+      })),
+      architectureTechnique: result.architectureTechnique.map((s) => ({
+        title: groundString(s.title),
+        content: groundString(s.content),
+      })),
+      livrables: groundString(result.livrables),
+      conclusion: groundString(result.conclusion),
+    }
+  }
+
+  // ─── Two-pass self-critique — second AI call reviews + corrects the first ────
+
+  /**
+   * Send the freshly-generated cahier back to the AI along with the source,
+   * with strict "flag anything not in source" instructions. The critique
+   * pass returns either the same cahier (no fix needed) or a corrected
+   * version with INFO_MANQUANTE markers replacing invented content.
+   *
+   * Best-effort: failures fall back to the un-critiqued cahier silently.
+   * Uses Z.AI by default to keep cost low.
+   */
+  private async runSelfCritique(
+    candidate: CahierAiResult,
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    projectId?: string,
+  ): Promise<CahierAiResult> {
+    if (!this.zaiFallback.isConfigured()) return candidate
+
+    // Cheap budget gate — critique adds ~one round-trip.
+    if (projectId) {
+      try {
+        await this.aiUsage.assertWithinDailyBudget(projectId, 8_000)
+      } catch {
+        return candidate
+      }
+    }
+
+    const sourceBlock = this.buildUserPrompt(formData, transcripts)
+    const candidateJson = JSON.stringify(candidate)
+    const trimmedSource = sourceBlock.length > 12_000 ? sourceBlock.slice(0, 12_000) + ' [trunc]' : sourceBlock
+    const trimmedCandidate = candidateJson.length > 16_000 ? candidateJson.slice(0, 16_000) + ' [trunc]' : candidateJson
+
+    const CRITIQUE_PROMPT = `Tu es un relecteur strict. Tu reçois (1) une SOURCE brute (questionnaire + réunions) et (2) un CAHIER DES CHARGES généré par une IA précédente.
+
+Ta seule tâche : retourner le même JSON 9-clés, MAIS toute affirmation NON présente dans la SOURCE doit être remplacée par exactement \`INFO_MANQUANTE: <sujet>\`.
+
+Sont considérés comme "affirmations à vérifier" : noms d'entreprises tierces, technologies, frameworks, bases de données, volumes chiffrés (utilisateurs, documents, GB...), dates, KPIs, formats de livrables, modules fonctionnels concrets, contraintes réglementaires nommées.
+
+Tu NE supprimes RIEN d'autre. Tu NE reformules PAS le style. Tu remplaces UNIQUEMENT les affirmations non sourcées par le marqueur. Retourne UNIQUEMENT le JSON (pas de code fences).`
+
+    const userMessage = `# SOURCE\n${trimmedSource}\n\n# CAHIER À RELIRE\n${trimmedCandidate}`
+
+    try {
+      const usage = await this.zaiFallback.chatWithUsage(CRITIQUE_PROMPT, userMessage, {
+        maxTokens: 8192,
+        temperature: 0.1,
+      })
+      void this.aiUsage.log({
+        projectId: projectId ?? null,
+        provider: 'zai-critique',
+        model: this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air',
+        feature: 'cahier',
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        durationMs: 0,
+        success: true,
+      })
+      const corrected = this.parseCahierResult(usage.content)
+      // Sanity: if the critique returns something obviously broken (every
+      // section is INFO_MANQUANTE because the model misunderstood), fall
+      // back to the candidate. The candidate already went through the
+      // deterministic tech grounding check, so it's safe.
+      const totalLen = Object.values(corrected).reduce<number>((acc, v) => acc + (typeof v === 'string' ? v.length : 0), 0)
+      if (totalLen < 200) return candidate
+      return corrected
+    } catch (e) {
+      this.logger.warn(`runSelfCritique failed (using uncritiqued result): ${e instanceof Error ? e.message : String(e)}`)
+      return candidate
     }
   }
 
@@ -1092,7 +1457,8 @@ RÈGLES :
     userPrompt: string,
   ): Promise<{ result: CahierAiResult; promptTokens: number; completionTokens: number }> {
     if (name === 'zai') {
-      const usage = await this.zaiFallback.chatWithUsage(SYSTEM_PROMPT, userPrompt)
+      // 0.1 (was the chatWithUsage default of 0.4) — see comment above.
+      const usage = await this.zaiFallback.chatWithUsage(SYSTEM_PROMPT, userPrompt, { temperature: 0.1 })
       return {
         result: this.parseCahierResult(usage.content),
         promptTokens: usage.promptTokens,
@@ -1141,7 +1507,9 @@ RÈGLES :
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.4,
+        // 0.1 (was 0.4) — kills most "creative gap-filling" while keeping
+        // phrasing flexible. Hallucination drops sharply at low temperature.
+        temperature: 0.1,
         max_tokens: 8192,
         response_format: { type: 'json_object' },
       }),
@@ -1180,7 +1548,9 @@ RÈGLES :
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: `${SYSTEM_PROMPT}\n\n${userPrompt}` }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 8192 },
+        // 0.1 (was 0.4) — kills most "creative gap-filling" while keeping
+        // phrasing flexible. Hallucination drops sharply at low temperature.
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
       }),
     })
 
