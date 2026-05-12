@@ -73,6 +73,23 @@
             :disabled="recording"
             @click="resetMode"
           />
+          <!-- Onsite-only: language the browser SpeechRecognition listens for.
+               Without this the live transcript was hardcoded to fr-FR; meetings
+               in Arabic or English came out as garbage on the PM's screen
+               (although the final saved transcript was always re-Whispered
+               with multilingual auto-detect). -->
+          <select
+            v-if="mode === 'onsite' && !recording"
+            v-model="recognitionLang"
+            class="lm__lang-select"
+            :title="'Langue principale parlée pendant la réunion'"
+          >
+            <option value="fr-FR">Français (FR)</option>
+            <option value="ar-TN">العربية تونسي (Darija TN)</option>
+            <option value="ar-SA">العربية فصحى (MSA)</option>
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+          </select>
           <NeoButton
             v-if="!recording"
             :label="mode === 'onsite' ? 'Démarrer (micro)' : 'Démarrer (partager onglet)'"
@@ -197,6 +214,21 @@ const recording = ref(false)
 const paused = ref(false)
 const transcript = ref('')
 const interim = ref('')
+
+// Onsite-mode SpeechRecognition language — defaults to fr-FR, persisted to
+// localStorage so the PM doesn't have to re-pick every meeting.
+const LANG_STORAGE_KEY = 'nl_speech_recognition_lang'
+const recognitionLang = ref<string>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(LANG_STORAGE_KEY)) || 'fr-FR',
+)
+watch(recognitionLang, (v) => {
+  try { localStorage.setItem(LANG_STORAGE_KEY, v) } catch { /* ignore */ }
+})
+
+// Online-mode: aggregate the set of languages Whisper detected across chunks,
+// passed to /save so detectedLanguages on the saved meeting is accurate
+// (was hardcoded to 'fr' before).
+const detectedLanguages = ref<Set<string>>(new Set())
 const startedAt = ref<number | null>(null)
 /** Wall-clock when the current pause began (null when not paused). */
 const pauseStartedAt = ref<number | null>(null)
@@ -274,7 +306,15 @@ function startSpeechRecognition(): void {
   recognition = new Ctor()
   recognition.continuous = true
   recognition.interimResults = true
-  recognition.lang = 'fr-FR'
+  // Was hardcoded to fr-FR — meant Arabic / English onsite meetings produced
+  // garbage live captions. Driven by the language picker now, persisted.
+  recognition.lang = recognitionLang.value || 'fr-FR'
+  // Record the onsite-side language too so the saved meta isn't blank when
+  // the PM picks ar-TN or en-US.
+  const baseLang = recognition.lang.slice(0, 2).toLowerCase()
+  if (baseLang === 'ar' || baseLang === 'fr' || baseLang === 'en') {
+    detectedLanguages.value.add(baseLang)
+  }
   recognition.onresult = (event) => {
     let interimChunk = ''
     for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -402,15 +442,17 @@ async function uploadChunk(blob: Blob): Promise<void> {
     const MAX_ATTEMPTS = 3
     const RETRY_DELAY_MS = 1500
     let text = ''
+    let language: string | null = null
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const form = new FormData()
         form.append('audio', blob, `chunk-${Date.now()}.webm`)
-        const { data } = await api.post<{ text: string }>(
+        const { data } = await api.post<{ text: string; language: string | null }>(
           `/pm/projects/${props.projectId}/meetings/live/transcribe-chunk`,
           form,
         )
         text = typeof data.text === 'string' ? data.text.trim() : ''
+        language = typeof data.language === 'string' ? data.language : null
         if (text.length > 0) break
       } catch {
         // network/server error — wait then retry unless it's the last attempt
@@ -421,6 +463,14 @@ async function uploadChunk(blob: Blob): Promise<void> {
     }
     if (text.length > 0) {
       transcript.value += (transcript.value ? ' ' : '') + text
+    }
+    // Aggregate the languages Whisper detected so the saved meeting carries
+    // accurate metadata (was hardcoded to 'fr' before).
+    if (language) {
+      const base = language.slice(0, 2).toLowerCase()
+      if (base === 'ar' || base === 'fr' || base === 'en') {
+        detectedLanguages.value.add(base)
+      }
     }
   } finally {
     chunkPending.value = false
@@ -433,6 +483,7 @@ function beginSession(): void {
   pauseStartedAt.value = null
   totalPausedMs.value = 0
   startedAt.value = Date.now()
+  detectedLanguages.value = new Set()
   tickIntervalId.value = window.setInterval(() => { tick.value += 1 }, 1000)
 
   // Live copilot — best-effort start. 404s if feature flag is off → silently skip.
@@ -585,6 +636,7 @@ async function stopAndSave(): Promise<void> {
         transcript: text,
         durationSeconds: duration,
         meetingType: meetingType.value,
+        detectedLanguages: [...detectedLanguages.value],
       },
     )
     toast.add({ severity: 'success', detail: 'Réunion enregistrée.', life: 3000 })
