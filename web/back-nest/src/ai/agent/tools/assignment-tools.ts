@@ -16,9 +16,18 @@ interface MemberContext {
   userId: string
   fullName: string
   email: string
+  /** Platform role — coarse signal ("Member" / "SpecificationTeam" / "ProjectManager"). */
   label: string
+  /** Free-text job title (e.g. "Senior Backend Engineer", "QA Lead") — strongest skill signal when set. */
+  jobTitle: string | null
+  /** Free-text department / team (e.g. "Front-end", "Data") — secondary skill signal. */
+  department: string | null
+  /** Open WPs currently assigned, project-wide (to spot overload). */
   inProgressCount: number
+  /** All-time WP count on this project — proxy for familiarity. */
   totalAssignedThisProject: number
+  /** Titles of up to 3 most recent Resolved/Closed WPs on this project — strongest signal of what they actually ship. */
+  recentResolvedTitles: string[]
 }
 
 interface CandidateWp {
@@ -66,15 +75,16 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
   }
 
   // ── read_project_members ───────────────────────────────────────────────────
-  // Per product decision to drop per-project team selection, this tool now
-  // enumerates EVERY active user with an assignable role rather than only the
-  // ProjectMember rows. The user's platform role (Member / SpecificationTeam
-  // / ProjectManager) replaces the dropped per-project label and is still a
-  // useful coarse skill signal for the model. Auto-membership upsert at
-  // assignment time keeps ProjectAccessGuard happy.
+  // Enumerates every active user eligible for assignment. The team-selection
+  // step was removed, so the assignment AI must reason from scratch about
+  // each candidate. We pre-load every signal the model needs in a single
+  // payload (jobTitle, department, in-progress load, lifetime project load,
+  // up to 3 recent Resolved/Closed WP titles on this project) so it doesn't
+  // have to make N follow-up read_member_history calls — which it often
+  // skipped under the previous schema, producing weak suggestions.
   const readMembers: ToolDefinition<Record<string, never>, { members: MemberContext[] }> = {
     name: 'read_project_members',
-    description: "List every user eligible to be assigned a task on this project. `label` carries the user's platform role ('Member' / 'SpecificationTeam' / 'ProjectManager') — coarse skill signal. Use it together with the task title to match skills. Also includes current in-progress task count on this project and total tasks ever assigned here.",
+    description: "List every user eligible to be assigned a task. Each entry includes: `label` (platform role — coarse signal), `jobTitle` (strongest signal — the user's role at the company), `department`, `inProgressCount` (current open WPs project-wide — avoid overload), `totalAssignedThisProject` (familiarity with this project), and `recentResolvedTitles` (the strongest skill evidence — what they've actually shipped). Lean on jobTitle and recentResolvedTitles. Fall back to read_member_history only when recentResolvedTitles is empty AND jobTitle is ambiguous.",
     parameters: obj({}, {}),
     handler: async (_args, ctx: ToolContext) => {
       const prisma = ctx.prisma as PrismaService
@@ -83,13 +93,16 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
           isActive: true,
           role: { in: ['SpecificationTeam', 'Member', 'ProjectManager'] },
         },
-        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        select: {
+          id: true, firstName: true, lastName: true, email: true,
+          role: true, jobTitle: true, department: true,
+        },
         orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
       })
       if (users.length === 0) return { members: [] }
 
       const userIds = users.map((u) => u.id)
-      const [inProgressCounts, totalCounts] = await Promise.all([
+      const [inProgressCounts, totalCounts, recentResolved] = await Promise.all([
         prisma.workPackage.groupBy({
           by: ['assigneeId'],
           where: {
@@ -107,19 +120,44 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
           },
           _count: { _all: true },
         }),
+        // 3 most recent Resolved/Closed WP titles per assignee on this
+        // project. Fetched in one batched query — we deduplicate + cap
+        // client-side. Much cheaper than N read_member_history follow-ups.
+        prisma.workPackage.findMany({
+          where: {
+            projectId, isDeleted: false,
+            status: { in: ['Resolved', 'Closed', 'Done'] },
+            assigneeId: { in: userIds },
+          },
+          select: { assigneeId: true, title: true, updatedAt: true },
+          orderBy: { updatedAt: 'desc' },
+          take: userIds.length * 3,
+        }),
       ])
       const inProgMap = new Map(inProgressCounts.map((c) => [c.assigneeId, c._count._all]))
       const totalMap = new Map(totalCounts.map((c) => [c.assigneeId, c._count._all]))
+      const recentByUser = new Map<string, string[]>()
+      for (const wp of recentResolved) {
+        if (!wp.assigneeId) continue
+        const bucket = recentByUser.get(wp.assigneeId) ?? []
+        if (bucket.length < 3) {
+          bucket.push(wp.title)
+          recentByUser.set(wp.assigneeId, bucket)
+        }
+      }
 
       return {
         members: users.map((u) => ({
-          memberId: u.id, // no separate ProjectMember row to expose anymore
+          memberId: u.id,
           userId: u.id,
           fullName: `${u.firstName} ${u.lastName}`.trim(),
           email: u.email,
           label: u.role,
+          jobTitle: u.jobTitle ?? null,
+          department: u.department ?? null,
           inProgressCount: inProgMap.get(u.id) ?? 0,
           totalAssignedThisProject: totalMap.get(u.id) ?? 0,
+          recentResolvedTitles: recentByUser.get(u.id) ?? [],
         })),
       }
     },
