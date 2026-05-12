@@ -37,6 +37,11 @@ export class CahierDesChargesController {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"`,
       'Content-Length': buffer.length.toString(),
+      // Each download triggers a fresh AI call; if a previous identical docx
+      // was generated, Express would otherwise weak-ETag the buffer and return
+      // 304 on a re-download, handing the browser an empty file.
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
     })
     res.send(buffer)
   }
