@@ -166,14 +166,14 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
   return sections
 }
 
-// SpecificationTeam-specific nav — keeps full validation surface.
+// SpecificationTeam-specific nav — validation surface only; spec reviewers
+// don't get personal-task lists (those are for Members).
 const specTeamNav: NavSection[] = [
   { items: [
       { key: 'spec-dashboard',       label: 'Tableau de bord',   icon: 'pi-home',         to: '/app/team/dashboard'       },
       { key: 'team-pending-reviews', label: 'Cahiers à valider', icon: 'pi-check-square', to: '/app/team/pending-reviews' },
       { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
       { key: 'team-validations',     label: 'Mes validations',   icon: 'pi-check-circle', to: '/app/team/validations'     },
-      { key: 'team-my-tasks',        label: 'Mes tâches',        icon: 'pi-list',         to: '/app/team/my-tasks'        },
   ]},
   { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
 ]
