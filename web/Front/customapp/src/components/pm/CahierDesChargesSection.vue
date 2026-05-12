@@ -486,6 +486,37 @@ async function loadFeedback() {
   }
 }
 
+/**
+ * Walk a saved cahier payload and return every distinct INFO_MANQUANTE topic
+ * the AI inserted. The cahier shape mixes free-text strings and array sections
+ * (exigencesFonctionnelles, architectureTechnique) — both can carry markers.
+ */
+function collectMissingMarkers(content: CahierAiResult | null | undefined): string[] {
+  if (!content || typeof content !== 'object') return []
+  const re = /INFO_MANQUANTE:\s*([^\n\]]+)/g
+  const topics = new Set<string>()
+  const scan = (txt: unknown): void => {
+    if (typeof txt !== 'string') return
+    for (const match of txt.matchAll(re)) {
+      const t = match[1].trim().replace(/[\]\)\.;,]+$/, '').slice(0, 200)
+      if (t) topics.add(t)
+    }
+  }
+  for (const value of Object.values(content)) {
+    if (typeof value === 'string') {
+      scan(value)
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === 'object') {
+          scan((item as { title?: unknown }).title)
+          scan((item as { content?: unknown }).content)
+        }
+      }
+    }
+  }
+  return [...topics]
+}
+
 async function handleGenerate() {
   generating.value = true
   error.value = null
@@ -508,6 +539,21 @@ async function handleGenerate() {
     savedContent.value = data.aiContent
     savedAt.value = new Date().toISOString()
     await loadStatus()
+
+    // 3. If the AI couldn't ground every section, it leaves INFO_MANQUANTE
+    //    markers inline rather than hallucinating. The preflight's heuristic
+    //    detector picks these up from the now-persisted aiOutput, so re-opening
+    //    the modal surfaces them as gaps with the same "Ajouter une réponse"
+    //    flow — never leave a marker in production without prompting the PM.
+    const missing = collectMissingMarkers(data.aiContent)
+    if (missing.length > 0) {
+      toast.add({
+        severity: 'warn',
+        detail: `${missing.length} information(s) manquante(s) détectée(s). Renseignez-les pour régénérer un cahier complet.`,
+        life: 6000,
+      })
+      preflightVisible.value = true
+    }
   } catch (e: unknown) {
     const resp = (e as { response?: { data?: { message?: string; missingFields?: string[] } } })?.response?.data
     const missing = resp?.missingFields

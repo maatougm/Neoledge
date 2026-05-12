@@ -327,22 +327,48 @@ export class CahierDesChargesService {
     }
 
     // Markers left by previous generations — must be resolved before regen.
+    // The cahier mixes string sections (objectifDocument, contexte, livrables,
+    // conclusion, …) and array sections (exigencesFonctionnelles, architectureTechnique,
+    // each holding { title, content } items). Walk every leaf so KPIs / NFRs
+    // buried inside arrays don't get silently re-emitted on the next generate.
     if (saved && typeof saved === 'object') {
+      const markerRe = /INFO_MANQUANTE:\s*([^\n\]]+)/g
+      const seenTopics = new Set<string>()
+      const pushMarker = (sectionKey: string, sectionLabel: string, rawTopic: string): void => {
+        const topic = rawTopic.replace(/[\]\)\.;,]+$/, '').trim().slice(0, 200)
+        if (!topic) return
+        const dedupeKey = `${sectionKey}::${topic.toLowerCase()}`
+        if (seenTopics.has(dedupeKey)) return
+        seenTopics.add(dedupeKey)
+        gaps.push({
+          id: `h-marker-${sectionKey}-${seenTopics.size}`,
+          section: sectionKey,
+          topic,
+          severity: 'high',
+          suggestedQuestion: `Section « ${sectionLabel} » : marqueur "${topic}" laissé par la précédente génération.`,
+        })
+      }
+      const scanString = (sectionKey: string, sectionLabel: string, txt: unknown): void => {
+        if (typeof txt !== 'string') return
+        for (const match of txt.matchAll(markerRe)) pushMarker(sectionKey, sectionLabel, match[1])
+      }
+      const sectionByKey = new Map(CahierDesChargesService.REQUIRED_SECTIONS.map((s) => [s.key, s.label]))
+      // Include a few keys not in REQUIRED_SECTIONS so leakage into objectifDocument
+      // / conclusion is also surfaced.
+      const extraLabels: Record<string, string> = {
+        objectifDocument: 'Objectif du document',
+        conclusion: 'Conclusion',
+      }
       const s = saved as Record<string, unknown>
-      for (const sec of CahierDesChargesService.REQUIRED_SECTIONS) {
-        const v = s[sec.key]
-        if (typeof v === 'string') {
-          const matches = v.match(/INFO_MANQUANTE:\s*([^\n]+)/g)
-          if (matches) {
-            for (const [idx, m] of matches.entries()) {
-              const topic = m.replace(/INFO_MANQUANTE:\s*/, '').trim()
-              gaps.push({
-                id: `h-marker-${sec.key}-${idx}`,
-                section: sec.key,
-                topic,
-                severity: 'high',
-                suggestedQuestion: `Section « ${sec.label} » : marqueur "${topic}" laissé par la précédente génération.`,
-              })
+      for (const [key, value] of Object.entries(s)) {
+        const label = sectionByKey.get(key) ?? extraLabels[key] ?? key
+        if (typeof value === 'string') {
+          scanString(key, label, value)
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item && typeof item === 'object') {
+              scanString(key, label, (item as { title?: unknown }).title)
+              scanString(key, label, (item as { content?: unknown }).content)
             }
           }
         }
