@@ -233,6 +233,9 @@
         </button>
         <div class="ptr__overflow-sep" />
         <div class="ptr__overflow-group">Gestion</div>
+        <button role="menuitem" @click="onEditFromMenu">
+          <i class="pi pi-pencil" /> Modifier
+        </button>
         <button role="menuitem" @click="onAssignFromMenu">
           <i class="pi pi-user-edit" /> Changer le chef de projet
         </button>
@@ -252,6 +255,13 @@
         </button>
       </div>
     </Teleport>
+
+    <!-- Edit project dialog -->
+    <ProjectEditDialog
+      v-model:visible="showEdit"
+      :project="editingProject"
+      @updated="onProjectUpdated"
+    />
 
     <!-- Assign manager dialog -->
     <AssignManagerDialog
@@ -297,6 +307,7 @@ import { NeoButton, NeoTag, NeoInputText, NeoSelect, NeoMessage, useNeoToast, us
 import AppModal from '@/components/common/AppModal.vue'
 import ProjectCreateForm from '@/components/admin/ProjectCreateForm.vue'
 import ProjectDetailPanel from '@/components/admin/ProjectDetailPanel.vue'
+import ProjectEditDialog from '@/components/admin/ProjectEditDialog.vue'
 import AssignManagerDialog from '@/components/admin/AssignManagerDialog.vue'
 import SavedFiltersPanel from '@/components/filters/SavedFiltersPanel.vue'
 import FilterBuilder from '@/components/filters/FilterBuilder.vue'
@@ -367,6 +378,21 @@ function onAssignFromMenu(): void {
   openAssign(project.id, project.name)
 }
 
+function onEditFromMenu(): void {
+  const project = menuOpenProject.value
+  if (!project) return
+  closeMenu()
+  editingProject.value = project
+  showEdit.value = true
+}
+
+async function onProjectUpdated(): Promise<void> {
+  // The store's updateProject already patches the row in `store.projects`,
+  // but we refetch to make sure derived fields the row didn't carry
+  // (e.g. progressPct after a date change) stay in sync with the server.
+  await store.fetchAll()
+}
+
 function onDuplicateFromMenu(): void {
   const project = menuOpenProject.value
   if (!project) return
@@ -396,6 +422,8 @@ const selectedProjectId = ref<string | null>(null)
 const showAssign        = ref(false)
 const assignId          = ref('')
 const assignName        = ref('')
+const showEdit          = ref(false)
+const editingProject    = ref<ProjectSummary | null>(null)
 
 // ─── Advanced filter state ────────────────────────────────────────────────────
 const showFilterBuilder       = ref(false)
