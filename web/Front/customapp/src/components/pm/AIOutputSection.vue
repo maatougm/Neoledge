@@ -178,15 +178,21 @@ async function handleGenerate(): Promise<void> {
       `/pm/projects/${props.projectId}/cahier-des-charges/preview`,
       { timeout: 140_000 },
     )
-    result.value = data.aiContent ?? null
+    // Defensive: a misconfigured cache (proxy / browser) could return an
+    // empty 304-body even after we added Cache-Control: no-store. Treat the
+    // missing payload as an explicit "AI returned nothing" error instead of
+    // crashing on `data.aiContent` and showing a generic toast.
+    if (!data || !data.aiContent) {
+      errorMsg.value = "La génération a renvoyé une réponse vide. Réessayez dans un instant."
+      return
+    }
+    result.value = data.aiContent
     // Persist so the Cahier + Validation tabs can read the same content
-    if (result.value) {
-      try {
-        await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, { aiContent: result.value })
-        savedAt.value = new Date().toISOString()
-      } catch {
-        // non-fatal — preview still visible in-memory
-      }
+    try {
+      await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, { aiContent: result.value })
+      savedAt.value = new Date().toISOString()
+    } catch {
+      // non-fatal — preview still visible in-memory
     }
     toast.add({ severity: 'success', detail: 'Analyse générée et enregistrée.', life: 3000 })
   } catch (e: unknown) {

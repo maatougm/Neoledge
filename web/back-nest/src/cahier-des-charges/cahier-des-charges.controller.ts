@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Req, Res, UseGuards, Logger } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Req, Res, Header, UseGuards, Logger } from '@nestjs/common'
 import type { Response, Request } from 'express'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
@@ -50,6 +50,11 @@ export class CahierDesChargesController {
    * sections where no source data exists.
    */
   @Get('pm/projects/:projectId/cahier-des-charges/preflight')
+  // AI-generated content varies per call (timestamp + heuristic state) and is
+  // expensive. Disable client/proxy caching so the browser never short-circuits
+  // a regeneration request with a stale 304.
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  @Header('Pragma', 'no-cache')
   @UseGuards(JwtAuthGuard, ProjectAccessGuard)
   @ProjectAccess('projectId')
   async preflightCahier(@Param('projectId') projectId: string) {
@@ -62,6 +67,11 @@ export class CahierDesChargesController {
    * Returns the AI-generated content as JSON (for preview in frontend before download).
    */
   @Get('pm/projects/:projectId/cahier-des-charges/preview')
+  // Same as /preflight: each call runs the AI and we never want the browser
+  // to return a cached 304 with an empty body, which silently broke "Générer"
+  // on the second click and surfaced as a generic "Erreur lors de la génération".
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  @Header('Pragma', 'no-cache')
   @UseGuards(JwtAuthGuard, ProjectAccessGuard)
   @ProjectAccess('projectId')
   async previewCahier(@Param('projectId') projectId: string) {
