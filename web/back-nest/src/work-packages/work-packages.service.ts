@@ -44,6 +44,34 @@ export class WorkPackagesService {
     }
   }
 
+  /**
+   * Idempotently add the given user as a ProjectMember so the assignee actually
+   * gains read access to the project they were just assigned a WP on. PMs and
+   * Admins already have access; everyone else needs a ProjectMember row to pass
+   * ProjectAccessGuard. Fire-and-forget — never blocks the caller.
+   */
+  private async ensureProjectMembership(projectId: string, userId: string): Promise<void> {
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { projectManagerId: true },
+      });
+      if (!project || project.projectManagerId === userId) return;
+      const user = await this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { role: true, isActive: true },
+      });
+      if (!user || !user.isActive || user.role === 'Admin') return;
+      await this.prisma.projectMember.upsert({
+        where: { project_member_uq: { projectId, userId } },
+        update: {},
+        create: { id: crypto.randomUUID(), projectId, userId, label: '' },
+      });
+    } catch (e) {
+      this.logger.warn(`ensureProjectMembership(${projectId}, ${userId}) failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** Fire-and-forget notification for WP events. Never throws. */
   private async notifyWatchersAndAssignee(
     wpId: string,
@@ -302,6 +330,10 @@ export class WorkPackagesService {
       // assignee's "Mes tâches" view — the PM workpackages page 403s for
       // Member-role assignees.
       if (wp.assigneeId && wp.assigneeId !== authorId) {
+        // Auto-add to ProjectMember so the assignee can actually open the
+        // project. Runs first so the notify guard (which checks membership)
+        // doesn't filter the toast out.
+        await this.ensureProjectMembership(projectId, wp.assigneeId);
         void this.notifications.notifyEnhanced({
           userId: wp.assigneeId,
           type: 'work_package_assigned',
@@ -397,6 +429,9 @@ export class WorkPackagesService {
         const statusChanged = dto.status !== undefined && dto.status !== existing.status;
 
         if (assigneeChanged) {
+          // Grant the new assignee project access before the notify call —
+          // notify's scope guard checks ProjectMember.
+          await this.ensureProjectMembership(projectId, newAssignee as string);
           void this.notifications.notifyEnhanced({
             userId: newAssignee as string,
             type: 'work_package_assigned',
@@ -793,6 +828,10 @@ export class WorkPackagesService {
       : `/app/team/my-tasks?projectId=${projectId}`;
 
     for (const [assigneeId, count] of byAssignee) {
+      // Bulk-assigned recipients also need project access — auto-add them
+      // before the notify call (notify's scope check would otherwise filter
+      // the toast out for users who weren't members yet).
+      await this.ensureProjectMembership(projectId, assigneeId);
       try {
         await this.notifications.notifyEnhanced({
           userId: assigneeId,
