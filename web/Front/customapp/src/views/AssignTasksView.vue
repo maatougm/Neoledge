@@ -416,10 +416,17 @@ onMounted(async () => {
       })
     }
 
-    const membersRes = await api.get<MemberRow[]>(`/pm/projects/${props.id}/members`)
+    // Endpoint returns `{ members: [...], projectManagerId }` — not a flat
+    // array. Without this unwrap, members.value was being set to the whole
+    // envelope and the assignment lanes silently rendered empty.
+    const membersRes = await api.get<MemberRow[] | { members: MemberRow[]; projectManagerId: string | null }>(
+      `/pm/projects/${props.id}/members`,
+    )
     if (!isMounted) return
     allTasks.value = aggregated.filter((t) => t.type !== 'Epic')
-    members.value = membersRes.data
+    members.value = Array.isArray(membersRes.data)
+      ? membersRes.data
+      : (membersRes.data?.members ?? [])
 
     // Auto-select first sprint if any exist; else the "Hors sprint" bucket.
     if (agile.sprints.length > 0) {

@@ -144,8 +144,14 @@ interface ProjectMemberLite { userId: string }
 onMounted(async () => {
   if (auth.userRole !== 'SpecificationTeam') return
   try {
-    const { data } = await api.get<ProjectMemberLite[]>(`/pm/projects/${props.projectId}/members`)
-    isProjectMember.value = !!auth.userId && data.some((m) => m.userId === auth.userId)
+    // Endpoint returns `{ members: [...], projectManagerId }`, not a flat array.
+    // Without the unwrap, .some() threw silently and the spec reviewer was
+    // locked out of their own approve/reject buttons.
+    const { data } = await api.get<ProjectMemberLite[] | { members: ProjectMemberLite[] }>(
+      `/pm/projects/${props.projectId}/members`,
+    )
+    const list = Array.isArray(data) ? data : (data?.members ?? [])
+    isProjectMember.value = !!auth.userId && list.some((m) => m.userId === auth.userId)
   } catch {
     isProjectMember.value = false
   }

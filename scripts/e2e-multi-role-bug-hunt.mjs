@@ -153,9 +153,13 @@ try {
   // B2: Members page — clean up any leftover members from prior runs
   setStage('B2.members-cleanup');
   const existing = await api(`/pm/projects/${projectId}/members`);
-  if (existing.status === 200 && Array.isArray(existing.data)) {
-    for (const m of existing.data) {
-      // Force-remove anything tagged with QA prefix
+  // Endpoint returns { members: [...], projectManagerId }, not a flat array.
+  const existingList = Array.isArray(existing.data)
+    ? existing.data
+    : (existing.data?.members ?? []);
+  if (existing.status === 200) {
+    for (const m of existingList) {
+      // Force-remove anything tagged with QA prefix (label OR test user)
       if (typeof m.label === 'string' && /qa-/i.test(m.label)) {
         await api(`/pm/projects/${projectId}/members/${m.id}?force=true`, { method: 'DELETE' });
       }
@@ -214,7 +218,8 @@ try {
       FAIL('MEDIUM', 'PM was able to add themselves as a project member via API — frontend filter bypassable');
       // cleanup
       const myMembers = await api(`/pm/projects/${projectId}/members`);
-      const me = (myMembers.data ?? []).find((m) => m.userId === pmUserId);
+      const myList = Array.isArray(myMembers.data) ? myMembers.data : (myMembers.data?.members ?? []);
+      const me = myList.find((m) => m.userId === pmUserId);
       if (me) await api(`/pm/projects/${projectId}/members/${me.id}?force=true`, { method: 'DELETE' });
     } else {
       PASS('PM self-add via API blocked at backend');
@@ -234,7 +239,8 @@ try {
     await page.locator('button[title="Enregistrer"]').first().click();
     await page.waitForTimeout(1500);
     const after = await api(`/pm/projects/${projectId}/members`);
-    const updated = (after.data ?? []).find((m) => m.id === memberId);
+    const afterList = Array.isArray(after.data) ? after.data : (after.data?.members ?? []);
+    const updated = afterList.find((m) => m.id === memberId);
     if (updated?.label !== 'QA-Edited-Label') FAIL('HIGH', `label edit not persisted (got "${updated?.label}")`);
     else PASS('label edit persisted');
   }
