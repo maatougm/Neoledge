@@ -18,7 +18,7 @@ describe('AgileService.getBurndown', () => {
     };
     const collab = { broadcastCardMoved: jest.fn() };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc = new AgileService(prisma as any, collab as any);
+    svc = new AgileService(prisma as any, collab as any, { notifyEnhanced: jest.fn() } as any);
   });
 
   it('fails when sprint not found', async () => {
@@ -57,7 +57,7 @@ describe('AgileService.getBurndown', () => {
       },
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const s = new AgileService(prismaForMove as any, collab as any);
+    const s = new AgileService(prismaForMove as any, collab as any, { notifyEnhanced: jest.fn() } as any);
     await s.moveCard('p1', 'wp1', 'c1', 0);
     expect(collab.broadcastCardMoved).toHaveBeenCalledWith('p1', expect.objectContaining({
       workPackageId: 'wp1', boardColumnId: 'c1', status: 'InProgress',
