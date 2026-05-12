@@ -126,14 +126,23 @@ const fullText = [
   aiContent.conclusion,
 ].filter(Boolean).join('\n').toLowerCase()
 
-// Count INFO_MANQUANTE markers
+// Count INFO_MANQUANTE markers BEFORE stripping them
 const markers = (fullText.match(/info_manquante:/g) ?? []).length
 console.log(`✓ INFO_MANQUANTE markers: ${markers} (model honestly flagged gaps)`)
 
-// Detect ungrounded tech mentions
+// Strip everything inside [INFO_MANQUANTE: ... ] blocks before checking for
+// ungrounded tech — those mentions are already neutralised. The marker LABEL
+// itself names the tech that was caught (e.g. "INFO_MANQUANTE: postgresql
+// non confirmé"), which we don't want to count as a hallucination.
+const strippedText = fullText.replace(/\[?info_manquante:[^\]\n]*\]?/g, '')
+
+// Detect ungrounded tech mentions OUTSIDE the markers
 const ungrounded = []
 for (const tech of KNOWN_TECH) {
-  if (fullText.includes(tech) && !sourceCorpus.includes(tech)) {
+  // Word-boundary match on both sides to avoid French false positives.
+  const escaped = tech.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const tokenRe = new RegExp(`(^|[^a-zA-Z0-9])${escaped}(?=[^a-zA-Z0-9]|$)`, 'i')
+  if (tokenRe.test(strippedText) && !tokenRe.test(sourceCorpus)) {
     ungrounded.push(tech)
   }
 }

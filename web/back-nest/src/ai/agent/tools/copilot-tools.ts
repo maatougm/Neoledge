@@ -34,13 +34,15 @@ export function buildCopilotTools(
     { transcript: string; totalCharsAppended: number; pii: { redacted: number } }
   > = {
     name: 'read_live_transcript_window',
-    description: "Read the most recent slice of the meeting transcript (rolling window, default 4000 chars). PII is auto-redacted. Use this once per fire — the window is small and refreshes as the meeting continues.",
+    description: "Read the meeting transcript buffer. Default 8000 chars (recent window). Pass maxChars=12000 to retrieve the FULL ring buffer when you need to re-classify older items against past evidence. PII auto-redacted.",
     parameters: obj(
-      { maxChars: int({ description: 'Max chars to return (default 4000, max 6000).', minimum: 200, maximum: 6000 }) },
+      { maxChars: int({ description: 'Max chars to return (default 8000, max 12000 = full buffer).', minimum: 200, maximum: 12000 }) },
       {},
     ),
     handler: async (args) => {
-      const cap = Math.min(6000, Math.max(200, args.maxChars ?? 4000))
+      // Default raised from 4000 → 8000 so the model has enough context to
+      // re-check old items. maxChars=12000 returns the full ring buffer.
+      const cap = Math.min(12000, Math.max(200, args.maxChars ?? 8000))
       const slice = state.transcriptBuffer.slice(-cap)
       const { text, stats } = redactPii(slice)
       return { transcript: text, totalCharsAppended: state.totalCharsAppended, pii: { redacted: stats.total } }
