@@ -24,7 +24,10 @@ import { runOpenAiCompatibleLoop, TOOL_RESULT_CHAR_DEFAULT } from './openai-comp
 import { AgentEmitMissedError } from './agent-errors.js'
 
 const DEFAULT_LOOP_TIMEOUT_MS = 5 * 60 * 1000
-const DEFAULT_PER_CALL_TIMEOUT_MS = 45_000
+// 45s was too tight for glm-4.5-air's final emit on a 9-key cahier JSON —
+// real prod test caught the agent loop aborting mid-completion at 68s wall
+// time (45s per-call * retries). 120s gives the model breathing room.
+const DEFAULT_PER_CALL_TIMEOUT_MS = 120_000
 /** Mid-loop budget re-check iteration. */
 const BUDGET_RECHECK_AT_ITER = 4
 
