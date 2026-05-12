@@ -130,6 +130,45 @@ async function handleMarkAll(): Promise<void> {
   }
 }
 
+/**
+ * Several backend notification producers hardcode `/app/pm/...` deep-links
+ * (cahier_ready, work_package_assigned via team-planner, work_package_unassigned,
+ * …). Those PM-namespace routes are guarded by `allowedRoles: ['ProjectManager', 'Admin']`,
+ * so a SpecificationTeam or Member recipient who clicks the bell lands on
+ * `/unauthorized`. We rewrite the link to the role-appropriate team route
+ * before navigating, which covers every current and future notification
+ * source without forcing a backend change per producer.
+ */
+function rewriteLinkForRole(link: string, role: string | null | undefined): string {
+  if (role === 'Admin' || role === 'ProjectManager') return link
+  if (!link.startsWith('/app/pm/')) return link
+
+  // /app/pm/projects/<id>/workpackages[?qs] → /app/team/my-tasks?projectId=<id>[&…]
+  // The team-namespace counterpart of the PM workpackages page is the
+  // assignee's personal task list.
+  const wpMatch = link.match(/^\/app\/pm\/projects\/([^/?#]+)\/workpackages(?:\?(.*))?$/)
+  if (wpMatch) {
+    const [, projectId, qs] = wpMatch
+    const params = new URLSearchParams(qs ?? '')
+    params.set('projectId', projectId)
+    return `/app/team/my-tasks?${params.toString()}`
+  }
+
+  // /app/pm/projects/<id>/<anything> → /app/team/projects/<id>
+  // The team-namespace project page is read-only and can host cahier review,
+  // validations, meetings, etc. for non-PM roles.
+  const projMatch = link.match(/^\/app\/pm\/projects\/([^/?#]+)/)
+  if (projMatch) {
+    return `/app/team/projects/${projMatch[1]}`
+  }
+
+  // Fallback: swap the namespace prefix and let the router decide. If the
+  // resulting URL is still unauthorized for this user, the existing route
+  // guard surfaces /unauthorized — which is correct for resources the user
+  // genuinely cannot access.
+  return link.replace(/^\/app\/pm\//, '/app/team/')
+}
+
 function handleItemClick(id: string, isRead: boolean): void {
   if (!isRead && !markInFlight.has(id)) {
     markInFlight.add(id)
@@ -144,7 +183,7 @@ function handleItemClick(id: string, isRead: boolean): void {
   // to prevent open-redirect via crafted notifications.
   if (typeof notif.link === 'string' && notif.link.startsWith('/')) {
     close()
-    router.push(notif.link)
+    router.push(rewriteLinkForRole(notif.link, authStore.userRole))
     return
   }
 
