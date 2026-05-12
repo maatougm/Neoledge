@@ -269,15 +269,10 @@ async function runPreflight(): Promise<void> {
 }
 
 function openInlineAnswer(item: MissingFieldInfo): void {
-  if (!item.relatedFieldId) {
-    // No matching ProjectField — direct PM to fill the questionnaire manually.
-    toast.add({
-      severity: 'info',
-      detail: 'Aucun champ correspondant dans le questionnaire — utilisez l\'onglet Questionnaire ou planifiez une réunion.',
-      life: 5000,
-    })
-    return
-  }
+  // Always open the textarea. When the AI-flagged item doesn't map onto an
+  // existing ProjectField (`relatedFieldId === null`) we create a Custom
+  // field on save so the answer is persisted into the questionnaire and
+  // automatically flows into the next cahier generation.
   answeringId.value = item.id
   answerDraft.value = ''
 }
@@ -288,13 +283,28 @@ function cancelInlineAnswer(): void {
 }
 
 async function saveInlineAnswer(item: MissingFieldInfo): Promise<void> {
-  if (!item.relatedFieldId || !answerDraft.value.trim()) return
+  const value = answerDraft.value.trim()
+  if (!value) return
   savingAnswer.value = true
   try {
+    // 1) Resolve (or create) the ProjectField the answer should be saved against.
+    let projectFieldId = item.relatedFieldId ?? null
+    if (!projectFieldId) {
+      const { data: createdField } = await api.post<{ id: string }>(
+        `/pm/projects/${props.projectId}/fields`,
+        {
+          label: item.topic,
+          fieldType: 'Text',
+          isRequired: false,
+          backlogHint: item.suggestedQuestion,
+        },
+      )
+      projectFieldId = createdField.id
+    }
+
+    // 2) Persist the answer through the standard questionnaire endpoint.
     await api.patch(`/pm/projects/${props.projectId}/field-values`, {
-      fieldValues: [
-        { projectFieldId: item.relatedFieldId, value: answerDraft.value.trim() },
-      ],
+      fieldValues: [{ projectFieldId, value }],
     })
     toast.add({ severity: 'success', detail: 'Réponse enregistrée.', life: 3000 })
     answeringId.value = null
