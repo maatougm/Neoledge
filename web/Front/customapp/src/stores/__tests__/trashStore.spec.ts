@@ -72,6 +72,24 @@ describe('projectStore — trash actions', () => {
       expect(api.get).toHaveBeenCalledWith('/admin/project/deleted')
     })
 
+    it('unwraps the paginated envelope { items, total } shape', async () => {
+      // The backend returns a paginated envelope, not a raw array. Regression
+      // test: spreading the envelope as if it were an array left the trash
+      // permanently empty in the UI.
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: { items: [mockDeleted1, mockDeleted2], total: 2, skip: 0, take: 100 },
+      } as never)
+
+      const { useProjectStore } = await import('../projectStore')
+      const store = useProjectStore()
+
+      await store.fetchDeletedProjects()
+
+      expect(store.deletedProjects).toHaveLength(2)
+      expect(store.deletedProjects[0].id).toBe('del-1')
+      expect(store.deletedProjects[1].id).toBe('del-2')
+    })
+
     it('sets error on API failure without throwing', async () => {
       vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'))
 

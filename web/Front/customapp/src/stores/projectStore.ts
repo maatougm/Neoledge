@@ -377,8 +377,14 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<DeletedProjectSummary[]>('/admin/project/deleted')
-      deletedProjects.value = [...data]
+      // The backend now returns a paginated envelope `{ items, total, skip, take }`
+      // but used to return a raw array. Accept both shapes so a future change to
+      // either side doesn't silently empty the trash again.
+      const { data } = await api.get<
+        DeletedProjectSummary[] | { items: DeletedProjectSummary[]; total?: number }
+      >('/admin/project/deleted')
+      const items = Array.isArray(data) ? data : (data?.items ?? [])
+      deletedProjects.value = [...items]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la corbeille.'
     } finally {
