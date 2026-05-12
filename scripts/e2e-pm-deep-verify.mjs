@@ -185,7 +185,8 @@ try {
     addedMemberId = await page.evaluate(async (pid) => {
       const tok = localStorage.getItem('nl_jwt') || '';
       const r = await fetch(`/pm/projects/${pid}/members`, { headers: { Authorization: 'Bearer ' + tok } });
-      const list = await r.json();
+      const data = await r.json();
+      const list = Array.isArray(data) ? data : (data?.members ?? []);
       return list.find((m) => m.label === 'E2E-Validation-Lead')?.id ?? null;
     }, projectId);
   }
@@ -238,21 +239,32 @@ try {
   await page.waitForTimeout(2500);
   await shot('06-assign-tasks');
 
-  const unassignedHeader = await page.locator('h3:has-text("Non assigné")').first().isVisible().catch(() => false);
-  unassignedHeader ? pass('assign-tasks: unassigned column header') : fail('assign-tasks: unassigned column header', 'missing');
+  // The view is a sprint-scoped table now (not the old kanban-style columns).
+  // What matters functionally: members resolved and the table or its empty
+  // state renders. "Aucun membre" fallback = bug.
+  const hasNoMembersFallback = await page.locator('.at__no-members').count();
+  const hasTaskTable = await page.locator('table.at__table').count();
+  const hasEmptyState = await page.locator('.at__empty-state').count();
+  if (hasNoMembersFallback > 0) {
+    fail('assign-tasks: members resolved', 'rendered "Aucun membre" fallback despite an active member');
+  } else if (hasTaskTable === 0 && hasEmptyState === 0) {
+    fail('assign-tasks: layout recognised', 'no recognisable layout (table or empty state)');
+  } else {
+    pass('assign-tasks: members resolved + layout rendered');
+  }
 
-  // Member column should now exist (we added a spec member earlier)
-  const memberColHeader = await page.locator('h3').filter({ hasText: /[A-Z][a-z]+ [A-Z][a-z]+/ }).first().isVisible().catch(() => false);
-  memberColHeader ? pass('assign-tasks: member column with name visible') : fail('assign-tasks: member column with name visible', 'no member column found — check member added correctly');
+  // Member-picker dropdown should be available
+  const memberPicker = await page.locator('.at__field label:has-text("Membre")').first().isVisible().catch(() => false);
+  memberPicker ? pass('assign-tasks: member-picker visible') : fail('assign-tasks: member-picker visible', 'NeoSelect label missing');
 
   // Validate button must be present and disabled (no pending changes)
-  const validateBtn = page.locator('button:has-text("Valider les assignations")').first();
+  const validateBtn = page.locator('button:has-text("Assigner la sélection")').first();
   const validateDisabled = await validateBtn.isDisabled().catch(() => true);
   validateDisabled ? pass('validate button disabled when no pending changes') : fail('validate button disabled when no pending changes', 'button enabled with 0 changes');
 
-  // Pending counter should show 0
-  const pendingText = await page.locator('text=/\\d+ changement/').first().textContent().catch(() => '');
-  /^0\s/.test(pendingText.trim()) ? pass('pending counter starts at 0') : fail('pending counter starts at 0', `text was "${pendingText}"`);
+  // Selection counter — "X sélectionnée(s)" should start at 0
+  const counterText = await page.locator('.at__counter').first().textContent().catch(() => '');
+  /0\s*sélectionnée/.test(counterText) ? pass('selection counter starts at 0') : fail('selection counter starts at 0', `text was "${counterText}"`);
 
   // ════════════════════════════════════════════════════════════════
   // STAGE 5: PM — Cahier section + review banner visibility for PM (should NOT see)
