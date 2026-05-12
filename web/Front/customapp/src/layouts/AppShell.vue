@@ -187,7 +187,6 @@ const memberNav: NavSection[] = [
       { key: 'team-projects', label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/team/projects' },
   ]},
   { heading: 'Mon espace', items: [
-      { key: 'team-time',  label: 'Mon temps',     icon: 'pi-clock', to: '/app/team/time' },
       { key: 'team-inbox', label: 'Notifications', icon: 'pi-bell',  to: '/app/team/inbox' },
       { key: 'profile',    label: 'Mon profil',    icon: 'pi-user',  to: '/app/profile' },
   ]},

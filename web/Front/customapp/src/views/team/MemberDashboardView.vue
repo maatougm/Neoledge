@@ -41,22 +41,6 @@
       </section>
 
       <aside class="md__col md__col--side">
-        <section class="nl-card md__time">
-          <header class="md__card-head">
-            <h2><i class="pi pi-clock" /> Mon temps cette semaine</h2>
-          </header>
-          <div class="md__time-value">{{ weekHoursLabel }}</div>
-          <p class="md__time-hint">Semaine du {{ weekStartLabel }}</p>
-          <NeoButton
-            label="Logger du temps"
-            icon="pi pi-pencil"
-            severity="secondary"
-            outlined
-            size="small"
-            @click="goToTime"
-          />
-        </section>
-
         <section class="nl-card md__notif">
           <header class="md__card-head">
             <h2><i class="pi pi-bell" /> Notifications</h2>
@@ -122,7 +106,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import { NeoButton, NeoMessage } from '@neolibrary/components'
+import { NeoMessage } from '@neolibrary/components'
 import { useAuthStore } from '@/stores/authStore'
 import { useMemberDashboardStore } from '@/stores/memberDashboardStore'
 import { useNotificationStore } from '@/stores/notificationStore'
@@ -149,23 +133,6 @@ const subtitle = computed<string>(() => {
   return `${total} tâches prioritaires à traiter aujourd'hui.`
 })
 
-const weekHoursLabel = computed<string>(() => {
-  const t = store.weeklyTotals?.totalHours ?? 0
-  return `${t.toFixed(1)} h`
-})
-
-const weekStartLabel = computed<string>(() => {
-  const iso = store.weeklyTotals?.weekStart
-  if (!iso) {
-    const d = new Date()
-    const day = (d.getDay() + 6) % 7
-    d.setDate(d.getDate() - day)
-    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
-  }
-  try { return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) }
-  catch { return iso }
-})
-
 const ACTION_TYPES = new Set([
   'work_package_assigned',
   'wp_bulk_assigned',
@@ -190,7 +157,6 @@ async function onTransition(task: MemberTaskCard, newStatus: string): Promise<vo
   await store.transitionTask(task, newStatus)
 }
 
-function goToTime(): void { void router.push('/app/team/time') }
 function openNotification(n: Notification): void {
   if (typeof n.link === 'string' && n.link.startsWith('/')) void router.push(n.link)
   else void router.push('/app/team/inbox')
@@ -247,9 +213,6 @@ onMounted(() => {
 .md__empty--mini { padding: 1rem; }
 .md__empty i { font-size: 1.5rem; color: var(--nl-success, #059669); }
 
-.md__time { gap: 0.5rem; }
-.md__time-value { font-size: 1.75rem; font-weight: 700; color: var(--nl-text-1); }
-.md__time-hint { margin: 0 0 0.5rem 0; font-size: 0.75rem; color: var(--nl-text-3); }
 
 .md__notif-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .md__notif-item {

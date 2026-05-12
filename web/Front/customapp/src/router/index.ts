@@ -381,11 +381,6 @@ const router = createRouter({
               component: () => import('@/views/team/MemberInboxView.vue'),
             },
             {
-              path: 'time',
-              name: 'team-time',
-              component: () => import('@/views/team/MemberTimeView.vue'),
-            },
-            {
               path: 'pending-reviews',
               name: 'team-pending-reviews',
               component: () => import('@/views/SpecPendingReviewsView.vue'),
