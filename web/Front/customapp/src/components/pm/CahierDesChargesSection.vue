@@ -83,8 +83,8 @@
             v-if="!editMode"
             label="Télécharger (.docx)"
             icon="pi pi-download"
-            @click="handleDownload"
             :loading="downloading"
+            @click="handleDownload"
           />
           <NeoButton
             v-if="!editMode"
@@ -98,8 +98,8 @@
             label="Régénérer"
             icon="pi pi-refresh"
             outlined
-            @click="confirmRegenerate"
             :disabled="generating"
+            @click="confirmRegenerate"
           />
           <NeoButton
             v-if="editMode"

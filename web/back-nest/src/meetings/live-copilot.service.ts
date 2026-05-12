@@ -310,11 +310,20 @@ export class LiveCopilotService {
     liveSessionId: string,
     itemId: string,
     action: UserItemAction,
-  ): Promise<Result<{ checklist: ChecklistItem[] }>> {
+  ): Promise<Result<{ checklist: ChecklistItem[] } | null>> {
     const state = this.sessions.get(liveSessionId)
-    if (!state) return Result.fail('Session introuvable.')
+    if (!state) {
+      // In-memory session was wiped (typically server restart). Treat as a
+      // soft no-op so the PM doesn't see a 404 in the console for clicking
+      // a stale checklist item. The frontend's optimistic update is harmless.
+      this.logger.warn(`recordItemAction: live session ${liveSessionId} not found — soft-noop (server restart wiped state)`)
+      return Result.ok(null)
+    }
     const item = state.checklist.find((i) => i.id === itemId)
-    if (!item) return Result.fail('Item introuvable.')
+    if (!item) {
+      this.logger.warn(`recordItemAction: item ${itemId} not in checklist for session ${liveSessionId} — soft-noop`)
+      return Result.ok(null)
+    }
 
     state.userActions.set(itemId, action)
     item.userAction = action

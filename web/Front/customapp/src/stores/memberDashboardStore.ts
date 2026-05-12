@@ -56,15 +56,30 @@ export const useMemberDashboardStore = defineStore('memberDashboard', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  /** Monday-of-this-week as YYYY-MM-DD in local time. */
+  function currentWeekStart(): string {
+    const d = new Date()
+    const day = d.getDay() // Sunday=0 ... Saturday=6
+    const offset = day === 0 ? -6 : 1 - day // shift back to Monday
+    d.setDate(d.getDate() + offset)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${dd}`
+  }
+
   async function fetchAll(): Promise<void> {
     loading.value = true
     error.value = null
     try {
+      const weekStart = currentWeekStart()
       const [tasksRes, sprintsRes, projectsRes, weekRes] = await Promise.all([
         api.get<{ items: MemberTaskCard[] }>('/pm/my-tasks/today'),
         api.get<{ items: MemberSprintCard[] }>('/pm/my-sprints'),
         api.get<{ items: MemberProjectCard[] }>('/pm/my-projects'),
-        api.get<WeeklyTotals>('/api/time-entries/week').catch(() => ({ data: null as WeeklyTotals | null })),
+        api
+          .get<WeeklyTotals>(`/api/time-entries/week?weekStart=${weekStart}`)
+          .catch(() => ({ data: null as WeeklyTotals | null })),
       ])
       todayTasks.value = tasksRes.data.items ?? []
       activeSprints.value = sprintsRes.data.items ?? []

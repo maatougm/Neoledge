@@ -7,7 +7,7 @@ import { chromium } from '../web/Front/customapp/node_modules/playwright/index.m
 import { mkdir } from 'node:fs/promises';
 
 const ROOT  = 'https://neoleadge.pythagore-init.com';
-const PM    = { email: 'pm@neoleadge.com', password: 'Pm@12345' };
+const PM    = { email: 'pm@neoleadge.com', password: 'Pm@123' };
 const SHOTS = './scripts/e2e-dashboards-shots/pm';
 
 await mkdir(SHOTS, { recursive: true }).catch(() => {});

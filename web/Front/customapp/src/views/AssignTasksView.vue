@@ -54,7 +54,7 @@
       <!-- Filters -->
       <div class="at__filters">
         <label class="at__check">
-          <input type="checkbox" v-model="showOnlyUnassigned" />
+          <input v-model="showOnlyUnassigned" type="checkbox" />
           <span>Non assignées uniquement</span>
         </label>
         <span class="at__sep">·</span>

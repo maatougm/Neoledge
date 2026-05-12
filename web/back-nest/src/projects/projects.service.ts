@@ -222,6 +222,28 @@ export class ProjectsService {
     });
 
     void this.audit.log('Project', createdId, 'CREATE', adminId, undefined, { name: dto.name }).catch((e) => this.logger.error('audit create failed', e));
+
+    // Notify the assigned PM about their new project. The dedicated
+    // assignManager() path handles re-assignment; create() was missing the
+    // equivalent notification, so PMs assigned at creation time saw the
+    // project appear in their list without any signal.
+    if (dto.projectManagerId && dto.projectManagerId !== adminId) {
+      void this.notifications
+        .notifyEnhanced({
+          userId: dto.projectManagerId,
+          type: 'project_assigned',
+          reason: 'System',
+          title: 'Nouveau projet assigné',
+          message: `Vous avez été assigné au projet « ${dto.name} ».`,
+          projectId: createdId,
+          entityType: 'project',
+          entityId: createdId,
+          actorId: adminId,
+          link: `/app/pm/projects/${createdId}`,
+        })
+        .catch((e) => this.logger.warn(`notify on project create failed: ${e instanceof Error ? e.message : String(e)}`));
+    }
+
     return this.getById(createdId);
   }
 

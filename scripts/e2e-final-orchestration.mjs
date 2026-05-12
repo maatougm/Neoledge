@@ -30,9 +30,9 @@ const SHOTS = './scripts/e2e-final-shots';
 await mkdir(SHOTS, { recursive: true }).catch(() => {});
 
 const ADMIN  = { email: 'admin@neoleadge.com',  password: 'Admin@123', role: 'Admin' };
-const PM     = { email: 'pm@neoleadge.com',     password: 'Pm@12345',  role: 'ProjectManager' };
-const SPEC   = { email: 'spec@neoleadge.com',   password: 'Valid@123', role: 'SpecificationTeam' };
-const REALIZ = { email: 'realiz@neoleadge.com', password: 'Valid@123', role: 'Member' };
+const PM     = { email: 'pm@neoleadge.com',     password: 'Pm@123',  role: 'ProjectManager' };
+const SPEC   = { email: 'spec@neoleadge.com',   password: 'Spec@123', role: 'SpecificationTeam' };
+const REALIZ = { email: 'realiz@neoleadge.com', password: 'Realiz@123', role: 'Member' };
 
 const ts = () => new Date().toISOString().slice(11, 19);
 const log = (...a) => console.error(`[${ts()}]`, ...a);

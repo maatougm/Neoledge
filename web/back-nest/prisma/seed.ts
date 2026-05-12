@@ -475,10 +475,11 @@ async function main() {
   console.log('\n✅  Seed complete!\n');
   console.log('Quick-login accounts:');
   console.log('  Admin          admin@neoleadge.com     / Admin@123');
-  console.log('  ProjectManager pm@neoleadge.com        / Pm@12345');
+  console.log('  ProjectManager pm@neoleadge.com        / Pm@123');
   console.log('  ProjectManager pm2@neoleadge.com       / Pm@12345');
-  console.log('  SpecTeam       spec@neoleadge.com      / Valid@123');
-  console.log('  Member         real@neoleadge.com      / Valid@123');
+  console.log('  SpecTeam       spec@neoleadge.com      / Spec@123');
+  console.log('  SpecTeam (2)   spec2@neoleadge.com     / Valid@123');
+  console.log('  Member         realiz@neoleadge.com    / Realiz@123');
   console.log('  Member         deploy@neoleadge.com    / Deploy@123');
   console.log('  Member (2)     viewer@neoleadge.com    / Viewer@1');
 }

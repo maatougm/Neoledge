@@ -58,10 +58,10 @@
             <td>
               <div v-if="editingId === m.id" class="mem-edit">
                 <NeoInputText v-model="editingValue" placeholder="ex: Lead Frontend" />
-                <button class="mem-icon-btn mem-icon-btn--ok" @click="saveLabel(m.id)" title="Enregistrer">
+                <button class="mem-icon-btn mem-icon-btn--ok" title="Enregistrer" @click="saveLabel(m.id)">
                   <i class="pi pi-check" />
                 </button>
-                <button class="mem-icon-btn" @click="cancelEdit" title="Annuler">
+                <button class="mem-icon-btn" title="Annuler" @click="cancelEdit">
                   <i class="pi pi-times" />
                 </button>
               </div>
@@ -69,7 +69,7 @@
                 <span :class="['mem-label__text', { 'mem-label__text--empty': !m.label }]">
                   {{ m.label || '— aucun label —' }}
                 </span>
-                <button class="mem-icon-btn" @click="startEdit(m)" title="Modifier le label">
+                <button class="mem-icon-btn" title="Modifier le label" @click="startEdit(m)">
                   <i class="pi pi-pencil" />
                 </button>
               </div>
@@ -79,8 +79,8 @@
                 severity="danger"
                 text
                 icon="pi pi-trash"
-                @click="confirmRemove(m)"
                 :title="`Retirer ${m.user.firstName} du projet`"
+                @click="confirmRemove(m)"
               />
             </td>
           </tr>

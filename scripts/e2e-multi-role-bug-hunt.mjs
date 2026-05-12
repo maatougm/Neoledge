@@ -10,9 +10,9 @@ import { mkdir } from 'node:fs/promises';
 
 const ROOT = 'https://neoleadge.pythagore-init.com';
 const ADMIN  = { email: 'admin@neoleadge.com',  password: 'Admin@123'  };
-const PM     = { email: 'pm@neoleadge.com',     password: 'Pm@12345'   };
-const SPEC   = { email: 'spec@neoleadge.com',   password: 'Valid@123'  };
-const REALIZ = { email: 'realiz@neoleadge.com', password: 'Valid@123'  };
+const PM     = { email: 'pm@neoleadge.com',     password: 'Pm@123'   };
+const SPEC   = { email: 'spec@neoleadge.com',   password: 'Spec@123'  };
+const REALIZ = { email: 'realiz@neoleadge.com', password: 'Realiz@123'  };
 
 const SHOTS = './scripts/e2e-bughunt-shots';
 await mkdir(SHOTS, { recursive: true }).catch(() => {});
@@ -83,9 +83,12 @@ async function login({ email, password }) {
     await page.locator('input[type="password"]').first().fill(password);
     await page.locator('button[type="submit"], button:has-text("Connexion"), button:has-text("Se connecter")').first().click();
   }
-  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-  await page.waitForTimeout(1500);
-  if (!/\/app/.test(page.url())) throw new Error(`login failed — url=${page.url()}`);
+  // Wait for the URL to flip off /login. The post-login flow is a multi-step
+  // redirect chain (app-home → app-home-redirect → role dashboard) which
+  // sometimes settles AFTER networkidle, so we wait on the URL directly.
+  const ok = await page.waitForURL(/\/app/, { timeout: 25000 }).then(() => true).catch(() => false);
+  if (!ok) throw new Error(`login failed — url=${page.url()}`);
+  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 }
 async function logout() {
   await page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} });
@@ -183,7 +186,11 @@ try {
   await shot('B04-after-add-spec');
 
   const afterAdd = await api(`/pm/projects/${projectId}/members`);
-  const found = (afterAdd.data ?? []).find((m) => m.label === 'QA-Validation');
+  // Endpoint returns { members: [...], projectManagerId }, not a flat array.
+  const memberList = Array.isArray(afterAdd.data)
+    ? afterAdd.data
+    : (afterAdd.data?.members ?? []);
+  const found = memberList.find((m) => m.label === 'QA-Validation');
   if (!found) FAIL('CRITICAL', 'Spec member NOT persisted after add modal closed');
   else { memberId = found.id; PASS('spec member persisted', memberId); }
 

@@ -29,7 +29,7 @@
           <div v-else-if="questionnaire.length === 0" class="vcmp-empty">
             <i class="pi pi-inbox" /> Aucune réponse enregistrée
           </div>
-          <div v-else v-for="(q, i) in questionnaire" :key="i" class="vcmp-q">
+          <div v-for="(q, i) in questionnaire" v-else :key="i" class="vcmp-q">
             <div class="vcmp-q-label">{{ q.label }}</div>
             <div class="vcmp-q-value" :class="{ 'vcmp-q-empty': !q.value }">
               {{ q.value || '— non renseigné —' }}
@@ -50,7 +50,7 @@
           <div v-else-if="meetings.length === 0" class="vcmp-empty">
             <i class="pi pi-microphone" /> Aucune réunion transcrite
           </div>
-          <div v-else v-for="m in meetings" :key="m.id" class="vcmp-m">
+          <div v-for="m in meetings" v-else :key="m.id" class="vcmp-m">
             <div class="vcmp-m-head">
               <strong>{{ m.title || 'Réunion sans titre' }}</strong>
               <span class="vcmp-m-date">{{ formatDate(m.recordedAt) }}</span>
