@@ -47,12 +47,13 @@
               <span class="preflight-item__topic">{{ item.topic }}</span>
             </div>
             <p class="preflight-item__question">{{ item.suggestedQuestion }}</p>
-            <div class="preflight-item__actions">
+            <div v-if="!isOpen(item.id)" class="preflight-item__actions">
               <NeoButton
                 label="Ajouter une réponse"
                 icon="pi pi-pencil"
                 size="small"
                 outlined
+                :disabled="savingAnswer"
                 @click="openInlineAnswer(item)"
               />
               <NeoButton
@@ -61,38 +62,48 @@
                 size="small"
                 outlined
                 severity="secondary"
+                :disabled="savingAnswer"
                 @click="goToMeetings"
               />
             </div>
-            <!-- Inline answer textarea -->
-            <div v-if="answeringId === item.id" class="preflight-item__answer">
+            <!-- Inline answer textarea. Multiple items can be open at once;
+                 the single footer button persists every non-empty draft. -->
+            <div v-else class="preflight-item__answer">
               <textarea
-                v-model="answerDraft"
+                :value="draftFor(item.id)"
                 rows="3"
                 class="preflight-textarea"
                 placeholder="Réponse à enregistrer dans le questionnaire…"
+                :disabled="savingAnswer"
+                @input="updateDraft(item.id, ($event.target as HTMLTextAreaElement).value)"
               />
               <div class="preflight-item__answer-actions">
                 <NeoButton
-                  label="Enregistrer"
-                  icon="pi pi-check"
-                  size="small"
-                  :loading="savingAnswer"
-                  :disabled="!answerDraft.trim() || savingAnswer"
-                  @click="saveInlineAnswer(item)"
-                />
-                <NeoButton
-                  label="Annuler"
+                  label="Retirer cette réponse"
+                  icon="pi pi-times"
                   size="small"
                   outlined
                   severity="secondary"
                   :disabled="savingAnswer"
-                  @click="cancelInlineAnswer"
+                  @click="closeInlineAnswer(item.id)"
                 />
               </div>
             </div>
           </li>
         </ul>
+        <!-- Single batch-save action for every open textarea with a non-empty draft. -->
+        <div v-if="hasAnyDraft" class="preflight-batch">
+          <span class="preflight-batch__hint">
+            {{ draftCount }} réponse(s) prête(s) à enregistrer.
+          </span>
+          <NeoButton
+            label="Enregistrer toutes les réponses"
+            icon="pi pi-check"
+            :loading="savingAnswer"
+            :disabled="savingAnswer || !hasAnyDraft"
+            @click="saveAllAnswers"
+          />
+        </div>
       </section>
 
       <section v-if="mediumSeverityItems.length > 0" class="preflight-block">
@@ -190,8 +201,10 @@ const error = ref<string | null>(null)
 const result = ref<PreflightResult | null>(null)
 const showAnswered = ref(false)
 
-const answeringId = ref<string | null>(null)
-const answerDraft = ref('')
+// Map<item.id, draft text>. An entry whose key is present means "textarea
+// open"; the value is the draft text. The single batch button at the
+// bottom persists every entry whose trimmed text is non-empty.
+const drafts = ref<Map<string, string>>(new Map())
 const savingAnswer = ref(false)
 
 const highSeverityItems = computed(() => result.value?.missingFields.filter((g) => g.severity === 'high') ?? [])
@@ -243,14 +256,38 @@ watch(
       // Reset when closing.
       result.value = null
       error.value = null
-      answeringId.value = null
-      answerDraft.value = ''
+      drafts.value = new Map()
       showAnswered.value = false
       return
     }
     await runPreflight()
   },
 )
+
+const hasAnyDraft = computed(() => {
+  for (const v of drafts.value.values()) if (v.trim().length > 0) return true
+  return false
+})
+
+const draftCount = computed(() => {
+  let n = 0
+  for (const v of drafts.value.values()) if (v.trim().length > 0) n += 1
+  return n
+})
+
+function isOpen(itemId: string): boolean {
+  return drafts.value.has(itemId)
+}
+
+function draftFor(itemId: string): string {
+  return drafts.value.get(itemId) ?? ''
+}
+
+function updateDraft(itemId: string, value: string): void {
+  const next = new Map(drafts.value)
+  next.set(itemId, value)
+  drafts.value = next
+}
 
 async function runPreflight(): Promise<void> {
   loading.value = true
@@ -273,43 +310,73 @@ function openInlineAnswer(item: MissingFieldInfo): void {
   // existing ProjectField (`relatedFieldId === null`) we create a Custom
   // field on save so the answer is persisted into the questionnaire and
   // automatically flows into the next cahier generation.
-  answeringId.value = item.id
-  answerDraft.value = ''
+  if (drafts.value.has(item.id)) return
+  const next = new Map(drafts.value)
+  next.set(item.id, '')
+  drafts.value = next
 }
 
-function cancelInlineAnswer(): void {
-  answeringId.value = null
-  answerDraft.value = ''
+function closeInlineAnswer(itemId: string): void {
+  if (!drafts.value.has(itemId)) return
+  const next = new Map(drafts.value)
+  next.delete(itemId)
+  drafts.value = next
 }
 
-async function saveInlineAnswer(item: MissingFieldInfo): Promise<void> {
-  const value = answerDraft.value.trim()
-  if (!value) return
+async function saveAllAnswers(): Promise<void> {
+  if (!result.value) return
+  // Collect every non-empty draft alongside its source item — we need
+  // `topic` / `suggestedQuestion` / `relatedFieldId` to create the right
+  // ProjectField when no match exists.
+  const itemsById = new Map(result.value.missingFields.map((m) => [m.id, m]))
+  type Pending = { item: MissingFieldInfo; value: string }
+  const pending: Pending[] = []
+  for (const [itemId, raw] of drafts.value.entries()) {
+    const value = raw.trim()
+    if (!value) continue
+    const item = itemsById.get(itemId)
+    if (!item) continue
+    pending.push({ item, value })
+  }
+  if (pending.length === 0) return
+
   savingAnswer.value = true
   try {
-    // 1) Resolve (or create) the ProjectField the answer should be saved against.
-    let projectFieldId = item.relatedFieldId ?? null
-    if (!projectFieldId) {
-      const { data: createdField } = await api.post<{ id: string }>(
-        `/pm/projects/${props.projectId}/fields`,
-        {
-          label: item.topic,
-          fieldType: 'Text',
-          isRequired: false,
-          backlogHint: item.suggestedQuestion,
-        },
-      )
-      projectFieldId = createdField.id
-    }
+    // 1) Resolve (or create) every ProjectField we need. Items that already
+    //    have a relatedFieldId reuse it; the rest get a Custom field created
+    //    in parallel. Failures on individual creates surface as a single
+    //    aggregated error toast rather than partial saves.
+    const resolved = await Promise.all(
+      pending.map(async ({ item, value }) => {
+        let projectFieldId = item.relatedFieldId ?? null
+        if (!projectFieldId) {
+          const { data: createdField } = await api.post<{ id: string }>(
+            `/pm/projects/${props.projectId}/fields`,
+            {
+              label: item.topic,
+              fieldType: 'Text',
+              isRequired: false,
+              backlogHint: item.suggestedQuestion,
+            },
+          )
+          projectFieldId = createdField.id
+        }
+        return { projectFieldId, value }
+      }),
+    )
 
-    // 2) Persist the answer through the standard questionnaire endpoint.
+    // 2) One batch PATCH writes every value in a single round-trip.
     await api.patch(`/pm/projects/${props.projectId}/field-values`, {
-      fieldValues: [{ projectFieldId, value }],
+      fieldValues: resolved,
     })
-    toast.add({ severity: 'success', detail: 'Réponse enregistrée.', life: 3000 })
-    answeringId.value = null
-    answerDraft.value = ''
-    // Refresh preflight so the just-answered item drops off the list.
+
+    toast.add({
+      severity: 'success',
+      detail: `${pending.length} réponse(s) enregistrée(s).`,
+      life: 3000,
+    })
+    drafts.value = new Map()
+    // Refresh preflight so the just-answered items drop off the list.
     await runPreflight()
   } catch (e: unknown) {
     toast.add({
@@ -459,6 +526,19 @@ function onProceed(force: boolean): void {
 
 .preflight-item__answer { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .preflight-item__answer-actions { display: flex; gap: 8px; }
+
+.preflight-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--nl-surface-alt, #fafbfc);
+  border: 1px solid var(--nl-border, #e5e7eb);
+}
+.preflight-batch__hint { font-size: 0.82rem; color: var(--nl-text-muted, #555); }
 .preflight-textarea {
   width: 100%;
   padding: 8px 10px;
