@@ -46,8 +46,8 @@
           <i class="pi pi-desktop lm__mode-icon" />
           <h3>En ligne</h3>
           <p>
-            Réunion Zoom / Meet / Teams dans un autre onglet. Vous partagez ce tab avec son audio,
-            l'IA écoute les deux côtés.
+            Réunion Zoom / Meet / Teams dans un autre onglet. Vous partagez ce tab avec son audio
+            et votre micro — l'IA écoute les deux côtés et votre voix.
           </p>
         </button>
       </div>
@@ -261,6 +261,10 @@ interface SpeechRecognitionLike {
 let recognition: SpeechRecognitionLike | null = null
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
+// Online mode mixes tab audio + PM microphone via Web Audio API so the
+// transcript covers both the remote speaker(s) AND the PM's own voice.
+let micStream: MediaStream | null = null
+let audioContext: AudioContext | null = null
 // Full-meeting audio buffer — every chunk is pushed here as it's recorded so
 // we can upload the merged blob at end of session for replay later.
 let archiveChunks: Blob[] = []
@@ -382,11 +386,35 @@ async function startTabCapture(): Promise<void> {
   // Optimistic lock against double-clicks during the await on getDisplayMedia.
   // Reset on any early-return below.
   recording.value = true
+
+  // Step 1 — try to grab the PM's microphone first. If denied, we degrade
+  // gracefully to tab-only audio (the meeting can still be transcribed, we
+  // just won't pick up the PM's voice).
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    })
+  } catch {
+    micStream = null
+    toast.add({
+      severity: 'warn',
+      detail: 'Micro indisponible — seul l\'audio de l\'onglet sera capté.',
+      life: 4000,
+    })
+  }
+
+  // Step 2 — tab share (the failure mode here is fatal — without tab audio
+  // there's nothing to transcribe for an online meeting).
   let stream: MediaStream
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-  } catch (err) {
+  } catch {
     recording.value = false
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null }
     toast.add({
       severity: 'warn',
       detail: 'Partage annulé. Cochez bien "Partager l\'audio de l\'onglet".',
@@ -396,6 +424,7 @@ async function startTabCapture(): Promise<void> {
   }
   if (stream.getAudioTracks().length === 0) {
     stream.getTracks().forEach((t) => t.stop())
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null }
     recording.value = false
     toast.add({
       severity: 'error',
@@ -407,7 +436,29 @@ async function startTabCapture(): Promise<void> {
   mediaStream = stream
   // Stop video tracks immediately — we only need audio
   stream.getVideoTracks().forEach((t) => t.stop())
-  const audioOnly = new MediaStream(stream.getAudioTracks())
+
+  // Step 3 — mix tab + mic into a single MediaStream via Web Audio API.
+  // The MediaRecorder reads from the mixed output so a single chunk carries
+  // both voices. When mic is unavailable we fall back to tab-only.
+  let mixedStream: MediaStream
+  if (micStream && micStream.getAudioTracks().length > 0) {
+    audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    const destination = audioContext.createMediaStreamDestination()
+
+    const tabSource = audioContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()))
+    tabSource.connect(destination)
+
+    // Slight mic attenuation so the PM's mic doesn't drown out the remote
+    // speaker. 0.9 keeps speech audible without clipping when both speak.
+    const micSource = audioContext.createMediaStreamSource(micStream)
+    const micGain = audioContext.createGain()
+    micGain.gain.value = 0.9
+    micSource.connect(micGain).connect(destination)
+
+    mixedStream = destination.stream
+  } else {
+    mixedStream = new MediaStream(stream.getAudioTracks())
+  }
 
   // When the user stops sharing from the browser bar, end the session
   stream.getAudioTracks()[0].addEventListener('ended', () => {
@@ -417,7 +468,7 @@ async function startTabCapture(): Promise<void> {
   let mimeType = 'audio/webm;codecs=opus'
   if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm'
   if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''
-  mediaRecorder = mimeType ? new MediaRecorder(audioOnly, { mimeType }) : new MediaRecorder(audioOnly)
+  mediaRecorder = mimeType ? new MediaRecorder(mixedStream, { mimeType }) : new MediaRecorder(mixedStream)
   archiveChunks = []
   archiveMimeType = mimeType || 'audio/webm'
   mediaRecorder.ondataavailable = async (e) => {
@@ -615,6 +666,14 @@ async function stopAndSave(): Promise<void> {
     mediaStream.getTracks().forEach((t) => t.stop())
     mediaStream = null
   }
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop())
+    micStream = null
+  }
+  if (audioContext) {
+    audioContext.close().catch(() => { /* already closed */ })
+    audioContext = null
+  }
   if (tickIntervalId.value !== null) { window.clearInterval(tickIntervalId.value); tickIntervalId.value = null }
 
   // One final force-fire so the saved meeting carries the freshest state.
@@ -682,6 +741,8 @@ onUnmounted(() => {
     try { mediaRecorder.stop() } catch { /* ignore */ }
   }
   if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop())
+  if (micStream) micStream.getTracks().forEach((t) => t.stop())
+  if (audioContext) audioContext.close().catch(() => { /* already closed */ })
   if (tickIntervalId.value !== null) window.clearInterval(tickIntervalId.value)
   if (copilotFireTimerId !== null) window.clearInterval(copilotFireTimerId)
   // The composable's own onBeforeUnmount handles socket teardown.
