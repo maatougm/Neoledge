@@ -120,8 +120,48 @@ export function useLiveCopilot(projectId: string) {
         { liveSessionId: liveSessionId.value, chunk },
       )
       return data
-    } catch {
+    } catch (e: unknown) {
+      // The server keeps copilot session state in-memory. On a deploy
+      // restart (or the 30-min idle eviction) the session map is wiped
+      // and every subsequent append returns 400 "Session introuvable.",
+      // spamming the console for the rest of the meeting. Auto-recover
+      // once: silently re-start the server session with the same id and
+      // replay this chunk. If the restart also fails, give up on copilot
+      // for this session to stop the firehose.
+      const status = (e as { response?: { status?: number } } | undefined)?.response?.status
+      const message = extractErrorMessage(e)
+      const isSessionGone = status === 400 && /session introuvable/i.test(message ?? '')
+      if (isSessionGone && liveSessionId.value) {
+        const recovered = await _resurrectSession(liveSessionId.value)
+        if (recovered) {
+          try {
+            const { data } = await api.post<{ shouldFire: boolean }>(
+              `/pm/projects/${projectId}/meetings/live/copilot/append`,
+              { liveSessionId: liveSessionId.value, chunk },
+            )
+            return data
+          } catch { /* fall through */ }
+        }
+        // Couldn't recover — stop posting until the user starts a fresh session.
+        enabled.value = false
+      }
       return { shouldFire: false }
+    }
+  }
+
+  /**
+   * Idempotently recreate the server-side session for the given live session id.
+   * Used when the in-memory session map was wiped (deploy / idle eviction) but
+   * the client is mid-meeting and shouldn't notice.
+   */
+  async function _resurrectSession(sessionId: string): Promise<boolean> {
+    try {
+      await api.post(`/pm/projects/${projectId}/meetings/live/copilot/session`, {
+        liveSessionId: sessionId,
+      })
+      return true
+    } catch {
+      return false
     }
   }
 
