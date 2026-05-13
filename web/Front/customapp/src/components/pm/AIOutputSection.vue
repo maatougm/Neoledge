@@ -176,7 +176,7 @@ async function handleGenerate(): Promise<void> {
   try {
     const { data } = await api.get<CahierPreview>(
       `/pm/projects/${props.projectId}/cahier-des-charges/preview`,
-      { timeout: 140_000 },
+      { timeout: 270_000 },
     )
     // Defensive: a misconfigured cache (proxy / browser) could return an
     // empty 304-body even after we added Cache-Control: no-store. Treat the
@@ -214,7 +214,7 @@ async function handleDownloadDocx(): Promise<void> {
   try {
     const response = await api.get<Blob>(
       `/pm/projects/${props.projectId}/cahier-des-charges/generate`,
-      { responseType: 'blob', timeout: 140_000 },
+      { responseType: 'blob', timeout: 270_000 },
     )
     const url = URL.createObjectURL(response.data)
     const a = document.createElement('a')
