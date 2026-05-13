@@ -158,6 +158,10 @@ export class LiveCopilotService {
         return Result.ok(this.skipResult(state, 'cooldown'))
       }
       const newChars = state.totalCharsAppended - state.lastFiredAtOffset
+      // Skip on insufficient new content ONLY when we already have a usable
+      // checklist on screen. While the checklist is still empty (cold start
+      // or post-failure), every append should be allowed to trigger a fire
+      // so the helper actually recovers during the meeting.
       if (newChars < COPILOT_LIMITS.MIN_CONTENT_CHARS && state.checklist.length > 0) {
         return Result.ok(this.skipResult(state, 'min_content'))
       }
@@ -271,6 +275,30 @@ export class LiveCopilotService {
       })
 
       const sanitized = sanitizeEmit(result.output)
+
+      // Empty-emit guard. The agent occasionally returns checklist:[] —
+      // typically when the LLM was confused by a short opening transcript
+      // ("Bonjour, on commence…"). Without this guard the first fire wipes
+      // any seeded items, the WebSocket pushes an empty state to the
+      // client, and every subsequent fire is blocked by cooldown /
+      // min_content gates so the helper never recovers during the meeting.
+      // Treat an empty emit as a soft skip — keep the previous checklist
+      // (or, on first fire, fall through with a 'provider' skip so the
+      // next append-driven fire retries instead of caching a broken state).
+      if (sanitized.checklist.length === 0) {
+        this.addTokenSpend(liveSessionId, result.iterations * 1_500)
+        this.logger.warn(`Copilot empty emit on ${liveSessionId} (fire ${state.fireCount}) — preserving previous checklist`)
+        if (state.checklist.length === 0) {
+          return Result.ok(this.skipResult(state, 'provider'))
+        }
+        return Result.ok({
+          checklist: cloneChecklist(state.checklist),
+          hint: state.hint,
+          readyForCahier: state.readyForCahier,
+          summary: state.summary,
+        })
+      }
+
       const merged = this.applyEmitToState(state, sanitized)
 
       // Bill on success — actual provider tokens when the agent runner exposes them,
