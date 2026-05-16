@@ -136,81 +136,146 @@ export async function runOpenAiCompatibleLoop(args: {
       )
     }
 
-    // Process each tool call. Multi-emit mode: a single iteration may emit
-    // several at once, e.g. emit_summary + emit_action_items together.
-    for (const call of toolCalls) {
+    // ─── Phase 1: parallel tool-call processing ──────────────────────────
+    //
+    // The model can emit N tool_calls in a single assistant message (e.g.
+    // read_questionnaire + read_meeting_summaries + read_validated_cahier).
+    // Reading them sequentially was the dominant cost of the cahier agent
+    // loop — most read tools are independent DB queries.
+    //
+    // Strategy:
+    //   1. Pre-classify every call (parse, identify emit vs read vs error).
+    //   2. Fire every READ handler in parallel via Promise.all (emit tools
+    //      have no handler to run — they're just validated + collected).
+    //   3. Walk the original tool_calls array IN ORDER to push the tool
+    //      replies. OpenAI's chat-completions API requires that every
+    //      tool_call_id is answered AND that the replies appear in the
+    //      same order as the tool_calls field of the assistant message.
+    type Job =
+      | { kind: 'parse-error'; call: typeof toolCalls[number]; tStart: number; argsRaw: string | undefined; error: string }
+      | { kind: 'unknown'; call: typeof toolCalls[number]; tStart: number; parsedArgs: unknown }
+      | { kind: 'emit'; call: typeof toolCalls[number]; tStart: number; parsedArgs: unknown; def: ToolDefinition }
+      | { kind: 'read'; call: typeof toolCalls[number]; tStart: number; parsedArgs: unknown; def: ToolDefinition }
+
+    const jobs: Job[] = toolCalls.map((call) => {
+      const tStart = Date.now()
       const name = call.function.name
       const argsRaw = call.function.arguments
-      const tStart = Date.now()
       let parsedArgs: unknown
       try {
         parsedArgs = argsRaw ? (JSON.parse(argsRaw) as unknown) : {}
       } catch (e) {
-        const err = e instanceof Error ? e.message : String(e)
-        const replyContent = JSON.stringify({ error: 'invalid_json', message: err.slice(0, 200) })
-        messages.push({ role: 'tool', tool_call_id: call.id, content: replyContent })
-        toolCallsLog.push({ iteration: iterationsRun, name, args: argsRaw, ok: false, tookMs: 0, error: err })
-        continue
+        return {
+          kind: 'parse-error' as const,
+          call, tStart, argsRaw,
+          error: e instanceof Error ? e.message : String(e),
+        }
       }
-
-      // Emit tool? Validate and collect; do NOT execute (no handler to run).
       if (emitNames.has(name)) {
         const def = emitTools.find((t) => t.name === name)
-        if (!def) continue
-        const validation = validateAgainst(def.parameters, parsedArgs)
-        if (!validation.ok) {
-          const reply = JSON.stringify({ error: 'invalid_args', message: validation.reason })
-          messages.push({ role: 'tool', tool_call_id: call.id, content: reply })
-          toolCallsLog.push({
-            iteration: iterationsRun, name, args: parsedArgs,
-            ok: false, tookMs: Date.now() - tStart, error: validation.reason,
-          })
-          continue
+        if (!def) return { kind: 'unknown' as const, call, tStart, parsedArgs }
+        return { kind: 'emit' as const, call, tStart, parsedArgs, def }
+      }
+      const def = tools.find((t) => t.name === name)
+      if (!def) return { kind: 'unknown' as const, call, tStart, parsedArgs }
+      return { kind: 'read' as const, call, tStart, parsedArgs, def }
+    })
+
+    // Execute every READ handler concurrently. Each handler's try/catch is
+    // independent so one failing handler doesn't abort the rest of the batch.
+    type ReadOutcome =
+      | { ok: true; replyContent: string; tookMs: number }
+      | { ok: false; replyContent: string; tookMs: number; error: string }
+
+    const readJobs = jobs.filter((j): j is Extract<Job, { kind: 'read' }> => j.kind === 'read')
+    const readOutcomes = await Promise.all(
+      readJobs.map(async (job): Promise<ReadOutcome> => {
+        try {
+          const validation = validateAgainst(job.def.parameters, job.parsedArgs)
+          if (!validation.ok) throw new AgentToolValidationError(job.def.name, validation.reason)
+          const result = await job.def.handler(job.parsedArgs, ctx)
+          const json = JSON.stringify(result)
+          const truncated = json.length > ctx.maxResultChars
+          const replyContent = truncated
+            ? json.slice(0, ctx.maxResultChars) + ' [trunc]'
+            : json
+          return { ok: true, replyContent, tookMs: Date.now() - job.tStart }
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e)
+          logger.warn(`Tool "${job.def.name}" failed: ${errMsg.slice(0, 200)}`)
+          return {
+            ok: false,
+            replyContent: JSON.stringify({ error: 'tool_failed', message: errMsg.slice(0, 300) }),
+            tookMs: Date.now() - job.tStart,
+            error: errMsg,
+          }
         }
-        collectedEmits.set(name, { name, args: parsedArgs })
-        // Echo the args back so the model knows the emit was accepted —
-        // some providers expect a tool reply for every tool_call_id.
-        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: true }) })
-        toolCallsLog.push({ iteration: iterationsRun, name, args: parsedArgs, ok: true, tookMs: Date.now() - tStart })
+      }),
+    )
+    const readOutcomeByCallId = new Map(
+      readJobs.map((job, idx) => [job.call.id, readOutcomes[idx]] as const),
+    )
+
+    // Push tool replies in the ORIGINAL tool_calls order. Mandatory for
+    // OpenAI's API — out-of-order replies trigger a 400.
+    for (const job of jobs) {
+      if (job.kind === 'parse-error') {
+        const reply = JSON.stringify({ error: 'invalid_json', message: job.error.slice(0, 200) })
+        messages.push({ role: 'tool', tool_call_id: job.call.id, content: reply })
+        toolCallsLog.push({
+          iteration: iterationsRun, name: job.call.function.name, args: job.argsRaw,
+          ok: false, tookMs: 0, error: job.error,
+        })
         continue
       }
-
-      // Read tool — find handler, invoke, JSON-stringify the result.
-      const def = tools.find((t) => t.name === name)
-      if (!def) {
-        const reply = JSON.stringify({ error: 'unknown_tool', message: `No tool named "${name}"` })
-        messages.push({ role: 'tool', tool_call_id: call.id, content: reply })
+      if (job.kind === 'unknown') {
+        const reply = JSON.stringify({ error: 'unknown_tool', message: `No tool named "${job.call.function.name}"` })
+        messages.push({ role: 'tool', tool_call_id: job.call.id, content: reply })
         toolCallsLog.push({
-          iteration: iterationsRun, name, args: parsedArgs,
+          iteration: iterationsRun, name: job.call.function.name, args: job.parsedArgs,
           ok: false, tookMs: 0, error: 'unknown_tool',
         })
         continue
       }
-
-      try {
-        const validation = validateAgainst(def.parameters, parsedArgs)
-        if (!validation.ok) throw new AgentToolValidationError(name, validation.reason)
-        const result = await def.handler(parsedArgs, ctx)
-        const json = JSON.stringify(result)
-        const truncated = json.length > ctx.maxResultChars
-        const replyContent = truncated
-          ? json.slice(0, ctx.maxResultChars) + ' [trunc]'
-          : json
-        messages.push({ role: 'tool', tool_call_id: call.id, content: replyContent })
+      if (job.kind === 'emit') {
+        const validation = validateAgainst(job.def.parameters, job.parsedArgs)
+        if (!validation.ok) {
+          const reply = JSON.stringify({ error: 'invalid_args', message: validation.reason })
+          messages.push({ role: 'tool', tool_call_id: job.call.id, content: reply })
+          toolCallsLog.push({
+            iteration: iterationsRun, name: job.def.name, args: job.parsedArgs,
+            ok: false, tookMs: Date.now() - job.tStart, error: validation.reason,
+          })
+          continue
+        }
+        collectedEmits.set(job.def.name, { name: job.def.name, args: job.parsedArgs })
+        // Echo back so the model sees its emit was accepted; OpenAI also
+        // requires every tool_call_id to be answered.
+        messages.push({ role: 'tool', tool_call_id: job.call.id, content: JSON.stringify({ ok: true }) })
         toolCallsLog.push({
-          iteration: iterationsRun, name, args: parsedArgs,
-          ok: true, tookMs: Date.now() - tStart,
+          iteration: iterationsRun, name: job.def.name, args: job.parsedArgs,
+          ok: true, tookMs: Date.now() - job.tStart,
         })
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e)
-        const reply = JSON.stringify({ error: 'tool_failed', message: errMsg.slice(0, 300) })
-        messages.push({ role: 'tool', tool_call_id: call.id, content: reply })
-        toolCallsLog.push({
-          iteration: iterationsRun, name, args: parsedArgs,
-          ok: false, tookMs: Date.now() - tStart, error: errMsg,
-        })
-        logger.warn(`Tool "${name}" failed: ${errMsg.slice(0, 200)}`)
+        continue
       }
+      // kind === 'read'
+      const outcome = readOutcomeByCallId.get(job.call.id)
+      if (!outcome) {
+        // Defensive — should be impossible if the readJobs/outcome map are aligned.
+        const reply = JSON.stringify({ error: 'tool_failed', message: 'missing read outcome' })
+        messages.push({ role: 'tool', tool_call_id: job.call.id, content: reply })
+        toolCallsLog.push({
+          iteration: iterationsRun, name: job.def.name, args: job.parsedArgs,
+          ok: false, tookMs: 0, error: 'missing_outcome',
+        })
+        continue
+      }
+      messages.push({ role: 'tool', tool_call_id: job.call.id, content: outcome.replyContent })
+      toolCallsLog.push({
+        iteration: iterationsRun, name: job.def.name, args: job.parsedArgs,
+        ok: outcome.ok, tookMs: outcome.tookMs,
+        ...(outcome.ok ? {} : { error: outcome.error }),
+      })
     }
 
     // Termination check.
