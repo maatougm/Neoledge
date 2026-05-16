@@ -9,7 +9,7 @@ import {
   type ProposedEpic,
 } from './backlog-generator.js';
 import { AgentRunnerService } from './agent/agent-runner.service.js';
-import { runBacklogAgent } from './backlog-agent.js';
+import { runBacklogAgent, runBacklogPlannerWorker } from './backlog-agent.js';
 import { AgentEmitMissedError } from './agent/agent-errors.js';
 
 const AI_GENERATED_TAG = 'questionnaire+cahier+meeting';
@@ -68,9 +68,15 @@ export class BacklogService {
     await this.assertDriverFieldsFilled(projectId);
 
     // Agent mode — model fetches what it needs via tools, no pre-built context.
+    // BACKLOG_USE_PLANNER=on routes to the planner-worker variant (deterministic
+    // parallel reads + single-shot worker emit) which cut the cahier path's
+    // wall time by 81% — same architecture, same expected win profile here.
     if (this.isAgentModeEnabled()) {
+      const usePlanner = (this.config.get<string>('BACKLOG_USE_PLANNER') ?? 'off').toLowerCase() === 'on';
       try {
-        return await runBacklogAgent(this.agentRunner, this.logger, projectId);
+        return usePlanner
+          ? await runBacklogPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId)
+          : await runBacklogAgent(this.agentRunner, this.logger, projectId);
       } catch (e) {
         // AgentEmitMissedError → fall through to single-shot. Other errors
         // surface as 502 like before.
