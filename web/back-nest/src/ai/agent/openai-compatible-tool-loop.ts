@@ -341,6 +341,12 @@ async function postCompletion(args: PostArgs): Promise<OpenAiCompletion> {
       messages,
       tools,
       tool_choice: toolChoice,
+      // Explicitly opt into parallel tool-calls — OpenAI defaults true but the
+      // flag makes our intent legible and lets Z.AI / Moonshot / Groq pick it
+      // up via their OpenAI-compatible layers. The runtime already handles
+      // multi-call batches via Promise.all (see Phase 1 refactor); this flag
+      // nudges the model toward emitting them.
+      parallel_tool_calls: true,
       temperature: 0.3,
       max_tokens: 4096,
     }),
