@@ -10,7 +10,8 @@
 
 import { Logger } from '@nestjs/common'
 import type { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
-import type { ToolDefinition } from '../ai/agent/agent-types.js'
+import type { ToolContext, ToolDefinition } from '../ai/agent/agent-types.js'
+import type { PrismaService } from '../prisma/prisma.service.js'
 import { obj, str, arr } from '../ai/agent/json-schema.js'
 import type { CahierAiResult } from './cahier-des-charges.types.js'
 import {
@@ -107,6 +108,132 @@ export async function runCahierAgent(
   })
   logger.log(
     `Cahier agent done — ${result.iterations} iter, ${result.toolCallsLog.length} tool calls, model=${result.model}`,
+  )
+  return result.output
+}
+
+// ─── Phase 5 — Planner / Worker variant ─────────────────────────────────────
+//
+// For the cahier, the SET of reads is deterministic — we always want the same
+// six tools (project summary, full questionnaire, validated cahier, validation
+// feedback, meeting summaries, glossary). The "planner" decision is therefore
+// constant; no extra LLM call needed.
+//
+// Pattern:
+//   1. Execute every read in parallel (Promise.all).
+//   2. Concatenate the results into a single user-message context blob.
+//   3. Single LLM call: pass the blob, force `emit_cahier`. No loop.
+//
+// Round-trip count drops from N (3–10 today) to ONE. Worth a side-by-side
+// measurement against the loop because the worker has to digest a bigger
+// context upfront — net win depends on (loop overhead) vs (worker context
+// cost). Wired behind `CAHIER_USE_PLANNER` env flag, default OFF.
+//
+// `read_meeting_segments` (keyword-driven, query-specific) is intentionally
+// excluded — its job is "find a specific quote I'm missing", which the
+// single-shot worker cannot decide it needs on the fly. If we later add
+// pgvector semantic retrieval (Phase 4), it slots in here as a deterministic
+// "top-K excerpts" call.
+const WORKER_SYSTEM_PROMPT = `Tu es expert NeoLedge / Archimed en rédaction de cahiers des charges contractuels (modèle Elise). Tu dois produire un cahier complet en 9 sections.
+
+Tu reçois EN ENTRÉE un contexte projet déjà rassemblé par le système (questionnaire, cahier validé précédent, retours de validation, résumés de réunions, glossaire). Tu n'as PAS d'outils de lecture. Appelle directement \`emit_cahier\` avec les 9 clés en t'appuyant uniquement sur le contexte fourni.
+
+Règles strictes pour la sortie :
+- Langue : français, ton contractuel professionnel, exhaustif.
+- Markdown autorisé À L'INTÉRIEUR des strings uniquement (\`**gras**\`, listes \`- \`, sauts de ligne \\n).
+- "À définir" ou "INFO_MANQUANTE: <topic>" si une info manque vraiment dans le contexte. Ne jamais inventer.
+- exigencesFonctionnelles : 4–6 modules, chacun = phrase d'intro + bullets.
+- architectureTechnique : 3–4 composants UNIQUEMENT si le contexte les mentionne. Sinon INFO_MANQUANTE.
+- livrables : ne liste que ce que le contexte ou le questionnaire indique. INFO_MANQUANTE sinon.
+- Conclusion : paragraphe synthétique sans liste.
+
+PRIORITÉ DES SOURCES (du plus prioritaire au moins prioritaire) :
+A. CAHIER VALIDÉ (si présent dans le contexte) — version corrigée qui fait foi. Préserve les phrases existantes.
+B. RETOURS DE VALIDATION — corrige UNIQUEMENT ce qui est explicitement signalé.
+C. QUESTIONNAIRE + RÉUNIONS — sources brutes pour combler.
+
+Tu n'es PAS autorisé à reformuler une section déjà corrigée juste pour "améliorer le style".`
+
+interface ReadOutcome {
+  label: string
+  ok: boolean
+  data: unknown
+}
+
+async function runReadSafely(
+  label: string,
+  tool: ToolDefinition,
+  args: unknown,
+  ctx: ToolContext,
+  logger: Logger,
+): Promise<ReadOutcome> {
+  try {
+    const data = await tool.handler(args, ctx)
+    return { label, ok: true, data }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.warn(`planner-worker: read "${label}" failed — ${msg.slice(0, 200)}`)
+    return { label, ok: false, data: { error: msg.slice(0, 300) } }
+  }
+}
+
+function formatContextBlob(outcomes: ReadOutcome[]): string {
+  const TRUNCATE_PER_SECTION = 6000
+  return outcomes
+    .map((o) => {
+      const body = JSON.stringify(o.data)
+      const trimmed = body.length > TRUNCATE_PER_SECTION
+        ? body.slice(0, TRUNCATE_PER_SECTION) + ' [trunc]'
+        : body
+      return `## ${o.label}\n${trimmed}`
+    })
+    .join('\n\n---\n\n')
+}
+
+export async function runCahierPlannerWorker(
+  runner: AgentRunnerService,
+  prisma: PrismaService,
+  logger: Logger,
+  projectId: string,
+): Promise<CahierAiResult> {
+  const startedAt = Date.now()
+  const toolCtx: ToolContext = {
+    projectId,
+    logger,
+    prisma,
+    maxResultChars: 12_000,
+  }
+
+  // 1. Parallel reads — the "executor" step. No planner LLM call needed
+  //    because the cahier read set is deterministic. If one read fails
+  //    the others continue; the worker sees an `{error: ...}` payload
+  //    for that section and degrades gracefully.
+  const reads = await Promise.all([
+    runReadSafely('PROJET', readProjectSummaryTool, {}, toolCtx, logger),
+    runReadSafely('QUESTIONNAIRE', readQuestionnaireTool, { driverOnly: false }, toolCtx, logger),
+    runReadSafely('CAHIER_VALIDE', readValidatedCahierTool, {}, toolCtx, logger),
+    runReadSafely('REUNIONS', readMeetingSummariesTool, {}, toolCtx, logger),
+    runReadSafely('RETOURS_VALIDATION', readValidationFeedbackTool, {}, toolCtx, logger),
+    runReadSafely('GLOSSAIRE', readGlossaryTool, {}, toolCtx, logger),
+  ])
+  const readsMs = Date.now() - startedAt
+
+  // 2. Single-shot worker call — maxIterations=1 with one emit tool forces
+  //    the agent runtime to call emit_cahier immediately. No reads needed
+  //    (empty `tools: []`); all context is already in the user message.
+  const contextBlob = formatContextBlob(reads)
+  const result = await runner.run<CahierAiResult>({
+    systemPrompt: WORKER_SYSTEM_PROMPT,
+    userMessage: `Voici le contexte projet rassemblé par le système :\n\n${contextBlob}\n\nAppelle MAINTENANT \`emit_cahier\` avec les 9 clés en utilisant uniquement ce contexte.`,
+    tools: [],
+    emitTools: [emitCahierTool],
+    maxIterations: 1,
+    feature: 'cahier',
+    projectId,
+  })
+
+  logger.log(
+    `Cahier planner-worker done — reads=${readsMs}ms total=${Date.now() - startedAt}ms model=${result.model}`,
   )
   return result.output
 }

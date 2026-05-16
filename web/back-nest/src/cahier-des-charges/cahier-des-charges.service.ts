@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
 import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
 import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
-import { runCahierAgent } from './cahier-agent.js'
+import { runCahierAgent, runCahierPlannerWorker } from './cahier-agent.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 import { redactPii } from '../common/pii-redact.js'
@@ -1028,14 +1028,24 @@ RÈGLES :
     // Fall through to single-shot only on AgentEmitMissedError. Other agent
     // errors propagate (cost / token / network issues) — same shape the
     // single-shot path produces today.
+    //
+    // Phase 5 — planner/worker variant. When `CAHIER_USE_PLANNER=on`, replace
+    // the agent loop with a single-shot pattern: execute the 6 deterministic
+    // reads in parallel, hand the worker a pre-assembled context blob, force
+    // emit_cahier in one LLM call. Round-trip count drops from N→1. Falls
+    // through to the agent loop on AgentEmitMissedError (same recovery
+    // pattern as the agent path itself).
     if (projectId && this.isAgentModeEnabled()) {
       const startedAt = Date.now()
       const agentModel = this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air'
+      const usePlanner = (this.config.get<string>('CAHIER_USE_PLANNER') ?? 'off').toLowerCase() === 'on'
       try {
-        const out = await runCahierAgent(this.agentRunner, this.logger, projectId)
+        const out = usePlanner
+          ? await runCahierPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId)
+          : await runCahierAgent(this.agentRunner, this.logger, projectId)
         void this.aiUsage.log({
           projectId,
-          provider: 'agent',
+          provider: usePlanner ? 'planner-worker' : 'agent',
           model: agentModel,
           feature: 'cahier',
           durationMs: Date.now() - startedAt,
