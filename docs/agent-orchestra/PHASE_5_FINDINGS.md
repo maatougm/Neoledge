@@ -1,6 +1,6 @@
 # Phase 5 — Planner / Worker — Findings
 
-**Status:** infrastructure shipped (`CAHIER_USE_PLANNER` env flag, default `off`). End-to-end latency win NOT achieved on the first measurement — bottleneck moved downstream to self-critique. Production remains on the agent loop path.
+**Status (2026-05-16 final):** ✅ **PROMOTED TO PRODUCTION** after the self-critique flag landed. Two env flags now active on the test server: `CAHIER_USE_PLANNER=on` + `CAHIER_PLANNER_SKIP_CRITIQUE=on`. Cahier `/preview` end-to-end measured at **21.2 s** vs **108.5 s** baseline (**81% reduction**). Agent + copilot smokes both pass.
 
 ## What shipped (production-ready)
 
@@ -14,8 +14,9 @@
 
 | Path | Server-side /preview total | Agent layer time only | Comment |
 |---|---|---|---|
-| Agent loop (baseline, flag off) | **108.5s** | ~80s (3 iter × ~27s) | Reference. |
-| Planner-worker (flag on) | **123.3s** ❌ | **27.978s** ✅ | Agent layer 74% faster; total slower due to self-critique. |
+| Agent loop (baseline, flags off) | **108.5s** | ~80s (3 iter × ~27s) | Reference. |
+| Planner-worker (USE_PLANNER on, SKIP_CRITIQUE off) | **123.3s** ❌ | 27.978s ✅ | Agent layer 74% faster; total slower because self-critique still ran. |
+| Planner-worker (USE_PLANNER on, SKIP_CRITIQUE on) | **21.2s** ✅ | 20.876s | Final state. Self-critique skipped — net **81% reduction** vs baseline. |
 
 Key log line on the planner-worker run:
 ```
@@ -63,4 +64,9 @@ This deterministic-plan shape only works for the **cahier**. The live-meeting co
 
 ## Decision
 
-**Hold Phase 5 in "shipped, off-by-default" state.** The code is correct, the architecture is sound, the win exists in the agent layer (74% faster) but is currently invisible at the user level. Promoting to default-on requires either skipping self-critique on this path (option 1) or moving it off the critical path (option 2). Either is a follow-up of ~0.5 day with measurement via Phase 2's eval harness.
+**Phase 5 promoted to production with both flags on.** End-to-end cahier latency dropped from 108.5 s to 21.2 s (81%) on the live test server. Trade-off documented: with self-critique skipped, the worker occasionally tags speculative content with "à confirmer" rather than `INFO_MANQUANTE` (one such case observed in the verification run: `"vite.js (react/vue à confirmer)"`). The grounding regex still catches the canonical hallucination class. To revert, set either flag to `off` in `.env.prod` — no code change required.
+
+## Quality monitoring follow-ups
+
+- Run the Phase 2 eval harness (`npm run eval:cahier`) against the new path. Aim for suite score ≥ today's baseline ± 5 points. If the score drops materially, re-enable critique.
+- The "à confirmer" speculation pattern is a known artifact of skipping critique. If it becomes annoying, sharpen the worker system prompt to forbid speculative wording: "ne propose JAMAIS d'options 'A à confirmer / B à confirmer' — utilise INFO_MANQUANTE à la place."
