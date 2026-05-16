@@ -1,0 +1,31 @@
+{
+  "projectName": "EVAL-GED Mairie Pilote",
+  "clientName": "Mairie de Vincennes",
+  "fields": [
+    {
+      "label": "Contexte et problématique",
+      "value": "La Mairie de Vincennes souhaite dématérialiser les arrêtés municipaux."
+    },
+    {
+      "label": "Objectif du projet et résultats attendus",
+      "value": "Mettre en place un système GED simple pour 25 agents administratifs."
+    },
+    {
+      "label": "Périmètre fonctionnel (modules à développer)",
+      "value": "Capture documents, classement, recherche."
+    },
+    {
+      "label": "Stack technique proposée",
+      "value": "À définir avec l'équipe technique."
+    },
+    {
+      "label": "Livrables attendus",
+      "value": "Plateforme + formation."
+    },
+    {
+      "label": "Périmètre exclus",
+      "value": ""
+    }
+  ],
+  "transcripts": []
+}

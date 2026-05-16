@@ -1,0 +1,42 @@
+{
+  "projectName": "EVAL-GED Archimed Banque Cantonale",
+  "clientName": "Banque Cantonale de Vaud",
+  "fields": [
+    {
+      "label": "Contexte et problématique",
+      "value": "La BCV doit remplacer son ancien système de gestion électronique de documents (GED) basé sur SharePoint 2013. Le système actuel ne supporte ni la signature électronique qualifiée eIDAS, ni l'archivage légal NF Z42-013, et ses performances dégradent au-delà de 2 millions de documents. La banque traite 1,2 million de nouveaux documents par an, principalement des contrats de crédit, des relevés et des courriers clients."
+    },
+    {
+      "label": "Objectif du projet et résultats attendus",
+      "value": "Déployer Archimed Elise comme nouvelle plateforme GED unifiée, avec migration des 8 millions de documents existants, mise en service en production le 20 octobre 2026, et certification NF Z42-013 obtenue avant fin novembre 2026. Onboarding de 3 200 utilisateurs métiers en deux vagues."
+    },
+    {
+      "label": "Périmètre fonctionnel (modules à développer)",
+      "value": "Module GED Elise core (capture, classement automatique, recherche full-text, OCR PDF/A), workflows BPMN d'approbation de crédit, signature électronique eIDAS via connecteur SwissSign, archivage légal NF Z42-013, portail utilisateur web responsive, application mobile iOS/Android pour consultation hors-ligne, connecteur SAP S/4HANA pour les pièces comptables."
+    },
+    {
+      "label": "Stack technique proposée",
+      "value": "Frontend Neoform (PrimeVue 4 + Vue 3) ; Backend Elise.Automate (.NET 8 C#) + Web API REST ; base de données PostgreSQL 16 ; moteur OCR Tesseract 5 ; module IA Azure OpenAI (gpt-4o) pour la classification automatique ; signature SwissSign API ; orchestration via Azure Service Bus ; hébergement on-premise Banque Cantonale."
+    },
+    {
+      "label": "Livrables attendus",
+      "value": "Plateforme Elise GED en production ; scripts de migration des 8M documents SharePoint ; documentation technique (architecture, API, exploitation) ; guide utilisateur en français ; rapport de tests de charge (10 000 utilisateurs concurrents) ; certification NF Z42-013 signée ; formation des 40 administrateurs et 3 200 utilisateurs finaux."
+    },
+    {
+      "label": "Périmètre exclus",
+      "value": "Refonte des applications métiers consommatrices de la GED (Murex, Avaloq) ; migration des e-mails Exchange ; archivage des bandes magnétiques d'avant 2010."
+    }
+  ],
+  "transcripts": [
+    {
+      "title": "Kickoff GED BCV — 4 mars 2026",
+      "summary": "Réunion de cadrage avec le DSI et le responsable conformité de la BCV. Confirmation du choix Elise/Archimed, validation du budget 4,2 MCHF, calendrier serré : pilote le 15 juin, production le 20 octobre 2026. Le responsable conformité a insisté sur la certification NF Z42-013 comme prérequis non-négociable.",
+      "decisions": "Décision : retenir l'option signature qualifiée SwissSign (rejet de DocuSign pour des raisons de souveraineté). Risque identifié : la migration des 8M documents SharePoint dépasse les estimations initiales — prévoir un sprint de 6 semaines dédié."
+    },
+    {
+      "title": "Atelier OCR + classification IA — 18 mars 2026",
+      "summary": "Atelier technique avec l'équipe data science. Validation de l'approche : Tesseract 5 pour l'OCR brut, puis classification fine par Azure OpenAI gpt-4o avec un schéma de 47 catégories métier. Précision visée : 92% sur les contrats de crédit, 88% sur les courriers entrants.",
+      "decisions": "Décision : pré-entraîner gpt-4o sur 50 000 documents annotés issus de SharePoint avant la mise en production. Risque : volumétrie des appels Azure OpenAI estimée à 2,4 millions par mois — vérifier le quota."
+    }
+  ]
+}

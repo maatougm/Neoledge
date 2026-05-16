@@ -1,0 +1,28 @@
+{
+  "mustMention": [
+    "Vincennes",
+    "Mairie",
+    "GED",
+    "25 agents"
+  ],
+  "mustNotMention": [
+    "BCV",
+    "10000 utilisateurs",
+    "blockchain",
+    "Salesforce",
+    "1 million de documents",
+    "SharePoint",
+    "SAP"
+  ],
+  "requiredSections": [
+    "objectifDocument",
+    "contexte",
+    "objectifProjet",
+    "perimetreInclus",
+    "perimetreExclus",
+    "exigencesFonctionnelles",
+    "architectureTechnique",
+    "livrables",
+    "conclusion"
+  ]
+}

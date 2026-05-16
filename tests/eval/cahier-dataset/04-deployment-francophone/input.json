@@ -1,0 +1,42 @@
+{
+  "projectName": "EVAL-Déploiement Mairie Numérique",
+  "clientName": "Communauté d'Agglomération du Pays de Gex",
+  "fields": [
+    {
+      "label": "Contexte et problématique",
+      "value": "La Communauté d'Agglomération du Pays de Gex regroupe 27 communes et 110 000 habitants. Les 27 mairies utilisent toutes des systèmes hétérogènes pour la gestion des délibérations, parapheurs électroniques et état-civil. La direction des systèmes d'information souhaite déployer une plateforme commune Elise pour mutualiser les outils, dans le cadre du programme France Relance — Numérique des collectivités."
+    },
+    {
+      "label": "Objectif du projet et résultats attendus",
+      "value": "Déployer Elise dans les 27 mairies en deux vagues : 12 mairies pilotes pour le 30 juin 2026, puis les 15 restantes pour le 31 décembre 2026. Tous les agents administratifs (environ 480 personnes) doivent être formés."
+    },
+    {
+      "label": "Périmètre fonctionnel (modules à développer)",
+      "value": "Module Elise Délibérations (création, vote, archivage des conseils municipaux), parapheur électronique conforme RGS** avec signature ANSSI, état-civil dématérialisé (naissances, mariages, décès) avec connecteur COMEDEC, courrier entrant/sortant avec routage intelligent."
+    },
+    {
+      "label": "Stack technique proposée",
+      "value": "Neoform front-end ; Elise.Automate backend en .NET 8 ; base PostgreSQL 16 hébergée chez OVH Strasbourg (souveraineté SecNumCloud) ; signature ANSSI RGS** via prestataire CertEurope ; intégration COMEDEC via API REST."
+    },
+    {
+      "label": "Livrables attendus",
+      "value": "27 instances Elise configurées, scripts de déploiement automatisés, documentation d'exploitation, plan de formation des 480 agents, recette signée par chaque maire."
+    },
+    {
+      "label": "Périmètre exclus",
+      "value": "La gestion des cimetières et concessions funéraires reste sur l'outil municipal existant. Les bulletins de paie sont gérés par un prestataire externe non concerné."
+    }
+  ],
+  "transcripts": [
+    {
+      "title": "Comité Technique Pays de Gex — 12 février 2026",
+      "summary": "Réunion avec la directrice DSI de l'agglomération et trois maires représentants. Validation du choix Elise. Insistance sur l'hébergement en France (OVH Strasbourg) pour des raisons de souveraineté SecNumCloud. La directrice DSI rappelle que le budget total est de 1,8 million d'euros sur 18 mois.",
+      "decisions": "Décision : hébergement obligatoire SecNumCloud chez OVH Strasbourg, pas de cloud public américain. Risque : la formation des 480 agents sur 27 sites géographiquement distants demandera une logistique conséquente — prévoir des formateurs itinérants."
+    },
+    {
+      "title": "Atelier état-civil COMEDEC — 5 mars 2026",
+      "summary": "Présentation de l'API COMEDEC du Ministère de l'Intérieur par la chef de projet. Le connecteur Elise existant doit être adapté pour gérer la nouvelle version 2.3 de l'API publiée en janvier 2026. Cela représente environ 80 jours-homme de développement supplémentaire.",
+      "decisions": "Décision : développer un connecteur COMEDEC v2.3 dédié, planifié sur le sprint de juin 2026. Risque : si l'API change à nouveau d'ici la mise en prod, il faudra refaire le travail."
+    }
+  ]
+}

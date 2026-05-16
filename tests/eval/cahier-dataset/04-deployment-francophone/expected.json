@@ -1,0 +1,32 @@
+{
+  "mustMention": [
+    "Pays de Gex",
+    "27 mairies",
+    "Elise",
+    "COMEDEC",
+    "OVH",
+    "PostgreSQL",
+    "SecNumCloud",
+    "RGS"
+  ],
+  "mustNotMention": [
+    "Azure",
+    "AWS",
+    "Google Cloud",
+    "DocuSign",
+    "Salesforce",
+    "SAP",
+    "MongoDB"
+  ],
+  "requiredSections": [
+    "objectifDocument",
+    "contexte",
+    "objectifProjet",
+    "perimetreInclus",
+    "perimetreExclus",
+    "exigencesFonctionnelles",
+    "architectureTechnique",
+    "livrables",
+    "conclusion"
+  ]
+}

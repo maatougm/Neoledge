@@ -1,0 +1,30 @@
+{
+  "mustMention": [
+    "Safran",
+    "onboarding",
+    "Workday",
+    "PostgreSQL",
+    "BPMN",
+    "Vélizy",
+    "Gennevilliers"
+  ],
+  "mustNotMention": [
+    "HID Origo direct",
+    "AWS",
+    "Salesforce",
+    "DocuSign",
+    "Oracle HCM",
+    "BMC Remedy"
+  ],
+  "requiredSections": [
+    "objectifDocument",
+    "contexte",
+    "objectifProjet",
+    "perimetreInclus",
+    "perimetreExclus",
+    "exigencesFonctionnelles",
+    "architectureTechnique",
+    "livrables",
+    "conclusion"
+  ]
+}
