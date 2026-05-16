@@ -1056,6 +1056,21 @@ RÈGLES :
         // names (React/Vue.js/etc.) coming out of this branch. Run the same
         // two-layer defence here.
         const agentGrounded = this.applyGroundingCheck(out, this.buildSourceCorpus(formData, transcripts, undefined))
+        // Phase 5 follow-up: when the planner-worker path produced the cahier,
+        // skipping the self-critique pass becomes defensible — the worker saw
+        // a deterministic, fully-assembled context blob in a single LLM call
+        // with no opportunity to drift mid-generation. The regex grounding
+        // check still runs (catches the canonical named-tech hallucination
+        // class). Trade-off: loses the second-pass French-style polish, but
+        // saves ~90s on the end-to-end /preview wall time per measurement.
+        // Default off — turn on with CAHIER_PLANNER_SKIP_CRITIQUE=on.
+        const skipCritique =
+          usePlanner &&
+          (this.config.get<string>('CAHIER_PLANNER_SKIP_CRITIQUE') ?? 'off').toLowerCase() === 'on'
+        if (skipCritique) {
+          this.logger.log('Cahier planner-worker path: skipping self-critique per CAHIER_PLANNER_SKIP_CRITIQUE=on')
+          return agentGrounded
+        }
         return await this.runSelfCritique(agentGrounded, formData, transcripts, projectId).catch(() => agentGrounded)
       } catch (e: unknown) {
         if (e instanceof AgentEmitMissedError) {
