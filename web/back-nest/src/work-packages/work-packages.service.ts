@@ -5,7 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { AgentRunnerService } from '../ai/agent/agent-runner.service.js';
-import { runAssignmentAgent, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
+import { runAssignmentAgent, runAssignmentPlannerWorker, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
 
 export interface WorkPackageFilters {
   status?: string;
@@ -869,8 +869,15 @@ export class WorkPackagesService {
     }
     // Trim to 50 — controller DTO already enforces, but be safe.
     const candidate = wpIds.slice(0, 50);
+    // ASSIGNMENT_USE_PLANNER=on routes to the planner-worker variant — same
+    // pattern as cahier + backlog (see docs/agent-orchestra/PHASE_5_FINDINGS.md).
+    // Default off; falls back to the agent loop on any error inside the
+    // planner-worker path via the existing catch below.
+    const usePlanner = (process.env.ASSIGNMENT_USE_PLANNER ?? 'off').toLowerCase() === 'on';
     try {
-      const items = await runAssignmentAgent(this.agentRunner, this.logger, projectId, candidate);
+      const items = usePlanner
+        ? await runAssignmentPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId, candidate)
+        : await runAssignmentAgent(this.agentRunner, this.logger, projectId, candidate);
       return Result.ok({ items });
     } catch (e) {
       this.logger.warn(`suggestAssignments failed: ${e instanceof Error ? e.message : String(e)}`);

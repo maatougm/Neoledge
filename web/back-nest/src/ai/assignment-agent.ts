@@ -9,7 +9,8 @@
 
 import { Logger } from '@nestjs/common'
 import type { AgentRunnerService } from './agent/agent-runner.service.js'
-import type { ToolDefinition } from './agent/agent-types.js'
+import type { ToolContext, ToolDefinition } from './agent/agent-types.js'
+import type { PrismaService } from '../prisma/prisma.service.js'
 import { obj, str, num, arr } from './agent/json-schema.js'
 import { buildAssignmentTools } from './agent/tools/assignment-tools.js'
 import { readGlossaryTool } from './agent/tools/glossary-tools.js'
@@ -122,6 +123,145 @@ export async function runAssignmentAgent(
   )
 
   // Defensive validation — drop entries for unknown wpIds and clamp confidence.
+  const candidateSet = new Set(candidateWpIds)
+  return (result.output.items ?? [])
+    .filter((it) => candidateSet.has(it.wpId))
+    .map((it) => ({
+      wpId: it.wpId,
+      suggestions: (it.suggestions ?? [])
+        .filter((s) => typeof s.userId === 'string' && s.userId.length > 0)
+        .map((s) => ({
+          userId: s.userId,
+          confidence: Math.max(0, Math.min(1, Number(s.confidence) || 0)),
+          rationale: (s.rationale ?? '').slice(0, 200),
+        })),
+    }))
+}
+
+// ─── Planner / Worker variant ───────────────────────────────────────────────
+//
+// Same pattern as cahier + backlog (docs/agent-orchestra/PHASE_5_FINDINGS.md):
+// the deterministic reads collapse into one parallel batch; the worker emits
+// in a single LLM call. For assignment the planner is also deterministic — we
+// always want project_summary, candidate_tasks, project_members (whose payload
+// now carries jobTitle + top-3 recent resolved titles per the recent enhancement
+// — eliminates the need for per-member read_member_history follow-ups), and
+// glossary. Flag-gated ASSIGNMENT_USE_PLANNER, default off.
+const WORKER_SYSTEM_PROMPT = `Tu es un manager IT expérimenté qui aide un chef de projet à choisir le meilleur assigné pour chaque tâche IT.
+
+Tu reçois EN ENTRÉE un contexte projet déjà rassemblé par le système (résumé projet, tâches candidates, membres éligibles avec jobTitle + recentResolvedTitles + charge actuelle, glossaire). Tu n'as PAS d'outils de lecture. Appelle directement \`emit_assignments\` avec une entrée par tâche candidate.
+
+Hiérarchie des signaux (du plus fort au plus faible) :
+1. **\`jobTitle\`** : signal le plus fort. "Backend Engineer" → API/DB/serveur. "Frontend" / "UI" → écrans. "QA"/"Tester" → Bug. "DevOps"/"SRE" → infra. "Data" → ETL/pipelines. "Designer" → UX. Si \`jobTitle\` est null, descends d'un cran.
+2. **\`recentResolvedTitles\`** : ce que le candidat livre vraiment sur CE projet. Plus fiable que jobTitle quand les deux divergent.
+3. **\`department\`** : signal secondaire utile si jobTitle ambigu.
+4. **\`label\` (rôle plateforme)** : COARSE — ne jamais utiliser seul.
+5. **Charge actuelle (\`inProgressCount\`)** : tie-breaker. Pénalise au-delà de 5 WPs en cours.
+6. **Familiarité projet (\`totalAssignedThisProject\`)** : tie-breaker secondaire.
+
+Règles de confiance :
+- **0.90+** : jobTitle colle ET un recentResolvedTitles est très similaire.
+- **0.75–0.89** : l'un des deux colle.
+- **0.60–0.74** : signal indirect (department, type générique).
+- **< 0.60** : ne propose pas — exclure de \`suggestions\` plutôt qu'émettre du bruit.
+
+Règles supplémentaires :
+- **Diversité** : ne pas assigner toutes les tâches au même candidat. Répartis sauf expertise rare.
+- **Désigner un seul "champion"** par tâche : suggestion #1 = pick clair, #2/#3 = fallbacks.
+- **Pas d'invention** : \`userId\` DOIT venir de la section MEMBRES du contexte.
+- **Aucun match crédible (>= 0.60)** → entrée avec \`suggestions: []\`.
+- **\`rationale\` en français, max 140 caractères**, doit citer un signal concret du contexte ("jobTitle: Senior Frontend — a livré 'Page profil'"). Pas de boilerplate.
+
+Format de chaque suggestion :
+- \`userId\` : exactement la valeur \`userId\` du membre.
+- \`confidence\` : 0.60 à 1.0.
+- \`rationale\` : 1 phrase courte référant à jobTitle / recentResolvedTitles / department.`
+
+interface ReadOutcome {
+  label: string
+  ok: boolean
+  data: unknown
+}
+
+async function runReadSafely(
+  label: string,
+  tool: ToolDefinition,
+  args: unknown,
+  ctx: ToolContext,
+  logger: Logger,
+): Promise<ReadOutcome> {
+  try {
+    const data = await tool.handler(args, ctx)
+    return { label, ok: true, data }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.warn(`assignment planner-worker: read "${label}" failed — ${msg.slice(0, 200)}`)
+    return { label, ok: false, data: { error: msg.slice(0, 300) } }
+  }
+}
+
+function formatContextBlob(outcomes: ReadOutcome[]): string {
+  const TRUNCATE_PER_SECTION = 6000
+  return outcomes
+    .map((o) => {
+      const body = JSON.stringify(o.data)
+      const trimmed = body.length > TRUNCATE_PER_SECTION
+        ? body.slice(0, TRUNCATE_PER_SECTION) + ' [trunc]'
+        : body
+      return `## ${o.label}\n${trimmed}`
+    })
+    .join('\n\n---\n\n')
+}
+
+export async function runAssignmentPlannerWorker(
+  runner: AgentRunnerService,
+  prisma: PrismaService,
+  logger: Logger,
+  projectId: string,
+  candidateWpIds: string[],
+): Promise<AssignmentSuggestionForWp[]> {
+  if (candidateWpIds.length === 0) return []
+
+  const startedAt = Date.now()
+  const toolCtx: ToolContext = {
+    projectId,
+    logger,
+    prisma,
+    maxResultChars: 12_000,
+  }
+
+  // `buildAssignmentTools` returns [readCandidates, readMembers, readHistory].
+  // The history tool is skipped for the planner-worker — readMembers's payload
+  // now carries the top-3 recentResolvedTitles per user (recent enhancement),
+  // which is enough for a single-shot decision.
+  const [readCandidates, readMembers /* readHistory not used */] = buildAssignmentTools(projectId, candidateWpIds)
+
+  // 1. Parallel reads.
+  const reads = await Promise.all([
+    runReadSafely('PROJET', readProjectSummaryTool, {}, toolCtx, logger),
+    runReadSafely('TACHES_CANDIDATES', readCandidates, {}, toolCtx, logger),
+    runReadSafely('MEMBRES', readMembers, {}, toolCtx, logger),
+    runReadSafely('GLOSSAIRE', readGlossaryTool, {}, toolCtx, logger),
+  ])
+  const readsMs = Date.now() - startedAt
+
+  // 2. Single-shot worker emit.
+  const contextBlob = formatContextBlob(reads)
+  const result = await runner.run<{ items: AssignmentSuggestionForWp[] }>({
+    systemPrompt: WORKER_SYSTEM_PROMPT,
+    userMessage: `Voici le contexte projet rassemblé par le système :\n\n${contextBlob}\n\nAppelle MAINTENANT \`emit_assignments\` avec exactement une entrée par tâche dans TACHES_CANDIDATES.`,
+    tools: [],
+    emitTools: [emitAssignmentsTool],
+    maxIterations: 1,
+    feature: 'backlog', // keep aligned with the loop variant for AiUsage continuity
+    projectId,
+  })
+
+  logger.log(
+    `Assignment planner-worker done — reads=${readsMs}ms total=${Date.now() - startedAt}ms suggestions=${result.output.items?.length ?? 0} model=${result.model}`,
+  )
+
+  // Same defensive validation as runAssignmentAgent.
   const candidateSet = new Set(candidateWpIds)
   return (result.output.items ?? [])
     .filter((it) => candidateSet.has(it.wpId))

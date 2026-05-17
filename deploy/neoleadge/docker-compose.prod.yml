@@ -58,6 +58,7 @@ services:
       CAHIER_USE_PLANNER: ${CAHIER_USE_PLANNER:-off}
       CAHIER_PLANNER_SKIP_CRITIQUE: ${CAHIER_PLANNER_SKIP_CRITIQUE:-off}
       BACKLOG_USE_PLANNER: ${BACKLOG_USE_PLANNER:-off}
+      ASSIGNMENT_USE_PLANNER: ${ASSIGNMENT_USE_PLANNER:-off}
       LIVE_MEETING_COPILOT: ${LIVE_MEETING_COPILOT:-off}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Pinned to the docker-internal service name — overriding via .env.prod
