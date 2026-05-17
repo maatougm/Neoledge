@@ -16,6 +16,8 @@ import type {
   CahierDocxPayload,
   CahierPreflightResult,
   MissingFieldInfo,
+  CahierSectionGroup,
+  CahierStreamEvent,
 } from './cahier-des-charges.types.js'
 
 // ─── System prompt for cahier des charges generation ─────────────────────────
@@ -1322,6 +1324,217 @@ RÈGLES :
       architectureTechnique: partial.architectureTechnique ?? [],
       livrables: partial.livrables ?? 'INFO_MANQUANTE: section absente du retour IA',
       conclusion: partial.conclusion ?? 'INFO_MANQUANTE: section absente du retour IA',
+    }
+  }
+
+  // ─── Phase 3 — streaming variant of generateInThreeGroups ──────────────────
+
+  /** Parse a single group's content blob into its three keys, falling back
+   *  to INFO_MANQUANTE markers on JSON-parse failure. Returns a Partial
+   *  CahierAiResult containing only the keys this group owns. */
+  private parseGroupContent(group: CahierSectionGroup, content: string): Partial<CahierAiResult> {
+    let parsed: Record<string, unknown> = {}
+    try {
+      parsed = JSON.parse(this.stripFences(content)) as Record<string, unknown>
+    } catch (e) {
+      this.logger.warn(`section-stream parse failed for ${group}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    if (group === 'intro') {
+      return {
+        objectifDocument: this.coerceToMarkdown(parsed.objectifDocument),
+        contexte: this.coerceToMarkdown(parsed.contexte),
+        objectifProjet: this.coerceToMarkdown(parsed.objectifProjet),
+      }
+    }
+    if (group === 'scope') {
+      return {
+        perimetreInclus: this.coerceToMarkdown(parsed.perimetreInclus),
+        perimetreExclus: this.coerceToMarkdown(parsed.perimetreExclus),
+        exigencesFonctionnelles: Array.isArray(parsed.exigencesFonctionnelles)
+          ? (parsed.exigencesFonctionnelles as CahierAiResult['exigencesFonctionnelles'])
+          : [],
+      }
+    }
+    return {
+      architectureTechnique: Array.isArray(parsed.architectureTechnique)
+        ? (parsed.architectureTechnique as CahierAiResult['architectureTechnique'])
+        : [],
+      livrables: this.coerceToMarkdown(parsed.livrables),
+      conclusion: this.coerceToMarkdown(parsed.conclusion),
+    }
+  }
+
+  /** True when CAHIER_STREAM_SECTIONS=on — the SSE preview endpoint emits per
+   *  group; when off, it falls through to a single complete-event so clients
+   *  written against the streaming endpoint still work. Default 'on' — section
+   *  mode is the well-tested path and gives the PM partial content faster. */
+  isSectionStreamingEnabled(): boolean {
+    return (this.config.get<string>('CAHIER_STREAM_SECTIONS') ?? 'on').toLowerCase() === 'on'
+  }
+
+  /**
+   * Stream the cahier as 3 parallel groups (intro / scope / delivery). Each
+   * group's parsed keys are emitted as soon as the LLM call lands; the final
+   * grounded result is emitted in a `complete` event after all 3 settle.
+   *
+   * Trade-offs vs `generateCahierContent`:
+   *   - 3× LLM calls instead of one planner-worker single-shot. Costs more
+   *     tokens but gives the PM first content in ~7s vs ~25s.
+   *   - Skips the self-critique pass (would add ~90s and undo the streaming
+   *     UX win). The grounding regex still runs on each group.
+   *   - Requires Z.AI; throws if AI_FALLBACK_API_KEY is unset.
+   *
+   * `onEvent` is invoked synchronously in arrival order — the caller is
+   * responsible for serialising writes to the SSE wire. `signal` lets the
+   * controller abort early on client disconnect (the in-flight Z.AI calls
+   * are not actually cancellable, but the rest of the pipeline stops).
+   */
+  async streamCahierContent(
+    formData: CahierFormData,
+    transcripts: CahierTranscriptInput[],
+    projectId: string,
+    onEvent: (e: CahierStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.zaiFallback.isConfigured()) {
+      onEvent({ type: 'error', message: 'streaming requires Z.AI provider (AI_FALLBACK_API_KEY)' })
+      return
+    }
+    // Pre-flight gates — same as generateCahierContent. Throw HTTP errors
+    // BEFORE opening the stream so the controller can translate them to a
+    // normal HTTP 4xx response rather than an aborted SSE stream.
+    await this.assertDriverFieldsFilled(projectId)
+    const promptBudget = this.estimateCahierPromptTokens(formData, transcripts)
+    await this.aiUsage.assertWithinDailyBudget(projectId, promptBudget + 8_000)
+
+    // Build past-feedback + previous-cahier context, same as the non-stream path.
+    const pastFeedback = await this.getPastFeedback(projectId).catch(() => [])
+    let previousCorrectedCahier: unknown = null
+    try {
+      const persisted = await this.getPersistedCahier(projectId)
+      if (persisted.aiContent) previousCorrectedCahier = persisted.aiContent
+    } catch {
+      /* best-effort */
+    }
+    const userPrompt = this.buildUserPrompt(formData, transcripts, pastFeedback, previousCorrectedCahier)
+    const corpus = this.buildSourceCorpus(formData, transcripts, previousCorrectedCahier)
+
+    const startedAt = Date.now()
+    onEvent({ type: 'started', totalGroups: 3, transcriptCount: transcripts.length })
+
+    const groups: CahierSectionGroup[] = ['intro', 'scope', 'delivery']
+    const merged: Partial<CahierAiResult> = {}
+    let totalPrompt = 0
+    let totalCompletion = 0
+    let abortRequested = false
+    if (signal) {
+      signal.addEventListener('abort', () => { abortRequested = true }, { once: true })
+    }
+
+    // Fire the 3 calls in parallel; emit each as it lands. Map promises so we
+    // can race them with Promise.allSettled while still preserving group order
+    // in the typed merge below.
+    const tasks = groups.map(async (g) => {
+      const groupStart = Date.now()
+      try {
+        const sys = this.buildGroupSystemPrompt(g)
+        const usage = await this.zaiFallback.chatWithUsage(sys, userPrompt, {
+          maxTokens: 4096,
+          temperature: 0.1,
+        })
+        if (abortRequested) return
+        totalPrompt += usage.promptTokens
+        totalCompletion += usage.completionTokens
+        const parsedPartial = this.parseGroupContent(g, usage.content)
+        // Apply the deterministic grounding regex on a synthetic full-result
+        // restricted to this group's keys, then re-extract just those keys.
+        const groundedFull = this.applyGroundingCheck(
+          { ...this.emptyResult(), ...parsedPartial },
+          corpus,
+        )
+        const groundedPartial = this.extractGroupKeys(g, groundedFull)
+        Object.assign(merged, groundedPartial)
+        onEvent({ type: 'section', group: g, partial: groundedPartial, latencyMs: Date.now() - groupStart })
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        this.logger.warn(`stream group ${g} failed: ${message}`)
+        onEvent({ type: 'group_error', group: g, message })
+      }
+    })
+
+    await Promise.allSettled(tasks)
+
+    if (abortRequested) {
+      onEvent({ type: 'aborted', reason: 'client_disconnected' })
+      return
+    }
+
+    // Aggregate AiUsage in one row so the per-project budget tracker doesn't
+    // see 3 small writes for a single PM action.
+    void this.aiUsage.log({
+      projectId,
+      provider: 'zai-stream-sections',
+      model: this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air',
+      feature: 'cahier',
+      promptTokens: totalPrompt,
+      completionTokens: totalCompletion,
+      durationMs: Date.now() - startedAt,
+      success: true,
+    })
+
+    // Fill any missing keys with INFO_MANQUANTE so the saved cahier never
+    // contains undefined fields (matches generateInThreeGroups behaviour).
+    const fullResult: CahierAiResult = {
+      objectifDocument: merged.objectifDocument ?? 'INFO_MANQUANTE: section absente du retour IA',
+      contexte: merged.contexte ?? 'INFO_MANQUANTE: section absente du retour IA',
+      objectifProjet: merged.objectifProjet ?? 'INFO_MANQUANTE: section absente du retour IA',
+      perimetreInclus: merged.perimetreInclus ?? 'INFO_MANQUANTE: section absente du retour IA',
+      perimetreExclus: merged.perimetreExclus ?? 'INFO_MANQUANTE: section absente du retour IA',
+      exigencesFonctionnelles: merged.exigencesFonctionnelles ?? [],
+      architectureTechnique: merged.architectureTechnique ?? [],
+      livrables: merged.livrables ?? 'INFO_MANQUANTE: section absente du retour IA',
+      conclusion: merged.conclusion ?? 'INFO_MANQUANTE: section absente du retour IA',
+    }
+    onEvent({ type: 'complete', aiContent: fullResult, durationMs: Date.now() - startedAt })
+  }
+
+  /** Just the keys belonging to one group, pulled out of a full result. */
+  private extractGroupKeys(group: CahierSectionGroup, full: CahierAiResult): Partial<CahierAiResult> {
+    if (group === 'intro') {
+      return {
+        objectifDocument: full.objectifDocument,
+        contexte: full.contexte,
+        objectifProjet: full.objectifProjet,
+      }
+    }
+    if (group === 'scope') {
+      return {
+        perimetreInclus: full.perimetreInclus,
+        perimetreExclus: full.perimetreExclus,
+        exigencesFonctionnelles: full.exigencesFonctionnelles,
+      }
+    }
+    return {
+      architectureTechnique: full.architectureTechnique,
+      livrables: full.livrables,
+      conclusion: full.conclusion,
+    }
+  }
+
+  /** Empty placeholder result — used to satisfy applyGroundingCheck's signature
+   *  when scanning a single group's keys. The unused fields don't affect the
+   *  grounding regex output since it only inspects what's there. */
+  private emptyResult(): CahierAiResult {
+    return {
+      objectifDocument: '',
+      contexte: '',
+      objectifProjet: '',
+      perimetreInclus: '',
+      perimetreExclus: '',
+      exigencesFonctionnelles: [],
+      architectureTechnique: [],
+      livrables: '',
+      conclusion: '',
     }
   }
 

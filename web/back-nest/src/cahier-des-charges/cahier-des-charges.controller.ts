@@ -5,6 +5,7 @@ import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
 import { CahierDesChargesService } from './cahier-des-charges.service.js'
 import { CahierFeedbackDto } from './dto/cahier-feedback.dto.js'
+import type { CahierStreamEvent } from './cahier-des-charges.types.js'
 
 interface AuthenticatedRequest extends Request {
   user?: { userId: string }
@@ -90,6 +91,88 @@ export class CahierDesChargesController {
       aiContent,
       transcriptCount: transcripts.length,
       generatedAt: new Date().toISOString(),
+    }
+  }
+
+  /**
+   * GET /pm/projects/:projectId/cahier-des-charges/preview-stream
+   *
+   * Server-Sent Events variant of /preview. Emits one `section` event per
+   * group as it lands, then a single `complete` event with the full result.
+   * Frontend renders sections progressively; saves only after `complete`.
+   *
+   * Event grammar:
+   *   event: started        data: {"totalGroups":3,"transcriptCount":N}
+   *   event: section        data: {"group":"intro","partial":{...},"latencyMs":N}
+   *   event: group_error    data: {"group":"scope","message":"…"}
+   *   event: complete       data: {"aiContent":{...9 keys…},"durationMs":N}
+   *   event: error          data: {"message":"…"}
+   *
+   * When `CAHIER_STREAM_SECTIONS=off`, the endpoint still works but emits
+   * one `complete` event after running the standard /preview path. That
+   * keeps the client-side wire format stable across flag flips.
+   */
+  @Get('pm/projects/:projectId/cahier-des-charges/preview-stream')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  @Header('Pragma', 'no-cache')
+  @Header('X-Accel-Buffering', 'no')
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async previewStream(
+    @Param('projectId') projectId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    // SSE handshake. Flush headers immediately so the client gets the
+    // 200/OK + content-type even if the first event takes a moment.
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders?.()
+
+    const send = (event: CahierStreamEvent): void => {
+      // SSE frame: `event: <name>\ndata: <json>\n\n`. The data line must NOT
+      // contain raw newlines; JSON.stringify guarantees this.
+      const payload = JSON.stringify(event)
+      res.write(`event: ${event.type}\n`)
+      res.write(`data: ${payload}\n\n`)
+    }
+
+    // Translate client disconnect to an AbortSignal the service can observe.
+    const aborter = new AbortController()
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        aborter.abort()
+      }
+    })
+
+    try {
+      const { formData, transcripts } = await this.cahierService.gatherProjectData(projectId)
+
+      // Flag-off branch: still expose the streaming endpoint, but emit a
+      // single complete event so the client UI stays identical.
+      if (!this.cahierService.isSectionStreamingEnabled()) {
+        send({ type: 'started', totalGroups: 3, transcriptCount: transcripts.length })
+        const aiContent = await this.cahierService.generateCahierContent(formData, transcripts, projectId)
+        send({ type: 'complete', aiContent, durationMs: 0 })
+        res.end()
+        return
+      }
+
+      await this.cahierService.streamCahierContent(
+        formData,
+        transcripts,
+        projectId,
+        (event) => {
+          if (!res.writableEnded) send(event)
+        },
+        aborter.signal,
+      )
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Erreur inconnue'
+      this.logger.error(`previewStream failed for project ${projectId}: ${message}`)
+      if (!res.writableEnded) send({ type: 'error', message })
+    } finally {
+      if (!res.writableEnded) res.end()
     }
   }
 

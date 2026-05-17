@@ -30,12 +30,71 @@
       <div v-if="generating" class="cahier-processing">
         <i class="pi pi-spin pi-spinner cahier-spinner" />
         <div class="cahier-processing-text">
-          <span>Génération du cahier des charges en cours...</span>
+          <span>
+            Génération du cahier des charges en cours
+            <NeoTag
+              v-if="streamPartial"
+              :value="`${streamedGroups.size}/3 sections`"
+              :severity="streamedGroups.size === 3 ? 'success' : 'info'"
+              class="cahier-stream-progress"
+            />
+          </span>
           <p class="cahier-processing-detail">
-            L'IA analyse les données du formulaire et les transcriptions de réunions
-            pour produire un document détaillé.
+            <template v-if="streamPartial">
+              L'IA émet les sections au fur et à mesure. Les sections déjà reçues sont visibles ci-dessous.
+            </template>
+            <template v-else>
+              L'IA analyse les données du formulaire et les transcriptions de réunions
+              pour produire un document détaillé.
+            </template>
           </p>
         </div>
+      </div>
+
+      <!-- Streaming partial preview — render whatever sections have arrived.
+           Each group's keys become visible as soon as its LLM call lands.
+           `streamedGroups` controls the "à venir" skeleton placeholder. -->
+      <div v-if="generating && streamPartial" class="cahier-stream-preview cahier-doc">
+        <template v-if="streamedGroups.has('intro')">
+          <CahierDocSection title="1.1 Objectif du document" :markdown="streamPartial.objectifDocument" />
+          <CahierDocSection title="1.2 Contexte" :markdown="streamPartial.contexte" />
+          <CahierDocSection title="2.1 Objectif du projet" :markdown="streamPartial.objectifProjet" />
+        </template>
+        <p v-else class="cahier-doc-pending"><i class="pi pi-spin pi-spinner" /> Introduction et objectifs…</p>
+
+        <template v-if="streamedGroups.has('scope')">
+          <CahierDocSection title="2.2.1 Périmètre — Éléments inclus" :markdown="streamPartial.perimetreInclus" />
+          <CahierDocSection title="2.2.2 Périmètre — Éléments exclus" :markdown="streamPartial.perimetreExclus" />
+          <h3 class="cahier-doc-h">2.3 Exigences fonctionnelles</h3>
+          <div v-if="streamPartial.exigencesFonctionnelles?.length">
+            <CahierDocSection
+              v-for="(s, i) in streamPartial.exigencesFonctionnelles"
+              :key="`stream-ef-${i}`"
+              :title="s.title"
+              :markdown="s.content"
+              level="sub"
+            />
+          </div>
+          <p v-else class="cahier-doc-empty">À définir</p>
+        </template>
+        <p v-else class="cahier-doc-pending"><i class="pi pi-spin pi-spinner" /> Périmètre et exigences fonctionnelles…</p>
+
+        <template v-if="streamedGroups.has('delivery')">
+          <h3 class="cahier-doc-h">2.4 Architecture technique</h3>
+          <div v-if="streamPartial.architectureTechnique?.length">
+            <CahierDocSection
+              v-for="(s, i) in streamPartial.architectureTechnique"
+              :key="`stream-at-${i}`"
+              :title="s.title"
+              :markdown="s.content"
+              level="sub"
+            />
+          </div>
+          <p v-else class="cahier-doc-empty">À définir</p>
+          <CahierDocSection title="2.5 Livrables" :markdown="streamPartial.livrables" />
+          <CahierDocSection title="3. Conclusion" :markdown="streamPartial.conclusion" />
+        </template>
+        <p v-else class="cahier-doc-pending"><i class="pi pi-spin pi-spinner" /> Architecture, livrables et conclusion…</p>
       </div>
 
       <!-- Error state -->
@@ -290,6 +349,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { NeoButton, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import api from '@/lib/api'
+import { streamCahierPreview } from '@/lib/cahier-stream'
 import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
 import CahierPreflightModal from './CahierPreflightModal.vue'
@@ -365,6 +425,12 @@ const savedContent = ref<CahierAiResult | null>(null)
 const savedAt = ref<string | null>(null)
 const pastFeedback = ref<string[]>([])
 const cahierStatus = ref<CahierStatus | null>(null)
+
+// Phase 3 — live streaming state. `streamPartial` is the partial CahierAiResult
+// that fills in as sections arrive; `streamedGroups` tracks which of the 3
+// groups have landed for the progress badge.
+const streamPartial = ref<CahierAiResult | null>(null)
+const streamedGroups = ref<Set<'intro' | 'scope' | 'delivery'>>(new Set())
 
 // ─── Manual edit mode ─────────────────────────────────────────────────────────
 const editMode = ref(false)
@@ -520,32 +586,64 @@ function collectMissingMarkers(content: CahierAiResult | null | undefined): stri
 async function handleGenerate() {
   generating.value = true
   error.value = null
+  // Reset streaming UI state for this run.
+  streamedGroups.value = new Set()
+  streamPartial.value = null
+
+  let finalContent: CahierAiResult | null = null
 
   try {
-    // 1. Generate via /preview → JSON (no file download)
-    const { data } = await api.get<{
-      formData: unknown
-      aiContent: CahierAiResult
-      transcriptCount: number
-      generatedAt: string
-    }>(`/pm/projects/${props.projectId}/cahier-des-charges/preview`)
-
-    // 2. Persist to Project.aiOutput so the Cahier tab keeps showing it next time,
-    //    and so SpecificationTeam reviewers get notified on the backend.
-    await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, {
-      aiContent: data.aiContent,
+    // Phase 3 — consume the SSE preview-stream endpoint. Sections render
+    // progressively as the LLM emits them. After `complete`, persist once.
+    await streamCahierPreview(props.projectId, {
+      onEvent: (event) => {
+        if (event.type === 'started') {
+          // Initialise an empty skeleton so the UI can render section
+          // placeholders before any LLM call lands.
+          streamPartial.value = {
+            objectifDocument: '',
+            contexte: '',
+            objectifProjet: '',
+            perimetreInclus: '',
+            perimetreExclus: '',
+            exigencesFonctionnelles: [],
+            architectureTechnique: [],
+            livrables: '',
+            conclusion: '',
+          }
+        } else if (event.type === 'section' && streamPartial.value) {
+          // Merge this group's keys into the live partial.
+          streamPartial.value = { ...streamPartial.value, ...event.partial } as CahierAiResult
+          streamedGroups.value = new Set(streamedGroups.value).add(event.group)
+        } else if (event.type === 'group_error') {
+          toast.add({
+            severity: 'warn',
+            detail: `Une section (${event.group}) n'a pas pu être générée — le cahier sera partiel.`,
+            life: 6000,
+          })
+        } else if (event.type === 'complete') {
+          finalContent = event.aiContent
+        } else if (event.type === 'error') {
+          throw new Error(event.message)
+        }
+      },
     })
 
-    savedContent.value = data.aiContent
+    if (!finalContent) {
+      throw new Error('La génération s\'est terminée sans contenu final.')
+    }
+
+    // Persist the final content. The server's groundedness pass already ran
+    // on each section as it arrived.
+    await api.post(`/pm/projects/${props.projectId}/cahier-des-charges/save`, {
+      aiContent: finalContent,
+    })
+
+    savedContent.value = finalContent
     savedAt.value = new Date().toISOString()
     await loadStatus()
 
-    // 3. If the AI couldn't ground every section, it leaves INFO_MANQUANTE
-    //    markers inline rather than hallucinating. The preflight's heuristic
-    //    detector picks these up from the now-persisted aiOutput, so re-opening
-    //    the modal surfaces them as gaps with the same "Ajouter une réponse"
-    //    flow — never leave a marker in production without prompting the PM.
-    const missing = collectMissingMarkers(data.aiContent)
+    const missing = collectMissingMarkers(finalContent)
     if (missing.length > 0) {
       toast.add({
         severity: 'warn',
@@ -559,11 +657,17 @@ async function handleGenerate() {
     const missing = resp?.missingFields
     if (Array.isArray(missing) && missing.length > 0) {
       error.value = `Champs IA obligatoires non renseignés : ${missing.join(', ')}. Remplissez le questionnaire avant de générer.`
+    } else if (resp?.message) {
+      error.value = resp.message
+    } else if (e instanceof Error) {
+      error.value = e.message
     } else {
-      error.value = resp?.message ?? 'Erreur lors de la génération du cahier des charges.'
+      error.value = 'Erreur lors de la génération du cahier des charges.'
     }
   } finally {
     generating.value = false
+    streamPartial.value = null
+    streamedGroups.value = new Set()
   }
 }
 
@@ -649,6 +753,25 @@ async function handleDownload() {
 .cahier-spinner { font-size: 1.5rem; color: var(--nl-primary, #2e86c1); }
 .cahier-processing-text span { font-weight: 600; }
 .cahier-processing-detail { margin-top: 4px; color: var(--nl-text-muted, #666); font-size: 0.9rem; }
+.cahier-stream-progress { margin-left: 8px; }
+
+/* Streaming partial preview — sections appear as the LLM emits them */
+.cahier-stream-preview {
+  margin-top: 16px;
+  padding: 16px 20px;
+  border: 1px dashed var(--nl-border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--nl-surface-alt, #fafbfc);
+}
+.cahier-doc-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nl-text-muted, #666);
+  font-size: 0.92rem;
+  font-style: italic;
+  margin: 8px 0;
+}
 
 /* Error */
 .cahier-error { display: flex; flex-direction: column; gap: 12px; }

@@ -112,3 +112,19 @@ export interface CahierPreflightResult {
   /** Origin: 'ai' (LLM call) or 'heuristic' (fallback when AI fails). */
   source: 'ai' | 'heuristic'
 }
+
+// ─── Phase 3 — section streaming events ─────────────────────────────────────
+
+/** The three logical groups the cahier is split into for parallel generation.
+ *  These map to fixed sets of CahierAiResult keys (see buildGroupSystemPrompt). */
+export type CahierSectionGroup = 'intro' | 'scope' | 'delivery'
+
+/** Events emitted by `streamCahierContent`. Each one is wire-encoded as an
+ *  SSE frame `event: <type>` + `data: <json>` in the controller. */
+export type CahierStreamEvent =
+  | { type: 'started'; totalGroups: 3; transcriptCount: number }
+  | { type: 'section'; group: CahierSectionGroup; partial: Partial<CahierAiResult>; latencyMs: number }
+  | { type: 'group_error'; group: CahierSectionGroup; message: string }
+  | { type: 'complete'; aiContent: CahierAiResult; durationMs: number }
+  | { type: 'error'; message: string }
+  | { type: 'aborted'; reason: string }
