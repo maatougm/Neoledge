@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadGatewayException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js';
 
 @Injectable()
 export class LiveMeetingService {
@@ -9,6 +10,7 @@ export class LiveMeetingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
 
   /**
@@ -118,7 +120,7 @@ export class LiveMeetingService {
       },
     });
 
-    await this.prisma.transcriptSegment.create({
+    const segment = await this.prisma.transcriptSegment.create({
       data: {
         transcriptId: created.id,
         speaker: 'PM + invités',
@@ -131,6 +133,16 @@ export class LiveMeetingService {
     });
 
     this.logger.log(`saved live meeting transcript ${created.id} for project ${projectId} (langs: ${detectedLangsCsv})`);
+
+    // Phase 4 — embed the single-blob segment so the cahier agent's
+    // read_relevant_meeting_excerpts can find it. Fire-and-forget;
+    // failure here is logged but never bubbles to the user.
+    void this.embeddingIndexer
+      .indexAndStore('segment', [{ id: segment.id, text: trimmed }], { projectId })
+      .catch((e) =>
+        this.logger.warn(`live-segment embedding failed for ${created.id}: ${e instanceof Error ? e.message : String(e)}`),
+      );
+
     return { transcriptId: created.id };
   }
 }
