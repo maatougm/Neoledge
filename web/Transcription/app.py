@@ -49,15 +49,25 @@ MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024
 # Single-flight lock around the Whisper model to avoid concurrent GPU/CPU
 # contention. One transcription at a time per process.
 _model_lock: asyncio.Lock = asyncio.Lock()
+# Separate lock for the embedding model so /transcribe and /embed can run
+# in parallel. Embedding inference is fast (~30ms / 200 tokens on CPU) but
+# we still serialise per-model to avoid loading thrash under burst load.
+_embed_lock: asyncio.Lock = asyncio.Lock()
 
 # Initialize service (loaded during startup)
 transcription_service: TranscriptionService | None = None
+# Lazily-loaded embedding model (multilingual-e5-small ~110 MB).
+# Loaded once in lifespan(); a single SentenceTransformer instance shared
+# across requests is the supported usage pattern of the library.
+embedding_model = None
+EMBED_MODEL_NAME: str = os.environ.get("EMBED_MODEL", "intfloat/multilingual-e5-small")
+EMBED_DIM: int = 384  # multilingual-e5-small output dimension
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load ML models on startup, cleanup on shutdown."""
-    global transcription_service
+    global transcription_service, embedding_model
     model_size = os.environ.get("WHISPER_MODEL", "large-v3")
     device = os.environ.get("DEVICE", "cpu")  # "cpu" or "cuda"
     compute_type = os.environ.get("COMPUTE_TYPE", "int8")  # "int8" for CPU, "float16" for GPU
@@ -67,6 +77,26 @@ async def lifespan(app: FastAPI):
         device=device,
         compute_type=compute_type,
     )
+
+    # Phase 4 — multilingual-e5-small for cahier semantic retrieval.
+    # Lazy import so the transcription service still boots even if
+    # sentence-transformers isn't installed yet (e.g. during the
+    # incremental rollout window).
+    if os.environ.get("EMBED_ENABLED", "true").lower() != "false":
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+            logger.info(f"Loading embedding model: {EMBED_MODEL_NAME}")
+            embedding_model = SentenceTransformer(EMBED_MODEL_NAME, device=device)
+            # Warm-up: first encode call triggers JIT/model materialisation.
+            # Cost is amortised at boot rather than billed to the first user.
+            embedding_model.encode(["passage: warmup"], convert_to_numpy=True, normalize_embeddings=True)
+            logger.info("Embedding model loaded and warmed")
+        except ImportError:
+            logger.warning("sentence-transformers not installed — /embed endpoint will return 503")
+        except Exception as exc:  # pragma: no cover — startup-time only
+            logger.exception(f"Embedding model failed to load: {exc}")
+            embedding_model = None
+
     logger.info("Models loaded successfully")
     yield
     # shutdown — nothing to clean up
@@ -85,6 +115,23 @@ app.add_middleware(
     allow_methods=["POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Transcription-Secret"],
 )
+
+
+# ── Embedding request/response models ──────────────────────────────────────
+
+
+class EmbedRequest(BaseModel):
+    texts: list[str]
+    # e5-family models expect `passage: ` / `query: ` prefixes for asymmetric
+    # retrieval. Wired through the API; the NestJS client picks `passage`
+    # when indexing and `query` when an agent searches.
+    input_type: str = "passage"
+
+
+class EmbedResponse(BaseModel):
+    embeddings: list[list[float]]
+    model: str
+    dim: int
 
 
 class TranscriptSegment(BaseModel):
@@ -251,3 +298,89 @@ async def transcribe(
             os.unlink(tmp_path)
         except OSError:
             logger.warning(f"Failed to clean up temp file: {tmp_path}")
+
+
+# ── /embed — sentence-transformers inference ────────────────────────────────
+
+
+# Hard caps to keep one call bounded. A 64-text batch at ~30ms each on CPU
+# is ~2 seconds — fine for an agent tool call. Per-text length is capped
+# because e5-small was trained on ≤512 tokens; we slice generously at 2000
+# chars (~500 tokens worst-case) and let the model truncate internally.
+MAX_EMBED_BATCH: int = 64
+MAX_EMBED_TEXT_CHARS: int = 2000
+
+
+@app.post("/embed", response_model=EmbedResponse)
+async def embed(
+    payload: EmbedRequest,
+    x_transcription_secret: str | None = Header(default=None, alias="X-Transcription-Secret"),
+) -> EmbedResponse:
+    """Embed up to MAX_EMBED_BATCH texts in one call.
+
+    Auth: same shared secret as /transcribe. The endpoint is internal-only
+    (called by NestJS over the docker network) so we don't expose it via the
+    public CORS allowlist — only the backend can reach it.
+
+    `input_type` controls the e5 prefix:
+      - "passage" (default) — indexing path (segments, field values).
+      - "query"             — agent search-time path.
+    Mixing prefixes degrades cosine similarity; callers MUST be consistent.
+    """
+    # 1. Auth — same gate as /transcribe.
+    if not x_transcription_secret or x_transcription_secret != TRANSCRIPTION_SECRET:
+        raise HTTPException(401, "Unauthorized")
+
+    # 2. Service availability — startup may have failed (no sentence-transformers).
+    if embedding_model is None:
+        raise HTTPException(503, "Embedding model not loaded")
+
+    # 3. Validate the request — fail fast with clear messages.
+    if not isinstance(payload.texts, list):
+        raise HTTPException(400, "texts must be a list")
+    if len(payload.texts) == 0:
+        return EmbedResponse(embeddings=[], model=EMBED_MODEL_NAME, dim=EMBED_DIM)
+    if len(payload.texts) > MAX_EMBED_BATCH:
+        raise HTTPException(400, f"batch too large: max {MAX_EMBED_BATCH}")
+    if payload.input_type not in ("passage", "query"):
+        raise HTTPException(400, "input_type must be 'passage' or 'query'")
+
+    # 4. e5 family expects an asymmetric prefix on each text. Strip whitespace
+    #    + cap length here rather than letting the tokenizer silently truncate.
+    prefix = f"{payload.input_type}: "
+    prepared: list[str] = []
+    for raw in payload.texts:
+        if not isinstance(raw, str):
+            raise HTTPException(400, "every text must be a string")
+        clean = raw.strip()[:MAX_EMBED_TEXT_CHARS]
+        if not clean:
+            # Empty input → zero vector. Caller can filter; we won't refuse
+            # the whole batch over one bad row.
+            prepared.append(prefix)
+            continue
+        prepared.append(prefix + clean)
+
+    # 5. Run inference under the embed-specific lock. CPU-bound — push to
+    #    the default executor so we don't block the event loop.
+    async with _embed_lock:
+        loop = asyncio.get_event_loop()
+        try:
+            vectors = await loop.run_in_executor(
+                None,
+                lambda: embedding_model.encode(  # type: ignore[union-attr]
+                    prepared,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,  # cosine-distance ready
+                    batch_size=min(MAX_EMBED_BATCH, len(prepared)),
+                    show_progress_bar=False,
+                ),
+            )
+        except Exception as exc:
+            logger.exception(f"Embedding inference failed: {exc}")
+            raise HTTPException(500, "Embedding inference failed")
+
+    return EmbedResponse(
+        embeddings=[v.tolist() for v in vectors],
+        model=EMBED_MODEL_NAME,
+        dim=EMBED_DIM,
+    )

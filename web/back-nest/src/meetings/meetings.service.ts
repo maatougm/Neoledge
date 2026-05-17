@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
 import { AiService } from '../ai/ai.service.js'
+import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js'
 import { AssemblyAiProvider } from './assemblyai.provider.js'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -90,7 +91,31 @@ export class MeetingsService {
     private readonly config: ConfigService,
     private readonly aiService: AiService,
     private readonly assemblyAi: AssemblyAiProvider,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
+
+  /** Fire-and-forget: read the just-inserted segments for a transcript and
+   *  push them through the embedding indexer. Catches all errors so failed
+   *  embeddings never break transcript ingestion. */
+  private async indexSegmentsAsync(transcriptId: string, projectId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.transcriptSegment.findMany({
+        where: { transcriptId },
+        select: { id: true, text: true },
+      })
+      if (rows.length === 0) return
+      const result = await this.embeddingIndexer.indexAndStore(
+        'segment',
+        rows.map((r) => ({ id: r.id, text: r.text })),
+        { projectId },
+      )
+      this.logger.log(
+        `indexSegmentsAsync transcript=${transcriptId} segments=${rows.length} indexed=${result.indexed} failed=${result.failed}`,
+      )
+    } catch (e) {
+      this.logger.warn(`indexSegmentsAsync failed for ${transcriptId}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
     // No default fallback URL — TRANSCRIPTION_URL is validated as required at startup.
@@ -152,6 +177,11 @@ export class MeetingsService {
 
       if (segments.length > 0) {
         await this.prisma.transcriptSegment.createMany({ data: segments })
+        // Phase 4 — index the just-inserted segments for semantic retrieval.
+        // Fire-and-forget; embeddings populate within a few seconds and the
+        // cahier agent's semantic tools filter `embedding IS NOT NULL` so the
+        // system degrades gracefully while indexing is in flight.
+        void this.indexSegmentsAsync(transcript.id, projectId)
       }
 
       if (usedFallback) {

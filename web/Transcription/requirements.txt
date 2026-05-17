@@ -17,3 +17,8 @@ speechbrain==1.0.2
 # 'use_auth_token'` and every transcript falls back to a single speaker.
 huggingface_hub>=0.20,<0.28
 pydantic==2.7.4
+# Phase 4 — multilingual-e5-small embeddings for cahier semantic retrieval.
+# Pinned to a version known compatible with huggingface_hub <0.28 (the
+# speechbrain pin above). sentence-transformers 2.7.x is the safe band.
+sentence-transformers>=2.7,<3
+

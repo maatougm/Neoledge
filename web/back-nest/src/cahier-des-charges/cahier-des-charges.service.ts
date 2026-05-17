@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
 import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
+import { EmbeddingsService } from '../ai/embeddings/embeddings.service.js'
 import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
 import { runCahierAgent, runCahierPlannerWorker } from './cahier-agent.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
@@ -95,7 +96,14 @@ export class CahierDesChargesService {
     private readonly aiUsage: AiUsageService,
     private readonly agentRunner: AgentRunnerService,
     private readonly notifications: NotificationsService,
+    private readonly embeddings: EmbeddingsService,
   ) {}
+
+  /** Phase 4 — pgvector semantic retrieval flag. Off by default until the
+   *  backfill is verified on prod data (Stage 1.9 → 1.10). */
+  private isSemanticRetrievalEnabled(): boolean {
+    return (this.config.get<string>('CAHIER_USE_SEMANTIC_RETRIEVAL') ?? 'off').toLowerCase() === 'on'
+  }
 
   /** True when the cahier agent loop should run instead of single-shot. */
   private isAgentModeEnabled(): boolean {
@@ -1039,10 +1047,11 @@ RÈGLES :
       const startedAt = Date.now()
       const agentModel = this.config.get<string>('AI_FALLBACK_MODEL') ?? 'glm-4.5-air'
       const usePlanner = (this.config.get<string>('CAHIER_USE_PLANNER') ?? 'off').toLowerCase() === 'on'
+      const semantic = { embeddings: this.embeddings, enabled: this.isSemanticRetrievalEnabled() }
       try {
         const out = usePlanner
           ? await runCahierPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId)
-          : await runCahierAgent(this.agentRunner, this.logger, projectId)
+          : await runCahierAgent(this.agentRunner, this.logger, projectId, semantic)
         void this.aiUsage.log({
           projectId,
           provider: usePlanner ? 'planner-worker' : 'agent',

@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { BULK_MAX } from './dto/bulk.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { TERMINAL_WP_STATUSES } from '../work-packages/wp-status.constants.js';
+import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js';
 
 /** Per-field optimistic lock token coming from the client. */
 export interface FieldValueWrite {
@@ -26,6 +27,7 @@ export class ProjectsService {
     private readonly phaseGate: PhaseGateService,
     private readonly audit: AuditService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
 
   async findWithFilters(
@@ -732,7 +734,47 @@ export class ProjectsService {
       return Result.fail('Erreur lors de la sauvegarde des champs.');
     }
 
+    // Phase 4 — index the saved field values for semantic retrieval so the
+    // cahier agent can pull "the most relevant questionnaire answers" instead
+    // of streaming the whole questionnaire. Fire-and-forget; the agent tool
+    // filters `WHERE embedding IS NOT NULL` so a missing embedding only
+    // delays its visibility, never breaks save.
+    void this.indexFieldValuesAsync(projectId, fieldValues).catch((e) =>
+      this.logger.warn(`fieldValue embedding failed for project ${projectId}: ${e instanceof Error ? e.message : String(e)}`),
+    );
+
     return Result.ok();
+  }
+
+  /** Fire-and-forget: read just-upserted rows + field labels, then ship
+   *  `"label: value"` strings to the embedding indexer. */
+  private async indexFieldValuesAsync(projectId: string, written: FieldValueWrite[]): Promise<void> {
+    const written_nonEmpty = written.filter(
+      (fv) => typeof fv.value === 'string' && fv.value.trim().length > 0,
+    );
+    if (written_nonEmpty.length === 0) return;
+
+    const rows = await this.prisma.projectFieldValue.findMany({
+      where: {
+        projectId,
+        projectFieldId: { in: written_nonEmpty.map((fv) => fv.projectFieldId) },
+      },
+      select: {
+        id: true,
+        value: true,
+        field: { select: { label: true } },
+      },
+    });
+
+    const items = rows
+      .filter((r) => r.value && r.value.trim().length > 0)
+      .map((r) => ({
+        id: r.id,
+        text: `${r.field?.label ?? 'Champ'}: ${r.value}`,
+      }));
+    if (items.length === 0) return;
+
+    await this.embeddingIndexer.indexAndStore('field-value', items, { projectId });
   }
 
   /**

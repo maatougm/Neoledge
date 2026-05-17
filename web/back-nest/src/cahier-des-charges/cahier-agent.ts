@@ -12,6 +12,7 @@ import { Logger } from '@nestjs/common'
 import type { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
 import type { ToolContext, ToolDefinition } from '../ai/agent/agent-types.js'
 import type { PrismaService } from '../prisma/prisma.service.js'
+import type { EmbeddingsService } from '../ai/embeddings/embeddings.service.js'
 import { obj, str, arr } from '../ai/agent/json-schema.js'
 import type { CahierAiResult } from './cahier-des-charges.types.js'
 import {
@@ -23,6 +24,7 @@ import {
 } from '../ai/agent/tools/project-tools.js'
 import { readMeetingSegmentsTool } from '../ai/agent/tools/cahier-tools.js'
 import { readGlossaryTool } from '../ai/agent/tools/glossary-tools.js'
+import { buildSemanticTools } from '../ai/agent/tools/semantic-tools.js'
 
 const SYSTEM_PROMPT = `Tu es expert NeoLedge / Archimed en rédaction de cahiers des charges contractuels (modèle Elise). Tu dois produire un cahier complet en 9 sections.
 
@@ -89,11 +91,18 @@ export async function runCahierAgent(
   runner: AgentRunnerService,
   logger: Logger,
   projectId: string,
+  semantic?: { embeddings: EmbeddingsService; enabled: boolean },
 ): Promise<CahierAiResult> {
+  // Phase 4 — when CAHIER_USE_SEMANTIC_RETRIEVAL=on, register the semantic
+  // tools alongside the keyword tools. The model is told (in the prompt) to
+  // prefer the semantic ones; the keyword variants stay available as
+  // fallback when retrieval returns 0 hits during the backfill window.
+  const semanticTools = semantic?.enabled ? buildSemanticTools(semantic.embeddings, logger) : []
   const result = await runner.run<CahierAiResult>({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: semanticTools.length > 0 ? SYSTEM_PROMPT_WITH_SEMANTIC : SYSTEM_PROMPT,
     tools: [
       readProjectSummaryTool,
+      ...semanticTools,
       readQuestionnaireTool,
       readValidatedCahierTool,
       readValidationFeedbackTool,
@@ -111,6 +120,39 @@ export async function runCahierAgent(
   )
   return result.output
 }
+
+// Variant of SYSTEM_PROMPT used when semantic tools are registered. Tells the
+// model to prefer the semantic search tools over the dump tools, and to fall
+// back to the keyword variants only when retrieval is sparse.
+const SYSTEM_PROMPT_WITH_SEMANTIC = `Tu es expert NeoLedge / Archimed en rédaction de cahiers des charges contractuels (modèle Elise). Tu dois produire un cahier complet en 9 sections.
+
+Méthode :
+1. read_project_summary — comprends le projet (nom, client, statut, dates, équipe).
+2. read_validated_cahier — si saved=true, c'est la version corrigée par l'équipe de validation : NE LA RÉÉCRIS PAS, conserve ses phrases telles qu'elles sont.
+3. read_validation_feedback — corrige UNIQUEMENT ce qui est explicitement signalé dans les rejets précédents.
+4. POUR CHAQUE SECTION à rédiger (Objectif, Contexte, Périmètre, Exigences, Architecture, Livrables) :
+   a. Formule 1–3 questions ciblées sur la section.
+   b. read_relevant_questionnaire(query=…, limit=4) — récupère les réponses pertinentes du questionnaire.
+   c. read_relevant_meeting_excerpts(query=…, limit=6) — récupère les citations utiles des réunions.
+   d. Si la recherche sémantique renvoie peu de hits (< 2 résultats par requête ou similarity < 0.35), retombe sur read_questionnaire(driverOnly=false) ou read_meeting_summaries pour ratisser plus large.
+5. read_meeting_segments uniquement pour une citation exacte (chiffre, date, nom propre) qu'aucune des étapes 4 n'a renvoyée.
+6. read_glossary — pour tout terme métier (Elise, GED, Neoform, Elise.Automate...).
+7. Quand tu as collecté assez de matière, appelle emit_cahier avec les 9 clés.
+
+Règles strictes pour la sortie :
+- Langue : français, ton contractuel professionnel, exhaustif.
+- Markdown autorisé À L'INTÉRIEUR des strings uniquement.
+- "À définir" ou "INFO_MANQUANTE: <topic>" si une info manque vraiment.
+- exigencesFonctionnelles : 4–6 modules, chacun = phrase d'intro + bullets.
+- architectureTechnique : 3–4 composants UNIQUEMENT si le contexte les mentionne. Sinon INFO_MANQUANTE.
+- livrables : ne liste que ce que le contexte indique. INFO_MANQUANTE sinon.
+- Conclusion : paragraphe synthétique sans liste.
+
+PRIORITÉ DES SOURCES :
+A. read_validated_cahier (si saved=true) — version corrigée qui fait foi.
+B. read_validation_feedback — corrige UNIQUEMENT ce qui est signalé.
+C. read_relevant_* > read_questionnaire (complet) > read_meeting_summaries > read_meeting_segments.
+Tu n'es PAS autorisé à reformuler une section déjà corrigée juste pour "améliorer le style".`
 
 // ─── Phase 5 — Planner / Worker variant ─────────────────────────────────────
 //

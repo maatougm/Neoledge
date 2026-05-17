@@ -6,6 +6,7 @@ import { AgentRunnerService } from './agent/agent-runner.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 import { runTranscriptAgent } from './transcript-agent.js'
 import { AgentEmitMissedError } from './agent/agent-errors.js'
+import { EmbeddingIndexerService } from './embeddings/embedding-indexer.service.js'
 import type { AiAnalysisResult } from './ai.types.js'
 
 /** Strip API keys and auth tokens from error messages before persisting. */
@@ -31,6 +32,7 @@ export class AiService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly agentRunner: AgentRunnerService,
     private readonly notifications: NotificationsService,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
 
   /** True when the transcript agent loop should run instead of the legacy single-shot path. */
@@ -161,6 +163,16 @@ export class AiService implements OnModuleInit {
       })
 
       this.logger.log(`AI analysis completed for transcript ${transcriptId} (model: ${modelUsed})`)
+
+      // Phase 4 — index the aiSummary for semantic retrieval by the cahier
+      // agent. Fire-and-forget; the cahier's read_relevant_meeting_excerpts
+      // filters `WHERE summaryEmbedding IS NOT NULL` so a failed embed only
+      // delays its visibility, never crashes the analyze pipeline.
+      void this.embeddingIndexer
+        .indexAndStore('summary', [{ id: transcriptId, text: result.summary }], { projectId: transcript.projectId })
+        .catch((e: unknown) =>
+          this.logger.warn(`aiSummary embedding failed for ${transcriptId}: ${e instanceof Error ? e.message : String(e)}`),
+        )
 
       // Log to global activity feed so admin/activity page reflects AI completions.
       void this.prisma.projectActivity

@@ -7,11 +7,13 @@ import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
 import { BacklogService } from './backlog.service.js'
 import { BacklogController } from './backlog.controller.js'
 import { AgentRunnerService } from './agent/agent-runner.service.js'
+import { EmbeddingsModule } from './embeddings/embeddings.module.js'
+import { EvalRetrievalController } from './eval-retrieval.controller.js'
 import { NotificationsModule } from '../notifications/notifications.module.js'
 
 @Module({
-  imports: [NotificationsModule],
-  controllers: [BacklogController],
+  imports: [NotificationsModule, EmbeddingsModule],
+  controllers: [BacklogController, EvalRetrievalController],
   providers: [
     AiService,
     AiProviderFactory,
@@ -21,6 +23,6 @@ import { NotificationsModule } from '../notifications/notifications.module.js'
     BacklogService,
     AgentRunnerService,
   ],
-  exports: [AiService, ZaiFallbackProvider, BacklogService, AgentRunnerService],
+  exports: [AiService, ZaiFallbackProvider, BacklogService, AgentRunnerService, EmbeddingsModule],
 })
 export class AiModule {}

@@ -9,6 +9,7 @@ export type AiFeature =
   | 'meeting-analysis'
   | 'transcribe'
   | 'transcribe-chunk'
+  | 'embed'
 
 export interface AiUsageInput {
   projectId?: string | null
