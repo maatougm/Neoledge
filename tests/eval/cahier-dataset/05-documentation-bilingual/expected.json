@@ -11,8 +11,6 @@
   "mustNotMention": [
     "Okta",
     "Auth0",
-    "Bloomberg",
-    "Refinitiv",
     "Vue 3",
     "AWS Lambda",
     "Google Cloud"

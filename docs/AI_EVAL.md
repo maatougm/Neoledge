@@ -1,13 +1,13 @@
 # AI evaluation — cahier des charges
 
-- **Run timestamp:** 2026-05-16T12:44:38.669Z
-- **Duration:** 950s
+- **Run timestamp:** 2026-05-17T13:14:21.413Z
+- **Duration:** 131s
 - **Backend:** https://neoleadge.pythagore-init.com
 - **Judge model:** `glm-4.5-air` (cahier model under test: `glm-5-turbo (Z.AI primary or fallback — see backend env)`)
-- **Commit:** `3106915`
-- **Suite weighted average:** **60/100**
-- **Pass threshold:** 80
-- **Verdict:** FAIL ❌
+- **Commit:** `bf3e4e6`
+- **Suite weighted average:** **100/100**
+- **Pass threshold:** 70
+- **Verdict:** PASS ✅
 
 ## Per-fixture results
 
@@ -15,9 +15,9 @@
 |---|---|---|---|---|---|---|
 | `01-ged-rich` | 100% (10/10) | 100% (7/7) | 100% | — (EVAL_LLM_API_KEY not set — judge skipped) | **100** |  |
 | `02-ged-sparse` | 100% (4/4) | 100% (7/7) | 100% | — (EVAL_LLM_API_KEY not set — judge skipped) | **100** |  |
-| `03-workflow-contradictory` | — | — | — | — | **0** | ERROR: GET /pm/projects/377926f3-9e31-4075-a1d9-d59afe2a630a/cahier-des-charges/preview → HTTP 500: {"statusCode":500,"message":"Internal server error"} |
+| `03-workflow-contradictory` | 100% (7/7) | 100% (6/6) | 100% | — (EVAL_LLM_API_KEY not set — judge skipped) | **100** |  |
 | `04-deployment-francophone` | 100% (8/8) | 100% (7/7) | 100% | — (EVAL_LLM_API_KEY not set — judge skipped) | **100** |  |
-| `05-documentation-bilingual` | — | — | — | — | **0** | ERROR: GET /pm/projects/51ba49f5-8d8d-42a0-b0ea-f02abf5f510c/cahier-des-charges/preview → HTTP 500: {"statusCode":500,"message":"Internal server error"} |
+| `05-documentation-bilingual` | 100% (7/7) | 100% (5/5) | 100% | — (EVAL_LLM_API_KEY not set — judge skipped) | **100** |  |
 
 ## Methodology
 
@@ -33,9 +33,9 @@ The final per-fixture score is **capped** by the section-completeness percentage
 
 - **01-ged-rich** — —/10 — EVAL_LLM_API_KEY not set — judge skipped
 - **02-ged-sparse** — —/10 — EVAL_LLM_API_KEY not set — judge skipped
-- **03-workflow-contradictory** — —/10 — preview failed
+- **03-workflow-contradictory** — —/10 — EVAL_LLM_API_KEY not set — judge skipped
 - **04-deployment-francophone** — —/10 — EVAL_LLM_API_KEY not set — judge skipped
-- **05-documentation-bilingual** — —/10 — preview failed
+- **05-documentation-bilingual** — —/10 — EVAL_LLM_API_KEY not set — judge skipped
 
 ---
 
