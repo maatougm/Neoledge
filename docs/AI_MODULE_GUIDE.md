@@ -31,11 +31,12 @@
 13. [AI usage logging + budgets](#13-ai-usage-logging--budgets)
 14. [Anti-hallucination defences](#14-anti-hallucination-defences)
 15. [Eval harness (cahier + retrieval)](#15-eval-harness-cahier--retrieval)
-16. [HTTP endpoint catalog](#16-http-endpoint-catalog)
-17. [Environment variable matrix](#17-environment-variable-matrix)
-18. [File map](#18-file-map)
-19. [Operational runbook](#19-operational-runbook)
-20. [Known limitations](#20-known-limitations)
+16. [Test suite (unit + integration)](#16-test-suite-unit--integration)
+17. [HTTP endpoint catalog](#17-http-endpoint-catalog)
+18. [Environment variable matrix](#18-environment-variable-matrix)
+19. [File map](#19-file-map)
+20. [Operational runbook](#20-operational-runbook)
+21. [Known limitations](#21-known-limitations)
 
 ---
 
@@ -220,7 +221,7 @@ All tools live under `src/ai/agent/tools/`. They share `ToolContext` (projectId,
 | `read_segments` (chunked) | `transcript-tools.ts` | Paginated segments for the transcript agent | transcript |
 | `read_other_meeting_summaries` | `transcript-tools.ts` | Sibling meetings on the same project | transcript |
 | `read_transcript_metadata` | `transcript-tools.ts` | Duration, language, speaker count | transcript |
-| `read_candidate_tasks` / `read_project_members` / `read_member_history` | `assignment-tools.ts` | Candidate WPs + team + per-member history | assignment |
+| `read_candidate_tasks` / `read_project_members` / `read_member_history` | `assignment-tools.ts` | Candidate WPs + team (eligibility-filtered, see §9) + per-member history | assignment |
 | `read_questionnaire_status` / `read_meeting_state` | `copilot-tools.ts` | Live-copilot context (covered topics, missing answers) | copilot |
 
 ### Emit tools (terminal, ends loop)
@@ -404,6 +405,25 @@ After every path produces a cahier:
 **File:** `src/ai/assignment-agent.ts`.
 
 **Use case:** PM drags multiple WorkPackages onto the "À répartir" column and asks the agent to recommend assignees. The agent ranks up to 3 candidates per WP by confidence (0.60–1.0).
+
+**Eligibility filter — single source of truth across 3 surfaces:**
+
+Per-project team selection was deliberately removed earlier; the PM should be able to assign any Member or SpecificationTeam user without first adding them to a `ProjectMember` row. The eligible set on every assignment-related surface is the **same union**:
+
+- The project's own PM (so they can self-assign), AND
+- Every active user with role ∈ `{Member, SpecificationTeam}`.
+
+Admins and PMs from **other** projects are excluded — they have no place on this project's task board. The three surfaces that enforce this union and MUST stay aligned:
+
+| Surface | File | Role |
+|---|---|---|
+| Dropdown source | `GET /pm/projects/:id/assignable-users` (`pm.controller.ts`) | What the UI shows |
+| AI tool | `read_project_members` (`agent/tools/assignment-tools.ts`) | What the agent suggests from |
+| Write-path validation | `WorkPackagesService.bulkAssign` (`work-packages.service.ts`) | What the backend accepts |
+
+If you tighten one, tighten all three or you'll re-introduce the class of bug where the dropdown shows users the backend then rejects with `Certains utilisateurs ne sont pas assignables sur ce projet`.
+
+Side effect on a successful assignment: `bulkAssign` calls `ensureProjectMembership(projectId, assigneeId)` which idempotently inserts a `ProjectMember` row so the assignee gains read access to the project. Assignment **creates** membership; it does not require it as a precondition.
 
 **Signal hierarchy** (from the system prompt):
 1. **`jobTitle`** — strongest signal. "Backend Engineer" → API tasks; "QA" → Bug tasks; "DevOps" → infra.
@@ -635,7 +655,78 @@ If the same model judges its own output, you get **self-flattery** — the judge
 
 ---
 
-## 16. HTTP endpoint catalog
+## 16. Test suite (unit + integration)
+
+The AI module ships with three layers of test coverage. Layer choice matters: the eval scripts in §15 verify **AI quality** (recall, hallucination rates) against the live test server, while the test suite below verifies **code correctness** in isolation with no external API spend.
+
+### Layer 1 — Backend unit tests (jest)
+
+Co-located with sources under `web/back-nest/src/**/*.spec.ts`. **91 tests across 9 suites**, all green.
+
+| Suite | What it covers |
+|---|---|
+| `ai/agent/agent-runner.service.spec.ts` | Tool-loop runner: provider resolution, iteration cap, budget gating, Phase 1 parallel tool-call execution, `AgentEmitMissedError` shape |
+| `ai/embeddings/embeddings.service.spec.ts` | `/embed` HTTP client: batch overflow, 503 reasoning, timeout reasoning, length-mismatch, text truncation, prefix wrapping |
+| `cahier-des-charges/cahier-stream.spec.ts` | Phase 3 SSE: event order (started → 3× section → complete), group_error fan-out, `zai not configured` short-circuit, AbortSignal handling, all-three-fail INFO_MANQUANTE fallback |
+| `cahier-des-charges/cahier-grounding.spec.ts` | `applyGroundingCheck` (6 tests: grounded names survive, ungrounded → INFO_MANQUANTE, word-boundary safety, array title+content scanning, two-pass safety) + `runSelfCritique` (4 tests: not-configured no-op, valid correction, degenerate-result guard, LLM-throws fallback) |
+| Plus 5 non-AI suites (agile, deadlines, notifications, phase-gate, work-packages) | Pre-existing — kept green during the Phase 1-5 program |
+
+Run:
+```bash
+cd web/back-nest
+npx jest                # full suite
+npx jest src/ai         # AI subtree only
+npx jest --coverage     # with coverage report
+```
+
+### Layer 2 — Backend integration tests (gated)
+
+`web/back-nest/src/ai/embeddings/pgvector.int.spec.ts` — **10 tests**, gated on `INTEGRATION_DB_URL`. **Skipped** in the default test run; **executes** against any PostgreSQL 16 + pgvector instance when the env var is set.
+
+Coverage:
+- `EmbeddingIndexerService.indexAndStore` for all 3 targets (`segment`, `field-value`, `summary`)
+- Empty-input + whitespace-only filter behavior
+- Semantic SQL: top-1 cosine match, **multi-tenancy non-leakage**, `minSimilarity` floor, `WHERE embedding IS NOT NULL` backfill-window safety
+- End-to-end: indexer write → cosine retrieval round-trip
+
+**Isolation:** each run creates a unique schema (`int_<ts>_<rand>`), installs minimal table copies, runs assertions, drops the schema. Safe to point at a shared DB even with concurrent runs.
+
+**Embeddings are stubbed** to deterministic 4-dim unit vectors keyed by input-text first-char. Keeps cosine assertions exact and avoids needing the FastAPI service running. The real `multilingual-e5-small` is already covered end-to-end by the retrieval eval (§15.2 — recall@5 = 100% on the live test server).
+
+Run:
+```bash
+INTEGRATION_DB_URL=postgresql://user:pass@host:5432/db \
+  npx jest src/ai/embeddings/pgvector.int
+```
+
+### Layer 3 — Frontend unit tests (vitest)
+
+`web/Front/customapp/src/lib/cahier-stream.spec.ts` — **5 tests** for the SSE parser used by `CahierDesChargesSection.vue`:
+- Frame order on the happy path
+- Frame split across stream-chunk boundaries (the real bug class)
+- `Authorization: Bearer <jwt>` attached from the Pinia auth store
+- Non-200 server response → rejection with status code in the message
+- Malformed frames (missing data line, bad JSON) silently skipped
+
+Run:
+```bash
+cd web/Front/customapp
+npx vitest run                    # one-off
+npx vitest run src/lib/cahier-stream  # this suite only
+```
+
+### Coverage summary
+
+| Layer | Count | Status | Runner |
+|---|---|---|---|
+| Backend unit | 91 | ✅ green | jest |
+| Backend integration (gated) | 10 | ⏸ skipped (set `INTEGRATION_DB_URL` to run) | jest |
+| Frontend unit | 5 | ✅ green | vitest |
+| Eval scripts (live server) | 5 cahier fixtures + 30 retrieval queries | ✅ 100/100 + recall@5=100% | node |
+
+---
+
+## 17. HTTP endpoint catalog
 
 ### Cahier des charges (PM-scoped)
 
@@ -686,7 +777,7 @@ If the same model judges its own output, you get **self-flattery** — the judge
 
 ---
 
-## 17. Environment variable matrix
+## 18. Environment variable matrix
 
 ### Provider selection
 
@@ -736,9 +827,22 @@ If the same model judges its own output, you get **self-flattery** — the judge
 |---|---|---|
 | `AI_MAX_TOKENS_PER_PROJECT_PER_DAY` | `0` (unlimited) | Daily token cap per project |
 
+### Test gating
+
+| Var | Default | Purpose |
+|---|---|---|
+| `INTEGRATION_DB_URL` | unset (suite skipped) | Postgres connection string for `pgvector.int.spec.ts`. Must point at an instance with the `vector` extension available. |
+| `EVAL_BACKEND_URL` | `https://neoleadge.pythagore-init.com` | Target backend for `eval-cahier.mjs` and `eval-retrieval.mjs`. |
+| `EVAL_PM_EMAIL` / `EVAL_PM_PASSWORD` | `admin@neoleadge.com` / `Admin@123` | Admin login used by the eval scripts to drive the API. |
+| `EVAL_LLM_BASE_URL` / `EVAL_LLM_API_KEY` / `EVAL_LLM_JUDGE_MODEL` | Z.AI / — / `glm-4.5-air` | Cahier eval LLM-judge config. Judge model MUST differ from the cahier model (blocklist enforced). |
+| `EVAL_FIXTURE_FILTER` | unset | Substring filter to run a single fixture (e.g. `01-ged-rich`). |
+| `EVAL_SUITE_THRESHOLD` | `80` | Cahier eval pass/fail score threshold. |
+| `RETRIEVAL_RECALL_THRESHOLD` | `0.7` | Retrieval eval pass/fail recall@5 threshold. |
+| `EVAL_SKIP_CLEANUP` | unset | Set to `1` to leave the seeded projects in place after a run (debugging). |
+
 ---
 
-## 18. File map
+## 19. File map
 
 ### `src/ai/`
 ```
@@ -776,6 +880,7 @@ embeddings/
   embeddings.module.ts             registration
   embeddings.service.ts            embed() HTTP client (Result-typed)
   embeddings.service.spec.ts       7 unit tests covering failure modes
+  pgvector.int.spec.ts             10 gated integration tests (INTEGRATION_DB_URL)
 
 prompts/
   transcript-prompt.ts             SYSTEM_PROMPT for single-shot transcript analysis
@@ -793,6 +898,8 @@ cahier-des-charges.controller.ts   12 endpoints (preview, preview-stream, save, 
 cahier-des-charges.module.ts       registration
 cahier-des-charges.service.ts      ~2000 LOC — all 5 generation paths + grounding + critique
 cahier-des-charges.types.ts        CahierAiResult, CahierStreamEvent, CahierPreflightResult, …
+cahier-stream.spec.ts              5 unit tests for streamCahierContent (Phase 3 SSE)
+cahier-grounding.spec.ts           10 unit tests for applyGroundingCheck + runSelfCritique
 docx-builder.ts                    Pure rendering — CahierAiResult → .docx
 dto/cahier-feedback.dto.ts         class DTO for POST /feedback
 ```
@@ -819,6 +926,13 @@ assemblyai.provider.ts             AssemblyAI Universal-2 wrapper
 ### `src/commands/`
 ```
 backfill-embeddings.ts             Standalone CLI — runs inside the server container
+```
+
+### `web/Front/customapp/src/lib/` (frontend, AI-touching only)
+```
+cahier-stream.ts                   SSE consumer for /cahier-des-charges/preview-stream
+                                   (fetch + ReadableStream + frame parser)
+cahier-stream.spec.ts              5 vitest tests for the parser
 ```
 
 ### `web/Transcription/` (Python, boundary only)
@@ -856,7 +970,7 @@ fixtures/retrieval-golden.json     30 golden queries for retrieval eval
 
 ---
 
-## 19. Operational runbook
+## 20. Operational runbook
 
 ### First-time prod deploy (already done — kept for re-runs)
 
@@ -913,9 +1027,35 @@ Every Phase 1-5 path is gated. Rollback is **always** a single env-var flip + co
 - Set `AI_MAX_TOKENS_PER_PROJECT_PER_DAY=200000` on a runaway project; the daily-budget guard throws 403 before the next call.
 - Embeddings have zero cost (`local-e5` provider) but contribute to AiUsage row counts. Filter them out at the admin-dashboard level if needed.
 
+### Pre-merge verification checklist
+
+Run before opening a PR that touches `src/ai/`, `src/cahier-des-charges/`, or `src/meetings/live-copilot.*`:
+
+```bash
+# Backend typecheck + unit tests (must pass)
+cd web/back-nest
+npx tsc --noEmit
+npx jest
+
+# Frontend typecheck + unit tests (must pass)
+cd ../Front/customapp
+npx vue-tsc --noEmit
+npx vitest run
+
+# Optional but recommended for retrieval/indexer changes
+INTEGRATION_DB_URL=postgresql://user:pass@host:5432/db \
+  npx jest src/ai/embeddings/pgvector.int
+
+# Optional but recommended for cahier or retrieval prompt/SQL changes
+node scripts/eval-cahier.mjs              # ~10 min, ~$0.10 Z.AI spend
+node scripts/eval-retrieval.mjs           # ~1 min, free (local-e5)
+```
+
+`vue-tsc` is **stricter than** the local `tsc` in the Docker build — running it locally catches `NeoTag severity="warning"` (must be `"warn"`) and similar class issues before they break the prod build.
+
 ---
 
-## 20. Known limitations
+## 21. Known limitations
 
 1. **In-process state for live-edit debouncing.** `CollaborationService.pendingEmbeds` is a per-process `Map`. Won't survive a PM2 cluster split. The form-save path is the safety net (it always re-embeds on `saveFieldValues`).
 2. **Live copilot session map** has the same constraint — `LiveCopilotService.sessions` is per-process. Multi-instance scaling requires Redis-backed session state.
