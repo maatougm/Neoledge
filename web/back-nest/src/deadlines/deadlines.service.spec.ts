@@ -102,6 +102,8 @@ describe('DeadlinesService', () => {
         expect.any(String),
         expect.stringContaining('moins de 2 jours'),
         'proj-1',
+        undefined,
+        { skipEmail: true },
       );
     });
 
@@ -120,6 +122,8 @@ describe('DeadlinesService', () => {
         expect.any(String),
         expect.any(String),
         'proj-1',
+        undefined,
+        { skipEmail: true },
       );
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         'admin-2',
@@ -127,6 +131,8 @@ describe('DeadlinesService', () => {
         expect.any(String),
         expect.any(String),
         'proj-1',
+        undefined,
+        { skipEmail: true },
       );
     });
   });
@@ -148,6 +154,8 @@ describe('DeadlinesService', () => {
         expect.any(String),
         expect.stringContaining('5 jours'),
         'proj-2',
+        undefined,
+        { skipEmail: true },
       );
     });
 
@@ -228,6 +236,8 @@ describe('DeadlinesService', () => {
         expect.any(String),
         expect.any(String),
         'proj-pending',
+        undefined,
+        { skipEmail: true },
       );
       const callsForAlerted = (mockNotifications.notify.mock.calls as unknown[][]).filter(
         (c) => c[4] === 'proj-alerted',
