@@ -754,38 +754,41 @@ export class WorkPackagesService {
       sprintName = sprint.name;
     }
 
-    // Validate all non-null assignees are real, active users AND members of
-    // this project. Without the membership check, a PM could assign a WP to
-    // someone outside the project who would then 403 trying to open it
-    // (ghost assignment).
+    // Validate every non-null assignee is an active user whose role allows
+    // assignment on this project. Per-project team selection was removed,
+    // so the eligible union is:
+    //   - The project's own PM (so they can self-assign).
+    //   - Every active Member / SpecificationTeam user.
+    //   - Admins and PMs of OTHER projects are NOT allowed (they have no
+    //     place on this project's task board; the UI dropdown matches).
+    //
+    // This is the single source of truth — the UI's /assignable-users
+    // endpoint and the AI's read_project_members tool both return the
+    // exact same union. If you tighten this, tighten those too.
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
+      const projectRow = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { projectManagerId: true },
+      });
+      const projectPmId = projectRow?.projectManagerId ?? null;
+
       const users = await this.prisma.appUser.findMany({
         where: { id: { in: uniqueAssignees }, isActive: true },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       if (users.length !== uniqueAssignees.length) {
         return Result.fail('Certains utilisateurs sont introuvables ou inactifs.');
       }
-      // Resolve project membership in two queries (PM of project + ProjectMember rows).
-      const [projectRow, members] = await Promise.all([
-        this.prisma.project.findUnique({
-          where: { id: projectId },
-          select: { projectManagerId: true },
-        }),
-        this.prisma.projectMember.findMany({
-          where: { projectId, userId: { in: uniqueAssignees } },
-          select: { userId: true },
-        }),
-      ]);
-      const memberIds = new Set(members.map((m) => m.userId));
-      if (projectRow?.projectManagerId) memberIds.add(projectRow.projectManagerId);
-      const outsiders = uniqueAssignees.filter((id) => !memberIds.has(id));
+      const ASSIGNABLE_ROLES = new Set(['Member', 'SpecificationTeam']);
+      const outsiders = users
+        .filter((u) => !ASSIGNABLE_ROLES.has(u.role) && u.id !== projectPmId)
+        .map((u) => u.id);
       if (outsiders.length > 0) {
         return Result.fail(
-          `Certains utilisateurs ne sont pas membres du projet : ${outsiders.length} ID(s).`,
+          `Certains utilisateurs ne sont pas assignables sur ce projet : ${outsiders.length} ID(s).`,
         );
       }
     }

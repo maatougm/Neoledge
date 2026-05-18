@@ -260,21 +260,19 @@ export class PmController {
   }
 
   /**
-   * Users who can be assigned a WorkPackage on THIS project.
+   * Users who can be assigned a WorkPackage on this project.
    *
-   * The legitimate assignable set MUST match the validation in
-   * `WorkPackagesService.bulkAssign` — which only accepts the PM of the
-   * project OR users listed in `ProjectMember` for the project. Returning
-   * a wider set from this endpoint produced "Certains utilisateurs ne sont
-   * pas membres du projet" errors in the assignment UI, where the PM saw
-   * admins / PMs from other projects in the dropdown and the backend
-   * rejected the write.
+   * Per-project team selection was deliberately removed — the PM should be
+   * able to assign any Member or SpecificationTeam user without first adding
+   * them to `ProjectMember`. The legitimate set is therefore:
+   *   - The project's own PM (so they can assign themselves a task).
+   *   - Every active user with role in {Member, SpecificationTeam}.
    *
-   * Output is union of:
-   *   1. The project's PM (always assignable to their own project).
-   *   2. Every active user in `ProjectMember` for the project, regardless
-   *      of role (Member / SpecificationTeam / Admin etc — what matters
-   *      is the membership row, not the platform role).
+   * Admins and PMs from OTHER projects are deliberately excluded — they
+   * have no place on this project's task board and showing them up there
+   * was the source of "Certains utilisateurs ne sont pas membres du projet"
+   * errors when the PM picked one. The matching write-path validation in
+   * `WorkPackagesService.bulkAssign` enforces the same union.
    */
   @Get('projects/:id/assignable-users')
   @ProjectAccess('id')
@@ -285,21 +283,15 @@ export class PmController {
     });
     if (!project) return [];
 
-    const userIds = new Set<string>();
-    if (project.projectManagerId) userIds.add(project.projectManagerId);
-
-    const members = await this.prisma.projectMember.findMany({
-      where: { projectId },
-      select: { userId: true },
-    });
-    for (const m of members) userIds.add(m.userId);
-
-    if (userIds.size === 0) return [];
-
     const users = await this.prisma.appUser.findMany({
       where: {
-        id: { in: [...userIds] },
         isActive: true,
+        OR: [
+          { role: { in: ['Member', 'SpecificationTeam'] } },
+          // The project's own PM — even if their role on the platform is
+          // ProjectManager (which we otherwise exclude to keep other PMs out).
+          ...(project.projectManagerId ? [{ id: project.projectManagerId }] : []),
+        ],
       },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
