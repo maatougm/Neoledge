@@ -259,14 +259,47 @@ export class PmController {
     };
   }
 
-  /** Users available to be assigned as team responsibles (SpecificationTeam + Member). */
+  /**
+   * Users who can be assigned a WorkPackage on THIS project.
+   *
+   * The legitimate assignable set MUST match the validation in
+   * `WorkPackagesService.bulkAssign` — which only accepts the PM of the
+   * project OR users listed in `ProjectMember` for the project. Returning
+   * a wider set from this endpoint produced "Certains utilisateurs ne sont
+   * pas membres du projet" errors in the assignment UI, where the PM saw
+   * admins / PMs from other projects in the dropdown and the backend
+   * rejected the write.
+   *
+   * Output is union of:
+   *   1. The project's PM (always assignable to their own project).
+   *   2. Every active user in `ProjectMember` for the project, regardless
+   *      of role (Member / SpecificationTeam / Admin etc — what matters
+   *      is the membership row, not the platform role).
+   */
   @Get('projects/:id/assignable-users')
   @ProjectAccess('id')
-  async getAssignableUsers() {
+  async getAssignableUsers(@Param('id') projectId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
+      select: { projectManagerId: true },
+    });
+    if (!project) return [];
+
+    const userIds = new Set<string>();
+    if (project.projectManagerId) userIds.add(project.projectManagerId);
+
+    const members = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true },
+    });
+    for (const m of members) userIds.add(m.userId);
+
+    if (userIds.size === 0) return [];
+
     const users = await this.prisma.appUser.findMany({
       where: {
+        id: { in: [...userIds] },
         isActive: true,
-        role: { in: ['SpecificationTeam', 'Member', 'ProjectManager', 'Admin'] },
       },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: [{ role: 'asc' }, { firstName: 'asc' }],

@@ -75,23 +75,43 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
   }
 
   // ── read_project_members ───────────────────────────────────────────────────
-  // Enumerates every active user eligible for assignment. The team-selection
-  // step was removed, so the assignment AI must reason from scratch about
-  // each candidate. We pre-load every signal the model needs in a single
-  // payload (jobTitle, department, in-progress load, lifetime project load,
-  // up to 3 recent Resolved/Closed WP titles on this project) so it doesn't
-  // have to make N follow-up read_member_history calls — which it often
-  // skipped under the previous schema, producing weak suggestions.
+  // Enumerates every user ACTUALLY ASSIGNABLE on this project — the PM of
+  // the project + every row in ProjectMember for the project. Used to be
+  // a global list of every active user, which produced suggestions for
+  // people the write path would then reject (bulkAssign validates against
+  // the same membership set). Mirrors the fix to /pm/projects/:id/assignable-users.
+  //
+  // We pre-load every signal the model needs in a single payload (jobTitle,
+  // department, in-progress load, lifetime project load, up to 3 recent
+  // Resolved/Closed WP titles on this project) so it doesn't have to make
+  // N follow-up read_member_history calls.
   const readMembers: ToolDefinition<Record<string, never>, { members: MemberContext[] }> = {
     name: 'read_project_members',
-    description: "List every user eligible to be assigned a task. Each entry includes: `label` (platform role — coarse signal), `jobTitle` (strongest signal — the user's role at the company), `department`, `inProgressCount` (current open WPs project-wide — avoid overload), `totalAssignedThisProject` (familiarity with this project), and `recentResolvedTitles` (the strongest skill evidence — what they've actually shipped). Lean on jobTitle and recentResolvedTitles. Fall back to read_member_history only when recentResolvedTitles is empty AND jobTitle is ambiguous.",
+    description: "List every user eligible to be assigned a task ON THIS PROJECT (project's PM + everyone in ProjectMember). Each entry includes: `label` (platform role — coarse signal), `jobTitle` (strongest signal — the user's role at the company), `department`, `inProgressCount` (current open WPs project-wide — avoid overload), `totalAssignedThisProject` (familiarity with this project), and `recentResolvedTitles` (the strongest skill evidence — what they've actually shipped). Lean on jobTitle and recentResolvedTitles. Fall back to read_member_history only when recentResolvedTitles is empty AND jobTitle is ambiguous.",
     parameters: obj({}, {}),
     handler: async (_args, ctx: ToolContext) => {
       const prisma = ctx.prisma as PrismaService
+      // Resolve membership: PM + ProjectMember rows. Same union the bulk
+      // assignment write path enforces; keep them aligned so suggestions
+      // never name a user the write will reject.
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false },
+        select: { projectManagerId: true },
+      })
+      if (!project) return { members: [] }
+      const memberIds = new Set<string>()
+      if (project.projectManagerId) memberIds.add(project.projectManagerId)
+      const memberRows = await prisma.projectMember.findMany({
+        where: { projectId },
+        select: { userId: true },
+      })
+      for (const m of memberRows) memberIds.add(m.userId)
+      if (memberIds.size === 0) return { members: [] }
+
       const users = await prisma.appUser.findMany({
         where: {
+          id: { in: [...memberIds] },
           isActive: true,
-          role: { in: ['SpecificationTeam', 'Member', 'ProjectManager'] },
         },
         select: {
           id: true, firstName: true, lastName: true, email: true,
