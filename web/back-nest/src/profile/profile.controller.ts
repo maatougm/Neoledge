@@ -47,7 +47,10 @@ export class ProfileController {
   async serveAvatar(@Param('userId') userId: string, @Res() res: Response) {
     const result = await this.service.getAvatarPath(userId);
     if (result.isFailure) throw new NotFoundException(result.error);
-    return res.sendFile(result.value as string, { root: '.' });
+    // getAvatarPath returns an absolute path that has been verified to live
+    // under uploads/avatars — pass it directly so Express does not resolve
+    // against an arbitrary { root } and traverse outside the upload dir.
+    return res.sendFile(result.value as string);
   }
 
   @Get('preferences')

@@ -9,6 +9,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { sanitize } from '@/lib/sanitize'
 
 const props = withDefaults(
   defineProps<{
@@ -37,7 +38,7 @@ const renderedHtml = computed(() => {
   const escaped = escapeHtml(raw)
 
   // Inline bold — must run after escaping so `**` is unaffected by HTML escapes
-  let withBold = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  const withBold = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 
   // Split into paragraphs separated by blank lines
   const blocks = withBold.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)
@@ -54,7 +55,11 @@ const renderedHtml = computed(() => {
     })
     .join('')
 
-  return html
+  // Defence-in-depth: even though we already HTML-escape the raw input
+  // before applying inline-bold markdown, run the result through the
+  // shared DOMPurify pipeline. AI output through this path is otherwise
+  // the one v-html consumer that bypasses sanitize().
+  return sanitize(html)
 })
 </script>
 

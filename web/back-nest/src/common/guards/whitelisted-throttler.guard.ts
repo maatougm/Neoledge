@@ -40,16 +40,15 @@ export class WhitelistedThrottlerGuard extends ThrottlerGuard {
     socket?: { remoteAddress?: string };
   }): string[] {
     const out: string[] = [];
+    // Only the FIRST hop in X-Forwarded-For is the client; trusting later hops
+    // lets an attacker append a whitelisted IP to bypass the rate limiter.
     const xff = req.headers?.['x-forwarded-for'];
     if (typeof xff === 'string') {
-      out.push(
-        ...xff
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      );
+      const first = xff.split(',')[0]?.trim();
+      if (first) out.push(first);
     } else if (Array.isArray(xff)) {
-      out.push(...xff.map((s) => s.trim()));
+      const first = xff[0]?.trim();
+      if (first) out.push(first);
     }
     const real = req.headers?.['x-real-ip'];
     if (typeof real === 'string') out.push(real.trim());

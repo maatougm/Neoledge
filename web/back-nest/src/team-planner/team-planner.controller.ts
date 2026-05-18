@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, Body, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Patch, Param, Body, Query, Req, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
 import { TeamPlannerService } from './team-planner.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
@@ -6,11 +6,12 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 
 interface AuthenticatedRequest extends Request {
-  user?: { userId: string };
+  user?: { userId: string; role?: string };
 }
 
 @Controller('pm/team-planner')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Admin', 'ProjectManager')
 export class TeamPlannerController {
   constructor(private readonly service: TeamPlannerService) {}
 
@@ -53,7 +54,10 @@ export class TeamPlannerController {
     @Body() dto: { assigneeId: string; startDate?: string; dueDate?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const r = await this.service.reassign(wpId, dto, req.user?.userId);
+    const callerId = req.user?.userId;
+    const callerRole = req.user?.role;
+    if (!callerId) throw new ForbiddenException('Authentification requise.');
+    const r = await this.service.reassign(wpId, dto, callerId, callerRole);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

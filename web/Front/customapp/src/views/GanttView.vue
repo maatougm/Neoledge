@@ -280,10 +280,6 @@ function onDragMove(e: MouseEvent) {
   if (!dragState) return
   const dxDays = pixelsToDays(e.clientX - dragState.startX)
   if (dxDays === 0) return
-  const idx = ganttStore.workPackages.findIndex((w) => w.id === dragState!.wp.id)
-  if (idx < 0) return
-  const current = ganttStore.workPackages[idx]
-
   let newStart = dragState.origStart
   let newDue = dragState.origDue
   if (dragState.mode === 'move') {
@@ -295,8 +291,9 @@ function onDragMove(e: MouseEvent) {
     newDue = addDays(dragState.origDue, dxDays)
   }
 
-  // Optimistic update (visual only, not persisted until mouseup)
-  ganttStore.workPackages[idx] = { ...current, startDate: newStart, dueDate: newDue }
+  // Optimistic update (visual only, not persisted until mouseup) — through
+  // a store action rather than a direct array index mutation from the view.
+  ganttStore.patchWorkPackage(dragState.wp.id, { startDate: newStart, dueDate: newDue })
 }
 
 async function onDragEnd() {
@@ -317,10 +314,7 @@ async function onDragEnd() {
     toast.add({ severity: 'success', detail: 'Dates mises à jour.', life: 2000 })
   } catch {
     // Revert on failure
-    const idx = ganttStore.workPackages.findIndex((w) => w.id === wp.id)
-    if (idx >= 0) {
-      ganttStore.workPackages[idx] = { ...wp, startDate: state.origStart, dueDate: state.origDue }
-    }
+    ganttStore.patchWorkPackage(wp.id, { startDate: state.origStart, dueDate: state.origDue })
     toast.add({ severity: 'error', detail: 'Échec de la mise à jour.', life: 3000 })
   }
 }
@@ -388,6 +382,10 @@ onMounted(() => ganttStore.fetchGantt(props.id))
 onUnmounted(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
+  // Drop any in-progress drag so the next mount starts clean and an
+  // abandoned wpStore.update call doesn't leak optimistic visual state.
+  dragState = null
+  draggingWpId.value = null
 })
 </script>
 

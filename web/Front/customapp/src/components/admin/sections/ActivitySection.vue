@@ -103,7 +103,7 @@
             </span>
           </p>
           <p v-if="item.detail" class="item-detail">{{ item.detail }}</p>
-          <span class="item-time">{{ relativeTime(item.timestamp ?? item.createdAt ?? '') }}</span>
+          <span class="item-time">{{ relativeTime(item.timestamp) }}</span>
         </div>
       </div>
     </div>

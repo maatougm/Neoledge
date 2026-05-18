@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
-// ThrottlerModule removed — was causing stale 429s due to DI complications
+import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
+import { WhitelistedThrottlerGuard } from './common/guards/whitelisted-throttler.guard.js';
 import { PrismaModule } from './prisma/prisma.module.js';
-import { PermissionsModule } from './permissions/permissions.module.js';
-import { RolesModule } from './roles/roles.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ProjectsModule } from './projects/projects.module.js';
@@ -26,7 +26,6 @@ import { SystemStatusModule } from './system-status/system-status.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { CollaborationModule } from './collaboration/collaboration.module.js';
-import { AutomationModule } from './automation/automation.module.js';
 import { WorkPackagesModule } from './work-packages/work-packages.module.js';
 import { GanttModule } from './gantt/gantt.module.js';
 import { AgileModule } from './agile/agile.module.js';
@@ -37,10 +36,19 @@ import { HealthModule } from './health/health.module.js';
 import { TeamsModule } from './teams/teams.module.js';
 import { CahierDesChargesModule } from './cahier-des-charges/cahier-des-charges.module.js';
 import { ProjectMembersModule } from './project-members/project-members.module.js';
+import { AiUsageModule } from './ai-usage/ai-usage.module.js';
+import { RetentionModule } from './retention/retention.module.js';
 
 @Module({
-  providers: [],
+  providers: [
+    // Global rate limiting via the IP-whitelist-aware guard.
+    // Default 120 req/min/IP; per-route @Throttle() can tighten it (auth, AI).
+    { provide: APP_GUARD, useClass: WhitelistedThrottlerGuard },
+  ],
   imports: [
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 120 }],
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       validate(config: Record<string, unknown>) {
@@ -125,11 +133,9 @@ import { ProjectMembersModule } from './project-members/project-members.module.j
       },
     }),
     PrismaModule,
-    PermissionsModule,
     MailModule,
     AuditModule,
     AuthModule,
-    RolesModule,
     UsersModule,
     ProjectsModule,
     MeetingsModule,
@@ -147,7 +153,6 @@ import { ProjectMembersModule } from './project-members/project-members.module.j
     AnalyticsModule,
     AiModule,
     CollaborationModule,
-    AutomationModule,
     WorkPackagesModule,
     GanttModule,
     AgileModule,
@@ -158,6 +163,8 @@ import { ProjectMembersModule } from './project-members/project-members.module.j
     TeamsModule,
     CahierDesChargesModule,
     ProjectMembersModule,
+    AiUsageModule,
+    RetentionModule,
   ],
 })
 export class AppModule {}

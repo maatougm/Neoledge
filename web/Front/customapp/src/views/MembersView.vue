@@ -58,10 +58,10 @@
             <td>
               <div v-if="editingId === m.id" class="mem-edit">
                 <NeoInputText v-model="editingValue" placeholder="ex: Lead Frontend" />
-                <button class="mem-icon-btn mem-icon-btn--ok" @click="saveLabel(m.id)" title="Enregistrer">
+                <button class="mem-icon-btn mem-icon-btn--ok" title="Enregistrer" @click="saveLabel(m.id)">
                   <i class="pi pi-check" />
                 </button>
-                <button class="mem-icon-btn" @click="cancelEdit" title="Annuler">
+                <button class="mem-icon-btn" title="Annuler" @click="cancelEdit">
                   <i class="pi pi-times" />
                 </button>
               </div>
@@ -69,7 +69,7 @@
                 <span :class="['mem-label__text', { 'mem-label__text--empty': !m.label }]">
                   {{ m.label || '— aucun label —' }}
                 </span>
-                <button class="mem-icon-btn" @click="startEdit(m)" title="Modifier le label">
+                <button class="mem-icon-btn" title="Modifier le label" @click="startEdit(m)">
                   <i class="pi pi-pencil" />
                 </button>
               </div>
@@ -79,8 +79,8 @@
                 severity="danger"
                 text
                 icon="pi pi-trash"
-                @click="confirmRemove(m)"
                 :title="`Retirer ${m.user.firstName} du projet`"
+                @click="confirmRemove(m)"
               />
             </td>
           </tr>
@@ -291,9 +291,11 @@ const reassignCandidates = computed<Array<{ userId: string; fullName: string }>>
 const availableUsers = computed<SystemUserOption[]>(() => {
   const taken = new Set(store.members.map((m) => m.userId))
   const meId = auth.userId ?? ''
+  const pmId = store.projectManagerId
   return allUsers.value.filter((u) => {
     if (taken.has(u.id)) return false
     if (meId && u.id === meId) return false                  // PM can't add themselves
+    if (pmId && u.id === pmId) return false                  // project's PM is implicit
     if (u.isActive === false) return false                   // skip inactive (defensive)
     if (EXCLUDED_ROLES.has(u.role)) return false             // Admin / Viewer not addable
     return true
@@ -308,7 +310,11 @@ const usersLoadError = ref<string | null>(null)
 async function loadAllUsers(): Promise<void> {
   usersLoadError.value = null
   try {
-    const { data } = await api.get<SystemUser[] | { items: SystemUser[] }>('/pm/users')
+    // forMembers=true lets the backend filter out inactive + Admin/Viewer.
+    // Without that flag the endpoint returns every user (used elsewhere for
+    // assignee dropdowns), so we'd have to do the same filtering on the
+    // client and pull more data than needed.
+    const { data } = await api.get<SystemUser[] | { items: SystemUser[] }>('/pm/users?forMembers=true')
     const list = Array.isArray(data) ? data : (data.items ?? [])
     allUsers.value = list.map((u) => ({ ...u, fullName: `${u.firstName} ${u.lastName} (${u.email})` }))
   } catch (err: unknown) {

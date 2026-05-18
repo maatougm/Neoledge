@@ -1,8 +1,12 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import type { CloseSprintDto, SprintWpDisposition } from './dto/close-sprint.dto.js';
+
+// Statuses that count a WP as "finished" for the sprint-close review.
+const FINISHED_STATUSES = new Set(['Done', 'Closed', 'Resolved']);
 
 // Prisma unique-constraint violation.
 const PRISMA_UNIQUE_VIOLATION = 'P2002';
@@ -28,18 +32,9 @@ export class AgileService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly automation: AutomationService,
     private readonly collab: CollaborationGateway,
+    private readonly notifications: NotificationsService,
   ) {}
-
-  private async triggerAutomation(boardId: string, event: string, context: Record<string, unknown>): Promise<void> {
-    try {
-      const board = await this.prisma.board.findUnique({ where: { id: boardId }, select: { projectId: true } });
-      if (board) void this.automation.executeRulesForEvent(board.projectId, event, context).catch((e) => this.logger.error('triggerAutomation executeRulesForEvent failed', e));
-    } catch (e) {
-      this.logger.error('triggerAutomation failed', e);
-    }
-  }
 
   /**
    * Cold-start idempotency: wraps the check-then-create of the default board
@@ -253,9 +248,28 @@ export class AgileService {
     }
   }
 
-  async moveCard(workPackageId: string, boardColumnId: string | null, position: number) {
+  async moveCard(projectId: string, workPackageId: string, boardColumnId: string | null, position: number) {
     try {
-      const col = boardColumnId ? await this.prisma.boardColumn.findUnique({ where: { id: boardColumnId } }) : null;
+      // Verify the WP belongs to the URL's project — prevents cross-project moves
+      // when a malicious client posts another project's wpId to this endpoint.
+      const wpExisting = await this.prisma.workPackage.findFirst({
+        where: { id: workPackageId, projectId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!wpExisting) return Result.fail('Work package introuvable.');
+
+      // If a target column is provided, verify it also belongs to the same project.
+      let col: { mapStatus: string | null; board: { projectId: string } } | null = null;
+      if (boardColumnId) {
+        col = await this.prisma.boardColumn.findUnique({
+          where: { id: boardColumnId },
+          select: { mapStatus: true, board: { select: { projectId: true } } },
+        });
+        if (!col || col.board.projectId !== projectId) {
+          return Result.fail('Colonne introuvable ou hors projet.');
+        }
+      }
+
       const data: Record<string, unknown> = { boardColumnId, position };
       if (col?.mapStatus) data.status = col.mapStatus;
       const wp = await this.prisma.workPackage.update({ where: { id: workPackageId }, data });
@@ -334,6 +348,21 @@ export class AgileService {
 
   async deleteSprint(id: string) {
     try {
+      // Refuse deletion when the sprint either holds work packages OR has
+      // already been started — in either case the user almost certainly does
+      // not mean to lose the data. WorkPackage.sprintId is `SetNull` so a
+      // forced delete would silently un-assign every WP; we reject instead.
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id },
+        select: { status: true, _count: { select: { workPackages: true } } },
+      });
+      if (!sprint) return Result.fail<void>('Sprint introuvable.');
+      if (sprint.status !== 'Planning') {
+        return Result.fail<void>('Seuls les sprints en planification peuvent être supprimés.');
+      }
+      if (sprint._count.workPackages > 0) {
+        return Result.fail<void>('Sprint non vide. Retirez les tâches avant la suppression.');
+      }
       await this.prisma.sprint.delete({ where: { id } });
       return Result.ok<void>();
     } catch (e) {
@@ -358,7 +387,6 @@ export class AgileService {
       const err = this.assertTransition(existing.status, 'Active');
       if (err) return Result.fail(err);
       const s = await this.prisma.sprint.update({ where: { id }, data: { status: 'Active' } });
-      void this.triggerAutomation(s.boardId, 'sprint_started', { sprintId: id, name: s.name });
       return Result.ok(s);
     } catch (e) {
       this.logger.error('startSprint failed', e);
@@ -366,19 +394,233 @@ export class AgileService {
     }
   }
 
-  async closeSprint(id: string) {
+  /**
+   * Snapshot of a sprint's WPs for the close-review modal.
+   * Splits WPs into finished (Done/Closed/Resolved) vs unfinished,
+   * and suggests a target sprint when at least one Planning sprint exists
+   * on the same board.
+   */
+  async getSprintClosePreview(projectId: string, sprintId: string) {
     try {
-      const existing = await this.prisma.sprint.findUnique({ where: { id } });
-      if (!existing) return Result.fail('Sprint introuvable.');
-      const err = this.assertTransition(existing.status, 'Closed');
-      if (err) return Result.fail(err);
-      const s = await this.prisma.sprint.update({ where: { id }, data: { status: 'Closed' } });
-      void this.triggerAutomation(s.boardId, 'sprint_closed', { sprintId: id, name: s.name });
-      return Result.ok(s);
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id: sprintId },
+        include: { board: { select: { id: true, projectId: true } } },
+      });
+      if (!sprint || sprint.board.projectId !== projectId) {
+        return Result.fail('Sprint introuvable.');
+      }
+      if (sprint.status !== 'Active') {
+        return Result.fail('Seul un sprint actif peut être clôturé.');
+      }
+
+      const wps = await this.prisma.workPackage.findMany({
+        where: { sprintId, isDeleted: false },
+        select: {
+          id: true, title: true, status: true, priority: true, type: true,
+          assigneeId: true,
+          assignee: { select: { id: true, firstName: true, lastName: true, avatarPath: true } },
+        },
+        orderBy: { position: 'asc' },
+      });
+
+      const completed = wps.filter((w) => FINISHED_STATUSES.has(w.status));
+      const unfinished = wps.filter((w) => !FINISHED_STATUSES.has(w.status));
+
+      // Pick the soonest Planning sprint on the same board that starts on or
+      // after this sprint's end date — falls back to any Planning sprint if
+      // none match the date criterion.
+      const planningSprints = await this.prisma.sprint.findMany({
+        where: {
+          boardId: sprint.board.id,
+          status: 'Planning',
+          id: { not: sprintId },
+        },
+        orderBy: { startDate: 'asc' },
+        select: { id: true, startDate: true, name: true },
+      });
+      const suggested = planningSprints.find((s) => s.startDate >= sprint.endDate)
+        ?? planningSprints[0]
+        ?? null;
+
+      return Result.ok({
+        sprintId: sprint.id,
+        sprintName: sprint.name,
+        completed,
+        unfinished,
+        suggestedTargetSprintId: suggested?.id ?? null,
+        suggestedTargetSprintName: suggested?.name ?? null,
+      });
     } catch (e) {
+      this.logger.error('getSprintClosePreview failed', e);
+      return Result.fail('Échec du chargement de la revue de clôture.');
+    }
+  }
+
+  /**
+   * Atomic sprint close: apply each disposition (next_sprint / backlog / keep)
+   * inside a transaction, then transition the sprint to Closed. Notifies
+   * affected assignees with a single aggregated notification per user.
+   */
+  async closeSprint(
+    projectId: string,
+    sprintId: string,
+    dto: CloseSprintDto,
+    actorId: string,
+  ) {
+    try {
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id: sprintId },
+        include: { board: { select: { id: true, projectId: true } } },
+      });
+      if (!sprint || sprint.board.projectId !== projectId) {
+        return Result.fail('Sprint introuvable.');
+      }
+      const transitionErr = this.assertTransition(sprint.status, 'Closed');
+      if (transitionErr) return Result.fail(transitionErr);
+
+      // Pull WPs that actually live in this sprint — defines the allow-set.
+      // Any disposition WP-id not in this set is silently dropped (could be
+      // a soft-deleted row or a stale client payload).
+      const sprintWps = await this.prisma.workPackage.findMany({
+        where: { sprintId, isDeleted: false },
+        select: { id: true, status: true, title: true, assigneeId: true },
+      });
+      const wpById = new Map(sprintWps.map((w) => [w.id, w]));
+      const unfinished = sprintWps.filter((w) => !FINISHED_STATUSES.has(w.status));
+
+      // Empty body + unfinished WPs → reject. The frontend must always pass
+      // the full disposition map after the PM confirms in the modal.
+      if (unfinished.length > 0 && dto.dispositions.length === 0) {
+        return Result.fail('Confirmation des tâches non terminées requise.');
+      }
+
+      // Filter dto.dispositions to the allow-set; group by disposition.
+      const next: string[] = [];
+      const backlog: string[] = [];
+      // 'keep' triggers no update — we just don't touch sprintId.
+      for (const d of dto.dispositions) {
+        if (!wpById.has(d.workPackageId)) continue; // stale client
+        if (d.disposition === 'next_sprint') next.push(d.workPackageId);
+        else if (d.disposition === 'backlog') backlog.push(d.workPackageId);
+      }
+
+      // Resolve + validate the target sprint when at least one WP is moving forward.
+      let targetSprintId: string | null = null;
+      if (next.length > 0) {
+        const candidateId = dto.targetSprintId ?? (await this.pickSuggestedTargetSprintId(sprint.board.id, sprint.endDate, sprintId));
+        if (!candidateId) {
+          return Result.fail('Aucun sprint en planification — créez-en un avant de reporter des tâches.');
+        }
+        const target = await this.prisma.sprint.findUnique({
+          where: { id: candidateId },
+          select: { id: true, boardId: true, status: true, name: true },
+        });
+        if (!target || target.boardId !== sprint.board.id) {
+          return Result.fail('Sprint cible introuvable ou hors projet.');
+        }
+        if (target.status !== 'Planning') {
+          return Result.fail('Le sprint cible doit être en statut Planification.');
+        }
+        targetSprintId = target.id;
+      }
+
+      // Atomic mutation. Re-read sprint status inside the transaction so a
+      // parallel close racing with us aborts cleanly.
+      await this.prisma.$transaction(async (tx) => {
+        const current = await tx.sprint.findUnique({ where: { id: sprintId }, select: { status: true } });
+        if (!current || current.status !== 'Active') {
+          throw new BadRequestException('Sprint déjà clôturé ou modifié.');
+        }
+        if (next.length > 0 && targetSprintId) {
+          await tx.workPackage.updateMany({
+            where: { id: { in: next }, sprintId, isDeleted: false },
+            data: { sprintId: targetSprintId },
+          });
+        }
+        if (backlog.length > 0) {
+          await tx.workPackage.updateMany({
+            where: { id: { in: backlog }, sprintId, isDeleted: false },
+            data: { sprintId: null },
+          });
+        }
+        await tx.sprint.update({ where: { id: sprintId }, data: { status: 'Closed' } });
+      });
+
+      // Activity row — single summary per close. Fire-and-forget.
+      const completedCount = sprintWps.length - unfinished.length;
+      void this.prisma.projectActivity
+        .create({
+          data: {
+            projectId,
+            userId: actorId,
+            action: 'sprint_closed',
+            detail: `Sprint « ${sprint.name} » clôturé — ${completedCount} terminée(s), ${next.length} reportée(s), ${backlog.length} renvoyée(s) au backlog.`,
+          },
+        })
+        .catch((e) => this.logger.warn(`sprint_closed activity log failed: ${e instanceof Error ? e.message : String(e)}`));
+
+      // Aggregated carry-over notifications — one per assignee, listing every
+      // WP they had moved. Avoids inbox spam on big sprint closes.
+      const movedIds = new Set([...next, ...backlog]);
+      const movedAssignees = new Map<string, { wpTitles: string[]; nextCount: number; backlogCount: number }>();
+      for (const wp of sprintWps) {
+        if (!movedIds.has(wp.id) || !wp.assigneeId || wp.assigneeId === actorId) continue;
+        const bucket = movedAssignees.get(wp.assigneeId) ?? { wpTitles: [], nextCount: 0, backlogCount: 0 };
+        bucket.wpTitles.push(wp.title);
+        if (next.includes(wp.id)) bucket.nextCount += 1;
+        else bucket.backlogCount += 1;
+        movedAssignees.set(wp.assigneeId, bucket);
+      }
+
+      for (const [userId, agg] of movedAssignees) {
+        const parts: string[] = [];
+        if (agg.nextCount > 0) parts.push(`${agg.nextCount} reportée(s) au prochain sprint`);
+        if (agg.backlogCount > 0) parts.push(`${agg.backlogCount} renvoyée(s) au backlog`);
+        const message = `Suite à la clôture du sprint « ${sprint.name} » : ${parts.join(', ')}.`;
+        void this.notifications
+          .notifyEnhanced({
+            userId,
+            type: 'sprint_wp_carried_over',
+            reason: 'Assignee',
+            title: 'Tâches déplacées après clôture du sprint',
+            message,
+            projectId,
+            entityType: 'project',
+            entityId: projectId,
+            actorId,
+            link: `/app/team/my-tasks?projectId=${projectId}`,
+          })
+          .catch((e) => this.logger.warn(`sprint carry-over notify ${userId} failed: ${e instanceof Error ? e.message : String(e)}`));
+      }
+
+      // Return the updated sprint row for the UI.
+      const closed = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+      return Result.ok({
+        sprint: closed,
+        movedToNext: next.length,
+        movedToBacklog: backlog.length,
+        kept: unfinished.length - next.length - backlog.length,
+      });
+    } catch (e) {
+      if (e instanceof BadRequestException) {
+        return Result.fail(e.message);
+      }
       this.logger.error('closeSprint failed', e);
       return Result.fail('Échec de la clôture du sprint.');
     }
+  }
+
+  private async pickSuggestedTargetSprintId(
+    boardId: string,
+    afterDate: Date,
+    excludeSprintId: string,
+  ): Promise<string | null> {
+    const candidates = await this.prisma.sprint.findMany({
+      where: { boardId, status: 'Planning', id: { not: excludeSprintId } },
+      orderBy: { startDate: 'asc' },
+      select: { id: true, startDate: true },
+    });
+    return candidates.find((s) => s.startDate >= afterDate)?.id ?? candidates[0]?.id ?? null;
   }
 
   /**

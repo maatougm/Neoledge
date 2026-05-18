@@ -33,7 +33,17 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     count: jest.fn(),
+  },
+  project: {
+    findFirst: jest.fn(),
+  },
+  projectMember: {
+    findFirst: jest.fn(),
+  },
+  appUser: {
+    findUnique: jest.fn(),
   },
 };
 
@@ -90,23 +100,36 @@ describe('NotificationsService', () => {
   // ── markAsRead ─────────────────────────────────────────────────────────────
 
   describe('markAsRead', () => {
-    it('succeeds when userId matches', async () => {
-      mockPrisma.notification.findFirst.mockResolvedValue(makeNotification());
-      mockPrisma.notification.update.mockResolvedValue({ ...makeNotification(), isRead: true });
+    it('succeeds when userId matches (atomic updateMany)', async () => {
+      // New behavior: single scoped updateMany, no read-before-write.
+      mockPrisma.notification.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.markAsRead('notif-1', 'user-1');
 
       expect(result.isSuccess).toBe(true);
-      expect(mockPrisma.notification.findFirst).toHaveBeenCalledWith({
-        where: { id: 'notif-1', userId: 'user-1' },
-      });
-      expect(mockPrisma.notification.update).toHaveBeenCalledWith({
-        where: { id: 'notif-1' },
+      expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+        where: { id: 'notif-1', userId: 'user-1', isRead: false },
         data: { isRead: true },
       });
+      // findFirst is only used as a tiebreaker when count===0.
+      expect(mockPrisma.notification.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent — already-read row resolves as success', async () => {
+      // updateMany returns count:0 because the row is already isRead:true.
+      // The follow-up findFirst confirms the row exists and belongs to the user.
+      mockPrisma.notification.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.notification.findFirst.mockResolvedValue({ id: 'notif-1' });
+
+      const result = await service.markAsRead('notif-1', 'user-1');
+
+      expect(result.isSuccess).toBe(true);
     });
 
     it('returns failure when notification belongs to a different user', async () => {
+      // updateMany matches nothing AND the follow-up scoped findFirst confirms
+      // the row does not belong to this user (or does not exist).
+      mockPrisma.notification.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.notification.findFirst.mockResolvedValue(null);
 
       const result = await service.markAsRead('notif-1', 'attacker');
@@ -117,7 +140,7 @@ describe('NotificationsService', () => {
     });
 
     it('returns failure when Prisma throws', async () => {
-      mockPrisma.notification.findFirst.mockRejectedValue(new Error('DB error'));
+      mockPrisma.notification.updateMany.mockRejectedValue(new Error('DB error'));
 
       const result = await service.markAsRead('notif-1', 'user-1');
 
@@ -166,22 +189,21 @@ describe('NotificationsService', () => {
   // ── delete ─────────────────────────────────────────────────────────────────
 
   describe('delete', () => {
-    it('deletes the notification when userId matches', async () => {
-      const notif = makeNotification();
-      mockPrisma.notification.findFirst.mockResolvedValue(notif);
-      mockPrisma.notification.delete.mockResolvedValue(notif);
+    it('deletes the notification when userId matches (atomic deleteMany)', async () => {
+      mockPrisma.notification.deleteMany.mockResolvedValue({ count: 1 });
 
       const result = await service.delete('notif-1', 'user-1');
 
       expect(result.isSuccess).toBe(true);
-      expect(mockPrisma.notification.findFirst).toHaveBeenCalledWith({
+      // New behavior: single scoped deleteMany — no read-before-delete.
+      expect(mockPrisma.notification.deleteMany).toHaveBeenCalledWith({
         where: { id: 'notif-1', userId: 'user-1' },
       });
-      expect(mockPrisma.notification.delete).toHaveBeenCalledWith({ where: { id: 'notif-1' } });
+      expect(mockPrisma.notification.delete).not.toHaveBeenCalled();
     });
 
-    it('returns failure and does NOT delete when userId does not match', async () => {
-      mockPrisma.notification.findFirst.mockResolvedValue(null);
+    it('returns failure when userId does not match (deleteMany count 0)', async () => {
+      mockPrisma.notification.deleteMany.mockResolvedValue({ count: 0 });
 
       const result = await service.delete('notif-1', 'attacker');
 
@@ -191,7 +213,7 @@ describe('NotificationsService', () => {
     });
 
     it('returns failure when Prisma throws', async () => {
-      mockPrisma.notification.findFirst.mockRejectedValue(new Error('DB error'));
+      mockPrisma.notification.deleteMany.mockRejectedValue(new Error('DB error'));
 
       const result = await service.delete('notif-1', 'user-1');
 
@@ -237,7 +259,10 @@ describe('NotificationsService', () => {
   // ── notify (fire-and-forget helper) ───────────────────────────────────────
 
   describe('notify', () => {
-    it('creates a notification record', async () => {
+    it('creates a notification record when target is a project PM', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue({ id: 'proj-1' });
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'ProjectManager' });
       mockPrisma.notification.create.mockResolvedValue(makeNotification());
 
       await expect(
@@ -255,10 +280,133 @@ describe('NotificationsService', () => {
       });
     });
 
-    it('does not throw when Prisma fails (fire-and-forget contract)', async () => {
+    it('creates a notification when no projectId is supplied (no scope check)', async () => {
+      mockPrisma.notification.create.mockResolvedValue(makeNotification());
+
+      await expect(service.notify('user-1', 'type', 'Title', 'Body')).resolves.toBeUndefined();
+
+      expect(mockPrisma.notification.create).toHaveBeenCalled();
+      expect(mockPrisma.project.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('skips when actorId equals userId (self-notify)', async () => {
+      await service.notify('user-1', 'type', 'Title', 'Body', 'proj-1', 'user-1');
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+      expect(mockPrisma.project.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('skips when target is not a project member', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue(null);
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Member' });
+
+      await service.notify('user-1', 'type', 'Title', 'Body', 'proj-1');
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('persists when target is global Admin (cross-project oversight)', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue(null);
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Admin' });
+      mockPrisma.notification.create.mockResolvedValue(makeNotification());
+
+      await service.notify('user-1', 'type', 'Title', 'Body', 'proj-1');
+
+      expect(mockPrisma.notification.create).toHaveBeenCalled();
+    });
+
+    it('fails-closed when scope check throws (drops notification)', async () => {
+      mockPrisma.project.findFirst.mockRejectedValue(new Error('DB down'));
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Member' });
+
+      await service.notify('user-1', 'type', 'Title', 'Body', 'proj-1');
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when persisting fails (fire-and-forget contract)', async () => {
       mockPrisma.notification.create.mockRejectedValue(new Error('DB down'));
 
       await expect(service.notify('user-1', 'type', 'Title', 'Body')).resolves.toBeUndefined();
+    });
+  });
+
+  // ── notifyEnhanced (Notifications 2.0 path) ────────────────────────────────
+
+  describe('notifyEnhanced', () => {
+    it('persists when target is a ProjectMember', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue(null);
+      mockPrisma.projectMember.findFirst.mockResolvedValue({ id: 'pm-1' });
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Member' });
+      mockPrisma.notification.create.mockResolvedValue(makeNotification());
+
+      await service.notifyEnhanced({
+        userId: 'user-1',
+        type: 'work_package',
+        title: 'T',
+        message: 'M',
+        projectId: 'proj-1',
+        link: '/app/team/my-tasks',
+      });
+
+      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-1',
+            projectId: 'proj-1',
+            link: '/app/team/my-tasks',
+          }),
+        }),
+      );
+    });
+
+    it('skips when target is not a project member (fail-closed)', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue(null);
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Member' });
+
+      await service.notifyEnhanced({
+        userId: 'user-1',
+        type: 'work_package',
+        title: 'T',
+        message: 'M',
+        projectId: 'proj-1',
+      });
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('fails-closed when scope check throws', async () => {
+      mockPrisma.project.findFirst.mockRejectedValue(new Error('DB down'));
+      mockPrisma.projectMember.findFirst.mockResolvedValue(null);
+      mockPrisma.appUser.findUnique.mockResolvedValue({ role: 'Member' });
+
+      await service.notifyEnhanced({
+        userId: 'user-1',
+        type: 'work_package',
+        title: 'T',
+        message: 'M',
+        projectId: 'proj-1',
+      });
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    });
+
+    it('skips on self-notify (actorId === userId)', async () => {
+      await service.notifyEnhanced({
+        userId: 'user-1',
+        type: 'work_package',
+        title: 'T',
+        message: 'M',
+        projectId: 'proj-1',
+        actorId: 'user-1',
+      });
+
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+      expect(mockPrisma.project.findFirst).not.toHaveBeenCalled();
     });
   });
 });

@@ -79,11 +79,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { NeoButton, NeoPassword, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
 import axios from 'axios'
+import { applyAutofill } from '@/lib/autofillFix'
 
 const route = useRoute()
 const token = route.query.token as string | undefined
@@ -93,6 +94,11 @@ const confirmPassword = ref<string>('')
 const loading = ref<boolean>(false)
 const done = ref<boolean>(false)
 const errorMsg = ref<string | null>(null)
+
+onMounted(async () => {
+  await nextTick()
+  applyAutofill({ scope: 'form', password: 'new-password', passwordSecond: 'new-password' })
+})
 
 async function handleSubmit(): Promise<void> {
   errorMsg.value = null

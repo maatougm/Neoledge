@@ -3,6 +3,26 @@ import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
 import { AiService } from '../ai/ai.service.js'
+import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js'
+import { AssemblyAiProvider } from './assemblyai.provider.js'
+import * as fs from 'fs'
+import * as path from 'path'
+import { randomUUID } from 'node:crypto'
+
+const AUDIO_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'meetings')
+
+const AUDIO_EXT_BY_MIME: Record<string, string> = {
+  'audio/webm': '.webm',
+  'audio/webm;codecs=opus': '.webm',
+  'audio/ogg': '.ogg',
+  'audio/mpeg': '.mp3',
+  'audio/mp3': '.mp3',
+  'audio/mp4': '.m4a',
+  'audio/x-m4a': '.m4a',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+}
+const ALLOWED_AUDIO_MIMES = new Set(Object.keys(AUDIO_EXT_BY_MIME))
 
 interface TranscriptionSegment {
   speaker: string
@@ -70,7 +90,32 @@ export class MeetingsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly aiService: AiService,
+    private readonly assemblyAi: AssemblyAiProvider,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
+
+  /** Fire-and-forget: read the just-inserted segments for a transcript and
+   *  push them through the embedding indexer. Catches all errors so failed
+   *  embeddings never break transcript ingestion. */
+  private async indexSegmentsAsync(transcriptId: string, projectId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.transcriptSegment.findMany({
+        where: { transcriptId },
+        select: { id: true, text: true },
+      })
+      if (rows.length === 0) return
+      const result = await this.embeddingIndexer.indexAndStore(
+        'segment',
+        rows.map((r) => ({ id: r.id, text: r.text })),
+        { projectId },
+      )
+      this.logger.log(
+        `indexSegmentsAsync transcript=${transcriptId} segments=${rows.length} indexed=${result.indexed} failed=${result.failed}`,
+      )
+    } catch (e) {
+      this.logger.warn(`indexSegmentsAsync failed for ${transcriptId}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
 
   async transcribe(projectId: string, audioBuffer: Buffer, fileName: string, title: string) {
     // No default fallback URL — TRANSCRIPTION_URL is validated as required at startup.
@@ -132,6 +177,11 @@ export class MeetingsService {
 
       if (segments.length > 0) {
         await this.prisma.transcriptSegment.createMany({ data: segments })
+        // Phase 4 — index the just-inserted segments for semantic retrieval.
+        // Fire-and-forget; embeddings populate within a few seconds and the
+        // cahier agent's semantic tools filter `embedding IS NOT NULL` so the
+        // system degrades gracefully while indexing is in flight.
+        void this.indexSegmentsAsync(transcript.id, projectId)
       }
 
       if (usedFallback) {
@@ -325,6 +375,7 @@ export class MeetingsService {
       recordedAt: t.recordedAt,
       createdAt: t.createdAt,
       aiStatus: t.aiStatus,
+      hasAudio: !!t.audioPath,
       segments: t.segments.map((s) => ({
         id: s.id,
         speaker: s.speaker,
@@ -340,8 +391,196 @@ export class MeetingsService {
   async deleteTranscript(id: string) {
     const t = await this.prisma.meetingTranscript.findUnique({ where: { id } })
     if (!t) return Result.fail('Transcription non trouvée.')
+    if (t.audioPath) {
+      try { fs.unlinkSync(t.audioPath) } catch { /* file already gone */ }
+    }
     await this.prisma.meetingTranscript.delete({ where: { id } })
     return Result.ok()
+  }
+
+  /**
+   * Persist the recorded audio for a live-meeting transcript on disk so it
+   * can be replayed via /audio. Stores under uploads/meetings/<projectId>/.
+   */
+  async attachAudio(
+    projectId: string,
+    transcriptId: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<Result<{ audioSize: number }>> {
+    const t = await this.prisma.meetingTranscript.findFirst({
+      where: { id: transcriptId, projectId },
+      select: { id: true, audioPath: true },
+    })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+
+    const cleanMime = (mimeType || 'audio/webm').split(';')[0].trim().toLowerCase()
+    if (!ALLOWED_AUDIO_MIMES.has(cleanMime) && !ALLOWED_AUDIO_MIMES.has(mimeType)) {
+      return Result.fail<any>('Format audio non supporté.')
+    }
+    const ext = AUDIO_EXT_BY_MIME[cleanMime] ?? AUDIO_EXT_BY_MIME[mimeType] ?? '.webm'
+
+    const dir = path.join(AUDIO_UPLOAD_DIR, projectId)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    const fileName = `${randomUUID()}${ext}`
+    const storagePath = path.join(dir, fileName)
+
+    // Path-traversal containment.
+    const resolved = path.resolve(storagePath)
+    const root = path.resolve(AUDIO_UPLOAD_DIR)
+    if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+      return Result.fail<any>('Invalid path')
+    }
+
+    fs.writeFileSync(storagePath, buffer)
+
+    // Replace any older audio for this transcript (re-record).
+    if (t.audioPath && t.audioPath !== storagePath) {
+      try { fs.unlinkSync(t.audioPath) } catch { /* ignore */ }
+    }
+
+    await this.prisma.meetingTranscript.update({
+      where: { id: transcriptId },
+      data: {
+        audioPath: storagePath,
+        audioMimeType: cleanMime,
+        audioSize: buffer.length,
+      },
+    })
+
+    return Result.ok({ audioSize: buffer.length })
+  }
+
+  /**
+   * Re-run the full transcription (with speaker diarization) on the audio
+   * file already attached to a transcript. Replaces the existing
+   * TranscriptSegment rows. Used after a live meeting saves its audio
+   * because the live flow only stored a single "PM + invités" segment.
+   *
+   * Provider order: AssemblyAI Universal-2 (when configured) → local
+   * faster-whisper + SpeechBrain. AssemblyAI gives noticeably better
+   * speaker separation; the local stack stays as a free fallback.
+   */
+  async redoDiarization(transcriptId: string): Promise<Result<{ speakers: number; provider: string }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { id: true, audioPath: true, audioMimeType: true },
+    })
+    if (!t || !t.audioPath) return Result.fail<any>('Audio non disponible.')
+    if (!fs.existsSync(t.audioPath)) {
+      return Result.fail<any>('Fichier audio introuvable.')
+    }
+
+    const buffer = fs.readFileSync(t.audioPath)
+    let data: TranscriptionResponse
+    let provider = 'unknown'
+
+    if (this.assemblyAi.isConfigured()) {
+      try {
+        data = await this.assemblyAi.transcribeWithDiarization(buffer)
+        provider = 'assemblyai'
+        this.logger.log(`AssemblyAI diarization succeeded for ${transcriptId}`)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.warn(
+          `AssemblyAI failed for ${transcriptId}: ${msg.slice(0, 200)} — falling back to local`,
+        )
+        try {
+          const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+          data = await this.callLocalTranscription(
+            serviceUrl,
+            buffer,
+            path.basename(t.audioPath),
+          )
+          provider = 'local-whisper'
+        } catch (localErr: unknown) {
+          const lmsg = localErr instanceof Error ? localErr.message : String(localErr)
+          this.logger.warn(`Local fallback also failed for ${transcriptId}: ${lmsg}`)
+          return Result.fail<any>('Échec de la diarisation.')
+        }
+      }
+    } else {
+      try {
+        const serviceUrl = this.config.getOrThrow<string>('TRANSCRIPTION_URL')
+        data = await this.callLocalTranscription(
+          serviceUrl,
+          buffer,
+          path.basename(t.audioPath),
+        )
+        provider = 'local-whisper'
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.warn(`redoDiarization fetch failed for ${transcriptId}: ${msg}`)
+        return Result.fail<any>('Échec de la diarisation.')
+      }
+    }
+
+    // Replace all segments atomically. If diarization didn't actually
+    // separate speakers (still returns 1 unique speaker), we still keep
+    // the new segments since they're more granular than the single-blob
+    // saved by the live flow.
+    await this.prisma.$transaction([
+      this.prisma.transcriptSegment.deleteMany({ where: { transcriptId } }),
+      this.prisma.meetingTranscript.update({
+        where: { id: transcriptId },
+        data: {
+          durationSeconds: Math.round(data.duration_seconds || 0),
+          detectedLanguages: (data.detected_languages || []).join(','),
+        },
+      }),
+      this.prisma.transcriptSegment.createMany({
+        data: data.segments.map((s) => ({
+          transcriptId,
+          speaker: s.speaker || 'Speaker 1',
+          text: s.text,
+          startTime: s.start_time,
+          endTime: s.end_time,
+          language: s.language,
+          confidence: s.confidence,
+        })),
+      }),
+    ])
+
+    const speakers = new Set(data.segments.map((s) => s.speaker)).size
+    this.logger.log(
+      `Re-diarized transcript ${transcriptId} via ${provider}: ${data.segments.length} segments, ${speakers} speaker(s)`,
+    )
+    return Result.ok({ speakers, provider })
+  }
+
+  /** Mark a meeting's audio as preserved (or release the flag). The
+   *  retention cron skips preserved recordings. */
+  async setAudioPreserved(transcriptId: string, preserved: boolean): Promise<Result<{ preserved: boolean }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { id: true },
+    })
+    if (!t) return Result.fail<any>('Transcription non trouvée.')
+    await this.prisma.meetingTranscript.update({
+      where: { id: transcriptId },
+      data: { audioPreserved: preserved },
+    })
+    return Result.ok({ preserved })
+  }
+
+  /** Return the absolute path + content type of a transcript's stored audio. */
+  async getAudioFile(
+    transcriptId: string,
+  ): Promise<Result<{ path: string; mimeType: string; size: number }>> {
+    const t = await this.prisma.meetingTranscript.findUnique({
+      where: { id: transcriptId },
+      select: { audioPath: true, audioMimeType: true, audioSize: true },
+    })
+    if (!t || !t.audioPath) return Result.fail<any>('Audio non disponible.')
+    if (!fs.existsSync(t.audioPath)) {
+      return Result.fail<any>('Fichier audio introuvable sur le serveur.')
+    }
+    return Result.ok({
+      path: t.audioPath,
+      mimeType: t.audioMimeType ?? 'audio/webm',
+      size: t.audioSize ?? fs.statSync(t.audioPath).size,
+    })
   }
 
   async renameSpeaker(id: string, oldName: string, newName: string, userId: string) {
@@ -415,5 +654,110 @@ export class MeetingsService {
         category: d.category,
       })),
     })
+  }
+
+  /**
+   * Convert selected MeetingActionItem rows into WorkPackages.
+   * Each action item becomes a WorkPackage of type='Task', priority='Normal',
+   * status='New', with `aiGeneratedFrom='meeting-actions:<meetingId>'` for
+   * traceability. The `assigneeName` is fuzzy-matched against project
+   * members (case-insensitive substring on first / last / full name);
+   * unmatched names produce an unassigned task.
+   */
+  async convertActionItemsToWPs(
+    projectId: string,
+    meetingId: string,
+    actionItemIds: string[],
+    authorId: string,
+    sprintId: string | null,
+  ) {
+    if (actionItemIds.length === 0) {
+      return Result.fail<{ created: number; skipped: number }>('Aucun élément sélectionné.')
+    }
+
+    // Verify meeting belongs to project + load matching action items.
+    const transcript = await this.prisma.meetingTranscript.findFirst({
+      where: { id: meetingId, projectId },
+      select: { id: true },
+    })
+    if (!transcript) return Result.fail<{ created: number; skipped: number }>('Réunion introuvable sur ce projet.')
+
+    const items = await this.prisma.meetingActionItem.findMany({
+      where: { id: { in: actionItemIds }, transcriptId: meetingId },
+    })
+    if (items.length === 0) return Result.fail<{ created: number; skipped: number }>('Aucune action correspondante.')
+
+    // Validate sprint belongs to project (when provided).
+    let safeSprintId: string | null = null
+    if (sprintId) {
+      const sprint = await this.prisma.sprint.findFirst({
+        where: {
+          id: sprintId,
+          board: { projectId },
+        },
+        select: { id: true },
+      })
+      if (sprint) safeSprintId = sprint.id
+    }
+
+    // Pull project members for fuzzy match.
+    const memberRows = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    })
+
+    function matchAssignee(rawName: string | null): string | null {
+      if (!rawName || rawName.trim().length < 2) return null
+      const needle = rawName.trim().toLowerCase()
+      const tokens = needle.split(/\s+/).filter((t) => t.length >= 2)
+      for (const m of memberRows) {
+        const first = m.user.firstName.toLowerCase()
+        const last = m.user.lastName.toLowerCase()
+        const full = `${first} ${last}`
+        if (full === needle) return m.userId
+        if (tokens.every((t) => full.includes(t))) return m.userId
+      }
+      // Fallback: any member whose first OR last name is fully contained in the input
+      for (const m of memberRows) {
+        const first = m.user.firstName.toLowerCase()
+        const last = m.user.lastName.toLowerCase()
+        if (first && needle.includes(first)) return m.userId
+        if (last && needle.includes(last)) return m.userId
+      }
+      return null
+    }
+
+    let created = 0
+    const tag = `meeting-actions:${meetingId}`
+    await this.prisma.$transaction(async (tx) => {
+      for (const a of items) {
+        const assigneeId = matchAssignee(a.assigneeName)
+        // Title trimmed to 200 chars (DB cap), description holds the full text.
+        const title = a.description.length > 200 ? a.description.slice(0, 197) + '...' : a.description
+        await tx.workPackage.create({
+          data: {
+            projectId,
+            authorId,
+            title,
+            description: a.description,
+            type: 'Task',
+            status: 'New',
+            priority: 'Normal',
+            assigneeId,
+            dueDate: a.dueDate ?? null,
+            sprintId: safeSprintId,
+            aiGeneratedFrom: tag,
+          },
+        })
+        created += 1
+        // Mark the action item as completed so it stops surfacing in the modal.
+        await tx.meetingActionItem.update({
+          where: { id: a.id },
+          data: { isCompleted: true },
+        })
+      }
+    })
+
+    return Result.ok({ created, skipped: actionItemIds.length - created })
   }
 }

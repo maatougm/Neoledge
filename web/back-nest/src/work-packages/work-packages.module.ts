@@ -6,12 +6,12 @@ import { WpCommentsController } from './wp-comments.controller.js';
 import { WpAttachmentsService } from './wp-attachments.service.js';
 import { WpAttachmentsController } from './wp-attachments.controller.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
-import { AutomationModule } from '../automation/automation.module.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
 import { AnalyticsModule } from '../analytics/analytics.module.js';
+import { AiModule } from '../ai/ai.module.js';
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AnalyticsModule],
+  imports: [NotificationsModule, AnalyticsModule, AiModule],
   controllers: [WorkPackagesController, WorkPackageCustomFieldsController, WpCommentsController, MyTasksController, WpAttachmentsController],
   providers: [WorkPackagesService, WpCommentsService, WpAttachmentsService, ProjectAccessGuard],
   exports: [WorkPackagesService],

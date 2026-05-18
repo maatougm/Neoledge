@@ -4,10 +4,10 @@ import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PhaseGateService } from './phase-gate.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { BULK_MAX } from './dto/bulk.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { TERMINAL_WP_STATUSES } from '../work-packages/wp-status.constants.js';
+import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js';
 
 /** Per-field optimistic lock token coming from the client. */
 export interface FieldValueWrite {
@@ -26,8 +26,8 @@ export class ProjectsService {
     private readonly notifications: NotificationsService,
     private readonly phaseGate: PhaseGateService,
     private readonly audit: AuditService,
-    private readonly automation: AutomationService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
 
   async findWithFilters(
@@ -224,6 +224,28 @@ export class ProjectsService {
     });
 
     void this.audit.log('Project', createdId, 'CREATE', adminId, undefined, { name: dto.name }).catch((e) => this.logger.error('audit create failed', e));
+
+    // Notify the assigned PM about their new project. The dedicated
+    // assignManager() path handles re-assignment; create() was missing the
+    // equivalent notification, so PMs assigned at creation time saw the
+    // project appear in their list without any signal.
+    if (dto.projectManagerId && dto.projectManagerId !== adminId) {
+      void this.notifications
+        .notifyEnhanced({
+          userId: dto.projectManagerId,
+          type: 'project_assigned',
+          reason: 'System',
+          title: 'Nouveau projet assigné',
+          message: `Vous avez été assigné au projet « ${dto.name} ».`,
+          projectId: createdId,
+          entityType: 'project',
+          entityId: createdId,
+          actorId: adminId,
+          link: `/app/pm/projects/${createdId}`,
+        })
+        .catch((e) => this.logger.warn(`notify on project create failed: ${e instanceof Error ? e.message : String(e)}`));
+    }
+
     return this.getById(createdId);
   }
 
@@ -261,6 +283,18 @@ export class ProjectsService {
     });
     void this.audit.log('Project', id, 'DELETE', userId, undefined, { soft: true })
       .catch((e) => this.logger.error('audit softDelete failed', e));
+
+    // Clear deep-links on unread notifications for this project — without
+    // this, clicking a stale notification routes through ProjectAccessGuard
+    // → 404 (the guard filters `isDeleted: false`). Wiping `link` lets the
+    // panel still render the title/message but disables the click-through.
+    void this.prisma.notification
+      .updateMany({
+        where: { projectId: id, isRead: false },
+        data: { link: null },
+      })
+      .catch((e) => this.logger.warn(`clear notification links on softDelete failed: ${e instanceof Error ? e.message : String(e)}`));
+
     return Result.ok();
   }
 
@@ -410,8 +444,6 @@ export class ProjectsService {
     await this.logActivity(projectId, actorId ?? null, 'status_change', `Statut changé: ${project.status} → ${status}`);
     void this.audit.log('Project', projectId, 'STATUS_CHANGE', actorId, { status: { before: project.status, after: status } })
       .catch((e) => this.logger.error('audit updateStatus failed', e));
-    void this.automation.executeRulesForEvent(projectId, 'status_changed', { newStatus: status, oldStatus: project.status })
-      .catch((e) => this.logger.error('automation updateStatus failed', e));
     // Bust analytics cache — phase velocity, deadline risk, team workload all depend on project status.
     void this.analyticsCache.invalidate();
     return Result.ok();
@@ -472,13 +504,6 @@ export class ProjectsService {
       await tx.workPackageCustomValue.deleteMany({ where: { customFieldId: fieldId } });
       await tx.projectField.delete({ where: { id: fieldId } });
     });
-    return Result.ok();
-  }
-
-  async toggleManagerFields(projectId: string, allow: boolean) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
-    if (!project) return Result.fail('Projet non trouvé.');
-    await this.prisma.project.update({ where: { id: projectId }, data: { allowManagerCustomFields: allow } });
     return Result.ok();
   }
 
@@ -709,32 +734,56 @@ export class ProjectsService {
       return Result.fail('Erreur lors de la sauvegarde des champs.');
     }
 
+    // Phase 4 — index the saved field values for semantic retrieval so the
+    // cahier agent can pull "the most relevant questionnaire answers" instead
+    // of streaming the whole questionnaire. Fire-and-forget; the agent tool
+    // filters `WHERE embedding IS NOT NULL` so a missing embedding only
+    // delays its visibility, never breaks save.
+    void this.indexFieldValuesAsync(projectId, fieldValues).catch((e) =>
+      this.logger.warn(`fieldValue embedding failed for project ${projectId}: ${e instanceof Error ? e.message : String(e)}`),
+    );
+
     return Result.ok();
+  }
+
+  /** Fire-and-forget: read just-upserted rows + field labels, then ship
+   *  `"label: value"` strings to the embedding indexer. */
+  private async indexFieldValuesAsync(projectId: string, written: FieldValueWrite[]): Promise<void> {
+    const written_nonEmpty = written.filter(
+      (fv) => typeof fv.value === 'string' && fv.value.trim().length > 0,
+    );
+    if (written_nonEmpty.length === 0) return;
+
+    const rows = await this.prisma.projectFieldValue.findMany({
+      where: {
+        projectId,
+        projectFieldId: { in: written_nonEmpty.map((fv) => fv.projectFieldId) },
+      },
+      select: {
+        id: true,
+        value: true,
+        field: { select: { label: true } },
+      },
+    });
+
+    const items = rows
+      .filter((r) => r.value && r.value.trim().length > 0)
+      .map((r) => ({
+        id: r.id,
+        text: `${r.field?.label ?? 'Champ'}: ${r.value}`,
+      }));
+    if (items.length === 0) return;
+
+    await this.embeddingIndexer.indexAndStore('field-value', items, { projectId });
   }
 
   /**
    * Resolve the validating user's effective role for a given project.
-   *
-   * Precedence:
-   *   1. A `UserRoleAssignment` scoped to THIS project (most specific)
-   *   2. A global `UserRoleAssignment` (projectId = NULL)
-   *   3. The legacy `AppUser.role` column, re-read from the DB (NEVER trust
-   *      the JWT claim — a compromised / stale token must not let a caller
-   *      pick their own `validatedByRole`)
+   * Reads `AppUser.role` from the DB — NEVER trusts the JWT claim, since a
+   * compromised / stale token must not let the caller pick their own
+   * `validatedByRole`.
    */
-  private async resolveValidatorRole(userId: string, projectId: string): Promise<string | null> {
-    const scoped = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, projectId },
-      include: { role: { select: { name: true } } },
-    });
-    if (scoped?.role?.name) return scoped.role.name;
-
-    const global = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, projectId: null },
-      include: { role: { select: { name: true } } },
-    });
-    if (global?.role?.name) return global.role.name;
-
+  private async resolveValidatorRole(userId: string): Promise<string | null> {
     const user = await this.prisma.appUser.findUnique({
       where: { id: userId },
       select: { role: true },
@@ -746,26 +795,28 @@ export class ProjectsService {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, isDeleted: false } });
     if (!project) return Result.fail('Projet non trouvé.');
 
-    // Authorisation: caller must either be the project's PM, or have a
-    // UserRoleAssignment that covers this project (scoped OR global). The
-    // global assignment is the single source of truth for Admin — no
-    // special-casing of the legacy AppUser.role column here.
-    const assignment = await this.prisma.userRoleAssignment.findFirst({
-      where: {
-        userId,
-        OR: [{ projectId }, { projectId: null }],
-      },
-      select: { id: true },
-    });
+    // Authorisation: caller must be the project's PM, an Admin, or in
+    // ProjectMember. (The custom-role-with-permission path was retired
+    // along with the dynamic RBAC stack.)
+    const [isMember, dbUser] = await Promise.all([
+      this.prisma.projectMember.findFirst({
+        where: { userId, projectId },
+        select: { id: true },
+      }),
+      this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      }),
+    ]);
     const isPm = project.projectManagerId === userId;
-    if (!assignment && !isPm) {
+    const isAdmin = dbUser?.role === 'Admin';
+    if (!isMember && !isPm && !isAdmin) {
       throw new ForbiddenException('Access denied');
     }
 
-    // Derive the validating role from the user's role assignment for THIS
-    // project (falling back to global / AppUser.role) — NEVER from the JWT,
-    // which the client controls.
-    const resolvedRole = await this.resolveValidatorRole(userId, projectId);
+    // Derive the validating role from AppUser.role — never from the JWT
+    // (which the client controls).
+    const resolvedRole = await this.resolveValidatorRole(userId);
     if (!resolvedRole) return Result.fail('Impossible de déterminer votre rôle pour ce projet.');
 
     const duplicate = await this.prisma.projectValidation.findFirst({
@@ -785,11 +836,6 @@ export class ProjectsService {
       },
       include: { validatedBy: { select: { firstName: true, lastName: true } } },
     });
-
-    void this.automation.executeRulesForEvent(projectId, 'validation_submitted', {
-      phase: validation.phase,
-      isApproved: validation.isApproved,
-    }).catch((e) => this.logger.error('automation validation_submitted failed', e));
 
     void this.logActivity(
       projectId,
@@ -835,7 +881,6 @@ export class ProjectsService {
     isApproved: boolean,
     comment: string | null,
   ): Promise<void> {
-    const { randomUUID } = await import('crypto');
     const title = isApproved
       ? 'Cahier validé par la spécification'
       : 'Cahier rejeté par la spécification';
@@ -843,20 +888,16 @@ export class ProjectsService {
     const message = isApproved
       ? `Le cahier de « ${projectName} » a été validé. Vous pouvez démarrer le backlog.${commentTail}`
       : `Le cahier de « ${projectName} » a été rejeté et doit être corrigé.${commentTail}`;
-    await this.prisma.notification.create({
-      data: {
-        id: randomUUID(),
-        userId: pmUserId,
-        type: isApproved ? 'cahier_validated' : 'cahier_rejected',
-        reason: isApproved ? 'cahier_validated' : 'cahier_rejected',
-        title,
-        message,
-        projectId,
-        entityType: 'Project',
-        entityId: projectId,
-        link: `/app/pm/projects/${projectId}`,
-        isRead: false,
-      },
+    await this.notifications.notifyEnhanced({
+      userId: pmUserId,
+      type: isApproved ? 'cahier_validated' : 'cahier_rejected',
+      reason: isApproved ? 'cahier_validated' : 'cahier_rejected',
+      title,
+      message,
+      projectId,
+      entityType: 'Project',
+      entityId: projectId,
+      link: `/app/pm/projects/${projectId}`,
     });
     this.logger.log(`Notified PM ${pmUserId} about ${isApproved ? 'approval' : 'rejection'} for project ${projectId}`);
   }
@@ -948,7 +989,6 @@ export class ProjectsService {
       name: p.name,
       clientName: p.clientName,
       status: p.status,
-      allowManagerCustomFields: p.allowManagerCustomFields,
       aiOutput: p.aiOutput,
       startDate: p.startDate,
       endDate: p.endDate,

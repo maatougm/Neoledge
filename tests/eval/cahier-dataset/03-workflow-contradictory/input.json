@@ -1,0 +1,42 @@
+{
+  "projectName": "EVAL-Workflow Onboarding RH",
+  "clientName": "Groupe Aéronautique Safran",
+  "fields": [
+    {
+      "label": "Contexte et problématique",
+      "value": "Safran souhaite automatiser le processus d'onboarding de ses nouveaux collaborateurs. Le process actuel mobilise 6 services différents (RH, IT, sécurité, paie, médecine du travail, manager) et prend en moyenne 14 jours ouvrés. La cible : ramener ce délai à 3 jours grâce à des workflows BPMN automatisés."
+    },
+    {
+      "label": "Objectif du projet et résultats attendus",
+      "value": "Mise en production prévue le 15 septembre 2026 pour les sites de Vélizy et Gennevilliers. Onboarding automatisé de 2 800 collaborateurs/an. ROI estimé à 18 mois."
+    },
+    {
+      "label": "Périmètre fonctionnel (modules à développer)",
+      "value": "Moteur de workflows BPMN, formulaires dynamiques pour la collecte d'informations, connecteur HRIS Workday, génération automatique des comptes Active Directory, attribution des badges via API HID Origo, notifications email + Teams aux acteurs concernés à chaque étape."
+    },
+    {
+      "label": "Stack technique proposée",
+      "value": "Frontend Vue 3 + NeoLibrary, backend NestJS sur Node 22, PostgreSQL 16, moteur BPMN Camunda 8, intégration Workday via SCIM 2.0."
+    },
+    {
+      "label": "Livrables attendus",
+      "value": "Application déployée, documentation, formation 12 administrateurs RH, rapport de recette."
+    },
+    {
+      "label": "Périmètre exclus",
+      "value": "Offboarding des collaborateurs ; mobilité interne ; sous-traitants et intérimaires."
+    }
+  ],
+  "transcripts": [
+    {
+      "title": "Comité de pilotage — 22 avril 2026",
+      "summary": "Le DRH adjoint annonce que la mise en production sera décalée au 1er novembre 2026 pour aligner avec la fin de la campagne d'embauche annuelle. Le périmètre est étendu pour inclure Gennevilliers ET Issy-les-Moulineaux dès la phase 1.",
+      "decisions": "Décision : nouvelle date cible 1er novembre 2026 (et non 15 septembre comme initialement prévu). Risque : ce décalage impacte la facturation Workday — vérifier le contrat."
+    },
+    {
+      "title": "Atelier sécurité — 6 mai 2026",
+      "summary": "L'équipe sécurité refuse la connexion directe à HID Origo. Compromis : générer une demande de badge dans Origo via mail signé, validation manuelle par un agent de sécurité avant émission. Latence ajoutée : 2 heures ouvrées en moyenne.",
+      "decisions": "Décision : abandon de l'intégration directe API HID Origo, remplacement par un workflow email signé S/MIME. Risque : cela peut compromettre la cible de 3 jours d'onboarding."
+    }
+  ]
+}

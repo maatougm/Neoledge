@@ -8,8 +8,14 @@
 services:
 
   # ── PostgreSQL (isolated from School Hub's postgres) ───────────────────────
+  # pgvector/pgvector:pg16 is a thin layer on the official postgres:16 image
+  # with the `vector` extension preinstalled. Data on /var/lib/postgresql/data
+  # is binary-compatible with the previous postgres:16-alpine image — no
+  # pg_dump/restore needed; the cluster restarts in-place and picks up the
+  # new extension type. Memory bumped 384m→1g to fit the HNSW graph index
+  # for ~100k vectors (see docs/agent-orchestra/PHASE_4_PGVECTOR_PLAN.md §1.6).
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: neoleadge_postgres
     environment:
       POSTGRES_USER: ${DB_USER:-neoleadge}
@@ -23,8 +29,8 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
-    mem_limit: 384m
-    mem_reservation: 128m
+    mem_limit: 1g
+    mem_reservation: 256m
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -53,11 +59,32 @@ services:
       AI_FALLBACK_API_KEY: ${AI_FALLBACK_API_KEY:-}
       AI_FALLBACK_BASE_URL: ${AI_FALLBACK_BASE_URL:-}
       AI_FALLBACK_MODEL: ${AI_FALLBACK_MODEL:-}
+      AI_FALLBACK_PROVIDER: ${AI_FALLBACK_PROVIDER:-openai}
+      AI_AGENT_MODE: ${AI_AGENT_MODE:-off}
+      CAHIER_USE_PLANNER: ${CAHIER_USE_PLANNER:-off}
+      CAHIER_PLANNER_SKIP_CRITIQUE: ${CAHIER_PLANNER_SKIP_CRITIQUE:-off}
+      BACKLOG_USE_PLANNER: ${BACKLOG_USE_PLANNER:-off}
+      ASSIGNMENT_USE_PLANNER: ${ASSIGNMENT_USE_PLANNER:-off}
+      # Phase 4 — pgvector semantic retrieval. Default OFF until the eval
+      # suite confirms recall ≥0.7 on the live dataset; flip to "on" via
+      # .env.prod once backfill is verified.
+      CAHIER_USE_SEMANTIC_RETRIEVAL: ${CAHIER_USE_SEMANTIC_RETRIEVAL:-off}
+      EMBEDDING_TIMEOUT_MS: ${EMBEDDING_TIMEOUT_MS:-15000}
+      LIVE_MEETING_COPILOT: ${LIVE_MEETING_COPILOT:-off}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Pinned to the docker-internal service name — overriding via .env.prod
       # would break the compose-network resolution.
       TRANSCRIPTION_URL: http://transcription:8000
       TRANSCRIPTION_SECRET: ${TRANSCRIPTION_SECRET}
+      # AssemblyAI Universal-2 — primary STT + diarization for live meetings.
+      # When unset, falls back to the local faster-whisper + SpeechBrain stack.
+      ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
+      # Audio retention sweep — purge meeting recordings older than this
+      # many days. Set to 0 to disable (audio kept indefinitely).
+      MEETING_AUDIO_RETENTION_DAYS: ${MEETING_AUDIO_RETENTION_DAYS:-90}
+      # Per-project daily AI token budget. 0 / unset = unlimited.
+      # Hits BadGateway with a quota message when exceeded.
+      AI_MAX_TOKENS_PER_PROJECT_PER_DAY: ${AI_MAX_TOKENS_PER_PROJECT_PER_DAY:-0}
       CORS_ORIGINS: ${CORS_ORIGINS}
       THROTTLER_WHITELIST: ${THROTTLER_WHITELIST:-}
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}

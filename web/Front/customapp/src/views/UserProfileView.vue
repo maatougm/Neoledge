@@ -171,7 +171,7 @@
         </section>
 
         <!-- Panel 2: Security / password change -->
-        <section class="settings-panel" aria-labelledby="panel-security-title">
+        <section class="settings-panel security-panel" aria-labelledby="panel-security-title">
           <div class="panel-header">
             <i class="pi pi-lock panel-icon" aria-hidden="true" />
             <h2 id="panel-security-title" class="panel-title">Sécurité</h2>
@@ -260,6 +260,7 @@ import { USER_ROLE_LABELS } from '@/types/user.types'
 import type { UserRole } from '@/types/user.types'
 import SecuritySection from '@/components/admin/sections/SecuritySection.vue'
 import { formatDate, formatRelative } from '@/lib/formatDate'
+import { applyAutofill } from '@/lib/autofillFix'
 
 interface ProfilePayload {
   id: string
@@ -392,6 +393,23 @@ onMounted(async () => {
   } catch {
     // Seeded test users (testpm@neoleadge.test etc.) have no AppUser row — the
     // JWT hydrate above already populated what we know. Fall back silently.
+  }
+  // Patch NeoPassword's inner <input>s with autocomplete/name so Chrome's
+  // password manager and DOM Issues panel stop complaining.
+  await nextTick()
+  applyAutofill({
+    scope: '.security-panel',
+    password: 'current-password',
+    passwordSecond: 'new-password',
+  })
+  // The helper only patches the first two password inputs; tag the confirm field too.
+  const pwInputs = document.querySelectorAll<HTMLInputElement>(
+    '.security-panel input[type="password"]',
+  )
+  const confirmInput = pwInputs[2]
+  if (confirmInput && !confirmInput.getAttribute('autocomplete')) {
+    confirmInput.setAttribute('autocomplete', 'new-password')
+    confirmInput.setAttribute('name', 'new-password-confirm')
   }
 })
 

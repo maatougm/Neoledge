@@ -15,6 +15,7 @@
           class="bl-card"
           draggable="true"
           @dragstart="draggedWp = wp.id"
+          @dragend="draggedWp = null"
         >
           <div class="bl-card__title">{{ wp.title }}</div>
           <PriorityDot :priority="wp.priority" />
@@ -33,7 +34,7 @@
             placeholder="Sélectionner un sprint"
           />
           <NeoButton v-if="activeSprint?.status === 'Planning'" label="Démarrer" icon="pi pi-play" @click="startSprint" />
-          <NeoButton v-if="activeSprint?.status === 'Active'" label="Clôturer" icon="pi pi-check" outlined @click="closeSprint" />
+          <NeoButton v-if="activeSprint?.status === 'Active'" label="Clôturer" icon="pi pi-check" outlined @click="openCloseModal" />
         </div>
         <div
           class="bl__dropzone"
@@ -53,6 +54,13 @@
       </div>
     </div>
 
+    <SprintCloseReviewModal
+      v-if="activeSprintId"
+      v-model:visible="showCloseModal"
+      :project-id="id"
+      :sprint-id="activeSprintId"
+      @confirmed="onSprintClosed"
+    />
   </ProjectModuleShell>
 
   <AppModal v-model:visible="showCreateSprint" header="Nouveau sprint" width="480px">
@@ -74,6 +82,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { NeoButton, NeoSelect, NeoInputText, NeoDatePicker, NeoTag, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
+import SprintCloseReviewModal from '@/components/sprint/SprintCloseReviewModal.vue'
 import PriorityDot from '@/components/common/PriorityDot.vue'
 import { useAgileStore } from '@/stores/agileStore'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
@@ -148,17 +157,32 @@ async function onDrop() {
 
 async function startSprint() {
   if (!activeSprintId.value) return
-  await agileStore.startSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  try {
+    await agileStore.startSprint(props.id, activeSprintId.value)
+    toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Échec du démarrage du sprint.', life: 5000 })
+  }
 }
 
-async function closeSprint() {
+// Sprint close goes through SprintCloseReviewModal — the PM reviews unfinished
+// WPs and picks a disposition before the sprint actually transitions to Closed.
+const showCloseModal = ref(false)
+function openCloseModal(): void {
   if (!activeSprintId.value) return
-  await agileStore.closeSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint clôturé.', life: 3000 })
+  showCloseModal.value = true
+}
+async function onSprintClosed(): Promise<void> {
+  await load()
 }
 
-onMounted(load)
+onMounted(() => {
+  // Reset per-project stores first so we never flash the previous project's
+  // sprints / unassigned WPs while the new fetch is in flight.
+  agileStore.reset()
+  wpStore.reset()
+  void load()
+})
 </script>
 
 <style scoped>

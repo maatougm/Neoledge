@@ -7,10 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { PRESET_ROLE_PERMISSIONS } from '../../permissions/permission-keys.js';
-
-/** Valid role names derived from the single source of truth (PRESET_ROLE_PERMISSIONS). */
-const VALID_ROLES = Object.keys(PRESET_ROLE_PERMISSIONS);
+import { VALID_ROLES } from '../../common/constants/roles.js';
 
 export class CreateUserDto {
   @IsNotEmpty({ message: 'Le prénom est requis.' })

@@ -8,7 +8,7 @@
           <div class="pa-item__body">
             <div class="pa-item__action">{{ a.action }}</div>
             <div v-if="a.detail" class="pa-item__detail">{{ a.detail }}</div>
-            <div class="pa-item__time">{{ formatDate(a.createdAt) }}</div>
+            <div class="pa-item__time">{{ formatDate(a.timestamp) }}</div>
           </div>
         </li>
         <li v-if="!activities.length" class="pa-empty">Aucune activité.</li>
@@ -25,7 +25,7 @@ import { formatDateTime as formatDate } from '@/lib/formatDate'
 
 const props = defineProps<{ id: string }>()
 
-interface Activity { id: string; action: string; detail: string | null; createdAt: string }
+interface Activity { id: string; action: string; detail: string | null; timestamp: string }
 const activities = ref<Activity[]>([])
 
 onMounted(async () => {

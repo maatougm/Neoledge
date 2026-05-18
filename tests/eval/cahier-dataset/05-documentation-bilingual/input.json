@@ -1,0 +1,42 @@
+{
+  "projectName": "EVAL-Documentation API Platform",
+  "clientName": "TotalEnergies Trading",
+  "fields": [
+    {
+      "label": "Contexte et problématique",
+      "value": "TotalEnergies Trading exploite une plateforme interne d'API REST (~450 endpoints) consommée par les traders et les algorithmes de pricing. La documentation actuelle est éclatée entre Confluence pages, Postman collections, and Swagger files non synchronisés. The team needs a unified developer portal. La direction veut un système qui supporte both English (équipes London + Houston) et French (Paris + La Défense)."
+    },
+    {
+      "label": "Objectif du projet et résultats attendus",
+      "value": "Build a centralized developer portal based on Backstage.io + Elise GED for documentation versioning. Mise en production : 10 septembre 2026. Cible : 220 développeurs internes + 60 partenaires externes. Réduire le time-to-first-API-call de 3 jours à 4 heures."
+    },
+    {
+      "label": "Périmètre fonctionnel (modules à développer)",
+      "value": "Portail Backstage.io customisé ; auto-import OpenAPI 3.1 from Git repositories ; module Elise pour versioning des spec files ; sandbox interactive (try-it-now) ; authentification SSO via Azure AD ; bilingual UI FR/EN ; API key management with rate limiting."
+    },
+    {
+      "label": "Stack technique proposée",
+      "value": "Frontend Backstage.io (React 18 — note: ce projet utilise React car Backstage l'impose, exception au standard NeoLedge Vue) ; Backend Node.js 22 + NestJS 11 ; PostgreSQL 16 ; OAuth/OIDC via Azure AD ; deployment Kubernetes (AKS) ; observabilité via Datadog APM."
+    },
+    {
+      "label": "Livrables attendus",
+      "value": "Plateforme déployée sur AKS ; 450 endpoints documentés et testables ; documentation utilisateur FR/EN ; user training (3 sessions) ; SLA opérationnel 99.5%."
+    },
+    {
+      "label": "Périmètre exclus",
+      "value": "Refactoring des 450 endpoints existants (out-of-scope) ; documentation des APIs externes tierces (Bloomberg, Refinitiv) ; legacy SOAP services."
+    }
+  ],
+  "transcripts": [
+    {
+      "title": "Architecture Review — 8 April 2026",
+      "summary": "Discussion bilingue entre le tech lead parisien et l'architect principal de Houston. The choice of Backstage.io is validated. Decision: use the Software Catalog plugin + TechDocs plugin. Azure AD est imposé par la sécurité groupe — no Okta, no Auth0. Discussion sur le déploiement multi-région : AKS West Europe pour Paris/London, AKS Central US pour Houston.",
+      "decisions": "Décision : déploiement multi-région AKS West Europe + Central US. Risque : la synchronisation des spec OpenAPI entre régions doit gérer les conflits de versioning — prévoir un design pattern dédié."
+    },
+    {
+      "title": "Workshop Bilingual UX — 22 avril 2026",
+      "summary": "Atelier UX bilingue avec 8 développeurs (4 français, 4 américains). Feedback : la documentation auto-traduite est inacceptable, il faut une vraie i18n manuelle par les tech writers. Estimation : 6 mois de travail pour traduire les 450 endpoints. Préférence forte pour des exemples de code en cURL + Python + Node.js.",
+      "decisions": "Décision : recrutement de 2 technical writers bilingues à temps plein pendant 6 mois. Risque : retard si recrutement long. Exemples de code en 3 langages (cURL, Python, Node.js), pas de Go ni Java pour cette V1."
+    }
+  ]
+}

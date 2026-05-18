@@ -173,7 +173,7 @@ const COMMANDS = computed<Omit<PaletteItem, '_idx'>[]>(() => {
     { kind: 'command', id: 'dark',   title: dark.isDark.value ? 'Thème clair' : 'Thème sombre', icon: dark.isDark.value ? 'pi-sun' : 'pi-moon', action: () => { void dark.toggle() } },
     { kind: 'command', id: 'prof',   title: 'Mon profil',               icon: 'pi-user',      action: () => router.push('/app/profile') },
   ]
-  if (authStore.can('team_planner.view')) {
+  if (['Admin', 'ProjectManager', 'Member'].includes(role ?? '')) {
     cmds.push({ kind: 'command', id: 'planner', title: 'Planif. équipe', icon: 'pi-calendar', action: () => router.push('/app/pm/team-planner') })
   }
   if (isInProject && projectId) {

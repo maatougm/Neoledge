@@ -1,8 +1,8 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 interface PendingReviewRow {
@@ -17,7 +17,7 @@ interface PendingReviewRow {
 }
 
 @Controller('spec')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class SpecReviewsController {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -33,7 +33,7 @@ export class SpecReviewsController {
    *                  must regenerate)
    */
   @Get('pending-reviews')
-  @RequirePermission('project.validate')
+  @Roles('Admin', 'SpecificationTeam')
   async listPendingReviews(@Req() req: Request): Promise<PendingReviewRow[]> {
     const userId = (req as unknown as { user?: { userId?: string } }).user?.userId;
     if (!userId) return [];

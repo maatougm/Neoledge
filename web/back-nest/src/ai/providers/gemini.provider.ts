@@ -1,14 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AiAnalysisResult } from '../ai.types.js'
+import { redactPii } from '../../common/pii-redact.js'
+import { wrapTranscriptForLlm, TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT } from '../prompts/transcript-prompt.js'
 
-const SYSTEM_PROMPT = `Tu es un assistant expert en gestion de projet. Analyse la transcription de réunion suivante et retourne un JSON structuré (sans markdown, juste le JSON brut) avec exactement ce format:
-{
-  "summary": "compte-rendu en markdown (# titres, ## sections, - listes)",
-  "actionItems": [{ "description": "...", "assigneeName": "nom ou null", "dueDate": "YYYY-MM-DD ou null" }],
-  "decisions": [{ "description": "...", "category": "decision" | "risk" }]
-}
-Langue: français. Sois concis et factuel.`
+const SYSTEM_PROMPT = TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT
 
 @Injectable()
 export class GeminiProvider {
@@ -22,6 +18,9 @@ export class GeminiProvider {
     const apiKey = this.config.get<string>('GEMINI_API_KEY')
     if (!apiKey) throw new Error('GEMINI_API_KEY not configured')
 
+    const { text: redacted } = redactPii(transcriptText)
+    const safeUserMessage = wrapTranscriptForLlm(redacted)
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
 
     const response = await fetch(url, {
@@ -32,7 +31,7 @@ export class GeminiProvider {
         contents: [
           {
             role: 'user',
-            parts: [{ text: `${SYSTEM_PROMPT}\n\n${transcriptText}` }],
+            parts: [{ text: `${SYSTEM_PROMPT}\n\n${safeUserMessage}` }],
           },
         ],
         generationConfig: {

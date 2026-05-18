@@ -12,6 +12,8 @@ import { MoveCardDto } from './dto/move-card.dto.js';
 import { CreateSprintDto } from './dto/create-sprint.dto.js';
 import { UpdateSprintDto } from './dto/update-sprint.dto.js';
 import { AddWpsToSprintDto } from './dto/add-wps-to-sprint.dto.js';
+import { CloseSprintDto } from './dto/close-sprint.dto.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 @Controller('pm/projects/:projectId')
 @UseGuards(JwtAuthGuard, ProjectAccessGuard)
@@ -90,10 +92,11 @@ export class AgileController {
 
   @Patch('boards/:id/cards/:wpId/move')
   async moveCard(
+    @Param('projectId') projectId: string,
     @Param('wpId') wpId: string,
     @Body() body: MoveCardDto,
   ) {
-    const r = await this.service.moveCard(wpId, body.columnId ?? null, body.position ?? 0);
+    const r = await this.service.moveCard(projectId, wpId, body.columnId ?? null, body.position ?? 0);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
@@ -141,9 +144,24 @@ export class AgileController {
     return r.value;
   }
 
+  @Get('sprints/:sprintId/close-preview')
+  async closeSprintPreview(
+    @Param('projectId') projectId: string,
+    @Param('sprintId') sprintId: string,
+  ) {
+    const r = await this.service.getSprintClosePreview(projectId, sprintId);
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
+  }
+
   @Post('sprints/:sprintId/close')
-  async closeSprint(@Param('sprintId') id: string) {
-    const r = await this.service.closeSprint(id);
+  async closeSprint(
+    @Param('projectId') projectId: string,
+    @Param('sprintId') sprintId: string,
+    @Body() dto: CloseSprintDto,
+    @CurrentUser() user: { userId: string; role?: string },
+  ) {
+    const r = await this.service.closeSprint(projectId, sprintId, dto, user.userId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

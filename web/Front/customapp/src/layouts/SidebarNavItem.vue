@@ -47,8 +47,8 @@ const router = useRouter()
  * on every sub-route of the project.
  *
  * - /app/pm/projects/X              → exact match only (index route)
- * - /app/pm/projects/X/wiki/:slug   → prefix match (so /wiki is active on any wiki page)
- * - Everything else                 → prefix match
+ * - Everything else                 → prefix match (so a sub-route stays active
+ *   on any of its nested pages, e.g. /workpackages?wpId=…)
  *
  * Heuristic: a "leaf" item ends in a segment with a slash (e.g. "/workpackages").
  * The project-overview item is the only one whose `to` is the bare project path

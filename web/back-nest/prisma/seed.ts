@@ -133,7 +133,6 @@ async function main() {
       startDate: new Date('2026-01-15'),
       endDate:   new Date('2026-07-30'),
       tags: 'GED,migration,collectivité',
-      budget: 85000,
     },
     {
       id: ID.p2,
@@ -146,7 +145,6 @@ async function main() {
       startDate: new Date('2026-02-01'),
       endDate:   new Date('2026-09-15'),
       tags: 'santé,elise,déploiement',
-      budget: 142000,
     },
     {
       id: ID.p3,
@@ -159,7 +157,6 @@ async function main() {
       startDate: new Date('2026-01-10'),
       endDate:   new Date('2026-06-30'),
       tags: 'NeoLeadge,région,intégration',
-      budget: 67500,
     },
     {
       id: ID.p4,
@@ -172,7 +169,6 @@ async function main() {
       startDate: new Date('2025-10-01'),
       endDate:   new Date('2026-04-30'),
       tags: 'archivage,ministère,mep',
-      budget: 210000,
     },
     {
       id: ID.p5,
@@ -185,7 +181,6 @@ async function main() {
       startDate: new Date('2025-06-01'),
       endDate:   new Date('2025-12-20'),
       tags: 'enseignement,GED,université',
-      budget: 48000,
     },
     {
       id: ID.p6,
@@ -198,7 +193,6 @@ async function main() {
       startDate: new Date('2026-05-01'),
       endDate:   new Date('2026-11-30'),
       tags: 'collectivité,initialisation',
-      budget: 32000,
     },
   ];
 
@@ -481,10 +475,11 @@ async function main() {
   console.log('\n✅  Seed complete!\n');
   console.log('Quick-login accounts:');
   console.log('  Admin          admin@neoleadge.com     / Admin@123');
-  console.log('  ProjectManager pm@neoleadge.com        / Pm@12345');
+  console.log('  ProjectManager pm@neoleadge.com        / Pm@123');
   console.log('  ProjectManager pm2@neoleadge.com       / Pm@12345');
-  console.log('  SpecTeam       spec@neoleadge.com      / Valid@123');
-  console.log('  Member         real@neoleadge.com      / Valid@123');
+  console.log('  SpecTeam       spec@neoleadge.com      / Spec@123');
+  console.log('  SpecTeam (2)   spec2@neoleadge.com     / Valid@123');
+  console.log('  Member         realiz@neoleadge.com    / Realiz@123');
   console.log('  Member         deploy@neoleadge.com    / Deploy@123');
   console.log('  Member (2)     viewer@neoleadge.com    / Viewer@1');
 }

@@ -14,7 +14,6 @@ import { UpdateProjectDto } from './dto/update-project.dto.js';
 import { AssignManagerDto } from './dto/assign-manager.dto.js';
 import { AddFieldDto } from './dto/add-field.dto.js';
 import { UpdateStatusDto } from './dto/update-status.dto.js';
-import { ToggleManagerFieldsDto } from './dto/toggle-manager-fields.dto.js';
 import { DuplicateProjectDto } from './dto/duplicate-project.dto.js';
 import { BulkIdsDto, BulkStatusDto, BulkAssignManagerDto } from './dto/bulk.dto.js';
 
@@ -154,13 +153,6 @@ export class ProjectsController {
   async removeField(@Param('id', ParseUUIDPipe) id: string, @Param('fieldId', ParseUUIDPipe) fieldId: string) {
     const result = await this.service.removeField(id, fieldId);
     if (result.isFailure) throw new BadRequestException(result.error);
-  }
-
-  @Patch(':id/toggle-manager-fields')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async toggleManagerFields(@Param('id', ParseUUIDPipe) id: string, @Body() body: ToggleManagerFieldsDto) {
-    const result = await this.service.toggleManagerFields(id, body.allow);
-    if (result.isFailure) throw new NotFoundException(result.error);
   }
 
   @Post(':id/duplicate')

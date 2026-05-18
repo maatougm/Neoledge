@@ -265,4 +265,80 @@ export class UsersService {
 
     return Result.ok();
   }
+
+  /**
+   * Hard delete an account. Most history relations on AppUser are
+   * `onDelete: NoAction` so the DB will refuse the delete if the user
+   * has authored projects/WPs, logged time, posted comments, or uploaded
+   * attachments. We count the blocking references up front and return a
+   * descriptive error instead of letting Prisma throw a P2003.
+   *
+   * The relations configured with Cascade / SetNull (notifications,
+   * watchers, project memberships, role assignments, cahier feedback,
+   * meeting attendance, …) are cleaned up automatically by the DB.
+   */
+  async delete(id: string, requestingUserId: string): Promise<Result> {
+    if (id === requestingUserId) {
+      return Result.fail('Vous ne pouvez pas supprimer votre propre compte.');
+    }
+
+    const user = await this.prisma.appUser.findUnique({ where: { id } });
+    if (!user) {
+      return Result.fail('Utilisateur non trouvé.');
+    }
+
+    // Count history rows that would block the delete (FK = NoAction).
+    const [
+      managedProjects,
+      createdProjects,
+      authoredWps,
+      timeEntries,
+      projectComments,
+      wpComments,
+      projectAttachments,
+      wpAttachments,
+    ] = await Promise.all([
+      this.prisma.project.count({ where: { projectManagerId: id } }),
+      this.prisma.project.count({ where: { createdByAdminId: id } }),
+      this.prisma.workPackage.count({ where: { authorId: id } }),
+      this.prisma.timeEntry.count({ where: { userId: id } }),
+      this.prisma.projectComment.count({ where: { userId: id } }),
+      this.prisma.workPackageComment.count({ where: { userId: id } }),
+      this.prisma.projectAttachment.count({ where: { uploadedByUserId: id } }),
+      this.prisma.workPackageAttachment.count({
+        where: { uploadedByUserId: id },
+      }),
+    ]);
+
+    const blockers: string[] = [];
+    if (managedProjects > 0) blockers.push(`${managedProjects} projet(s) géré(s)`);
+    if (createdProjects > 0) blockers.push(`${createdProjects} projet(s) créé(s)`);
+    if (authoredWps > 0) blockers.push(`${authoredWps} tâche(s) créée(s)`);
+    if (timeEntries > 0) blockers.push(`${timeEntries} entrée(s) de temps`);
+    if (projectComments + wpComments > 0) {
+      blockers.push(`${projectComments + wpComments} commentaire(s)`);
+    }
+    if (projectAttachments + wpAttachments > 0) {
+      blockers.push(`${projectAttachments + wpAttachments} pièce(s) jointe(s)`);
+    }
+
+    if (blockers.length > 0) {
+      return Result.fail(
+        `Suppression impossible — l'utilisateur a ${blockers.join(', ')}. Désactivez-le plutôt pour préserver l'historique.`,
+      );
+    }
+
+    try {
+      await this.prisma.appUser.delete({ where: { id } });
+    } catch (e) {
+      // Defence-in-depth: if a relation we did not count above still
+      // holds the row, surface a clean error instead of a 500.
+      const msg = e instanceof Error ? e.message : String(e);
+      return Result.fail(
+        `Suppression refusée par la base : ${msg}. Désactivez l'utilisateur à la place.`,
+      );
+    }
+
+    return Result.ok();
+  }
 }

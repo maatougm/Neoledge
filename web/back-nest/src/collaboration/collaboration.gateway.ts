@@ -191,13 +191,24 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
       return;
     }
 
-    // Project-membership check — user must have a role assignment for this
-    // project OR a global assignment (projectId === null).
-    const hasAccess = await this.prisma.userRoleAssignment.findFirst({
-      where: { userId, OR: [{ projectId }, { projectId: null }] },
-      select: { id: true },
-    });
-    if (!hasAccess) {
+    // Project-membership check — user must be the project's PM, an Admin,
+    // or in ProjectMember. The custom-role-with-permission path was
+    // retired along with the dynamic RBAC stack.
+    const [asPm, asMember, dbUser] = await Promise.all([
+      this.prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false, projectManagerId: userId },
+        select: { id: true },
+      }),
+      this.prisma.projectMember.findFirst({
+        where: { userId, projectId },
+        select: { id: true },
+      }),
+      this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      }),
+    ]);
+    if (!asPm && !asMember && dbUser?.role !== 'Admin') {
       client.emit('error', { message: 'Not a member of this project' });
       return;
     }

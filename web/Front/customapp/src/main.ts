@@ -4,6 +4,15 @@
  * @desc     Application entry point — installs NeoLibrary, Pinia, Router
  */
 
+// Patch global axios defaults before any store / composable imports it.
+// We use Bearer JWTs and don't run a CSRF-token-in-cookie scheme; without
+// this, axios reads `document.cookie` on every same-origin request which
+// Chrome flags as PerformanceIssue:DocumentCookie.
+import axios from 'axios'
+axios.defaults.withXSRFToken = false
+axios.defaults.xsrfCookieName = ''
+axios.defaults.xsrfHeaderName = ''
+
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'

@@ -92,14 +92,16 @@ export class DeadlinesService {
 
         const recipientIds = buildRecipients(project.projectManagerId, admins);
 
-        // Use allSettled so a failure for one recipient does not abort the rest.
+        // In-app notifications only — `skipEmail: true` so the generic email
+        // from notify() doesn't duplicate the rich-template deadline email
+        // we send below. Without this flag, every recipient got TWO emails.
         await Promise.allSettled(
           recipientIds.map((userId) =>
-            this.notifications.notify(userId, type, title, message, project.id),
+            this.notifications.notify(userId, type, title, message, project.id, undefined, { skipEmail: true }),
           ),
         );
 
-        // Send deadline emails directly with the rich template (fire-and-forget)
+        // Rich-template email — respects the user's emailNotifications preference.
         const recipientsWithEmail = await this.fetchRecipientsWithEmail(recipientIds);
         const endDateStr = formatDate(project.endDate);
         const emailSubject = isCritical
@@ -156,10 +158,21 @@ export class DeadlinesService {
   private async fetchRecipientsWithEmail(
     recipientIds: string[],
   ): Promise<RecipientRow[]> {
-    return this.prisma.appUser.findMany({
+    const rows = await this.prisma.appUser.findMany({
       where: { id: { in: recipientIds }, isActive: true },
-      select: { id: true, email: true },
-    }) as Promise<RecipientRow[]>;
+      select: { id: true, email: true, preferences: true },
+    });
+    // Honor the per-user emailNotifications preference (defaults to true).
+    // Was previously bypassed for deadline alerts.
+    return rows.filter((u) => {
+      if (!u.preferences) return true;
+      try {
+        const p = JSON.parse(u.preferences) as { emailNotifications?: boolean };
+        return p.emailNotifications !== false;
+      } catch {
+        return true;
+      }
+    }) as RecipientRow[];
   }
 
   private async fetchAlreadyAlertedProjectIds(

@@ -109,6 +109,31 @@ export function useUserManagement() {
     }
   }
 
+  const handleDelete = (user: UserResponse) => {
+    confirm.require({
+      message: `Supprimer définitivement le compte de ${user.firstName} ${user.lastName} (${user.email}) ? Cette action est irréversible. Si l'utilisateur a déjà créé des projets ou des tâches, la suppression sera refusée — désactivez-le à la place.`,
+      header: 'Confirmer la suppression définitive',
+      icon: 'pi pi-trash',
+      acceptLabel: 'Supprimer',
+      rejectLabel: 'Annuler',
+      acceptClass: 'p-button-danger',
+      accept: () => {
+        void (async () => {
+          const ok = await store.deleteUser(user.id)
+          if (ok) {
+            toast.add({ severity: 'success', detail: 'Utilisateur supprimé.', life: 3000 })
+          } else {
+            toast.add({
+              severity: 'error',
+              detail: store.error ?? 'Erreur lors de la suppression.',
+              life: 6000,
+            })
+          }
+        })()
+      },
+    })
+  }
+
   return {
     store,
     showCreateDialog,
@@ -123,5 +148,6 @@ export function useUserManagement() {
     handleResetPassword,
     handleDeactivate,
     handleReactivate,
+    handleDelete,
   }
 }

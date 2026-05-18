@@ -1,7 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { AiProviderFactory } from './ai-provider.factory.js'
-import { ZaiFallbackProvider } from './providers/zai-fallback.provider.js'
+import { AgentRunnerService } from './agent/agent-runner.service.js'
+import { NotificationsService } from '../notifications/notifications.service.js'
+import { runTranscriptAgent } from './transcript-agent.js'
+import { AgentEmitMissedError } from './agent/agent-errors.js'
+import { EmbeddingIndexerService } from './embeddings/embedding-indexer.service.js'
 import type { AiAnalysisResult } from './ai.types.js'
 
 /** Strip API keys and auth tokens from error messages before persisting. */
@@ -24,8 +29,17 @@ export class AiService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providerFactory: AiProviderFactory,
-    private readonly zaiFallback: ZaiFallbackProvider,
+    private readonly config: ConfigService,
+    private readonly agentRunner: AgentRunnerService,
+    private readonly notifications: NotificationsService,
+    private readonly embeddingIndexer: EmbeddingIndexerService,
   ) {}
+
+  /** True when the transcript agent loop should run instead of the legacy single-shot path. */
+  private isAgentModeEnabled(): boolean {
+    const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    return raw === 'all' || raw.split(/[,\s]+/).includes('transcript')
+  }
 
   /** On startup, mark any rows stuck in processing as failed. */
   async onModuleInit(): Promise<void> {
@@ -50,8 +64,18 @@ export class AiService implements OnModuleInit {
       data: { aiStatus: 'processing', aiError: null, aiStartedAt: new Date() },
     })
     if (count === 0) {
-      // Either the row doesn't exist or it's already processing — bail out.
-      this.logger.warn(`analyzeTranscript: transcript ${transcriptId} is already processing or missing — skipping.`)
+      // Distinguish "row missing" (the transcript was deleted between trigger
+      // and analyze — log error so ops see it) from "already processing"
+      // (legitimate concurrent invocation — info-level skip).
+      const exists = await this.prisma.meetingTranscript.findUnique({
+        where: { id: transcriptId },
+        select: { id: true, aiStatus: true },
+      })
+      if (!exists) {
+        this.logger.error(`analyzeTranscript: transcript ${transcriptId} is missing — caller will poll forever`)
+      } else {
+        this.logger.warn(`analyzeTranscript: transcript ${transcriptId} is already processing (status=${exists.aiStatus}) — skipping`)
+      }
       return
     }
 
@@ -72,18 +96,26 @@ export class AiService implements OnModuleInit {
 
       const uniqueSpeakers = [...new Set(transcript.segments.map((s) => s.speaker))]
 
-      // 3. Call AI provider — on error, fall back to Z.AI if configured
-      const provider = this.providerFactory.getProvider()
+      // 3. Resolve the analysis result. Agent mode (when enabled) runs a
+      //    tool-using loop where the model fetches segments incrementally;
+      //    on AgentEmitMissedError it transparently falls through to the
+      //    single-shot path. Errors other than the emit-missed signal still
+      //    surface so the catch below marks the row failed.
       let result: AiAnalysisResult
-      let modelUsed = provider.modelName
-      try {
-        result = await provider.analyze(fullText, uniqueSpeakers)
-      } catch (primaryErr: unknown) {
-        if (!this.zaiFallback.isConfigured()) throw primaryErr
-        const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
-        this.logger.warn(`Primary provider (${provider.modelName}) failed: ${msg.slice(0, 200)} — falling back to Z.AI`)
-        result = await this.zaiFallback.analyze(fullText, uniqueSpeakers)
-        modelUsed = `${this.zaiFallback.modelName} (fallback)`
+      let modelUsed: string
+      const useAgent = this.isAgentModeEnabled() && this.agentRunner.isAgentModeAvailable()
+
+      if (useAgent) {
+        try {
+          result = await runTranscriptAgent(this.agentRunner, this.logger, transcript.projectId, transcriptId)
+          modelUsed = 'agent-mode'
+        } catch (agentErr: unknown) {
+          if (!(agentErr instanceof AgentEmitMissedError)) throw agentErr
+          this.logger.warn(`Transcript agent fell through to single-shot: ${agentErr.message}`)
+          ;({ result, modelUsed } = await this.singleShotAnalyze(fullText, uniqueSpeakers))
+        }
+      } else {
+        ;({ result, modelUsed } = await this.singleShotAnalyze(fullText, uniqueSpeakers))
       }
 
       // 4. Persist results in a transaction
@@ -132,6 +164,16 @@ export class AiService implements OnModuleInit {
 
       this.logger.log(`AI analysis completed for transcript ${transcriptId} (model: ${modelUsed})`)
 
+      // Phase 4 — index the aiSummary for semantic retrieval by the cahier
+      // agent. Fire-and-forget; the cahier's read_relevant_meeting_excerpts
+      // filters `WHERE summaryEmbedding IS NOT NULL` so a failed embed only
+      // delays its visibility, never crashes the analyze pipeline.
+      void this.embeddingIndexer
+        .indexAndStore('summary', [{ id: transcriptId, text: result.summary }], { projectId: transcript.projectId })
+        .catch((e: unknown) =>
+          this.logger.warn(`aiSummary embedding failed for ${transcriptId}: ${e instanceof Error ? e.message : String(e)}`),
+        )
+
       // Log to global activity feed so admin/activity page reflects AI completions.
       void this.prisma.projectActivity
         .create({
@@ -143,6 +185,30 @@ export class AiService implements OnModuleInit {
           },
         })
         .catch(() => { /* non-fatal */ })
+
+      // Notify the project PM that the AI analysis is ready — without this,
+      // long-running analyses (30+ minute meetings) leave the PM polling the
+      // tab indefinitely with no signal when results land.
+      void this.prisma.project
+        .findUnique({
+          where: { id: transcript.projectId },
+          select: { projectManagerId: true, name: true },
+        })
+        .then((project) => {
+          if (!project?.projectManagerId) return
+          return this.notifications.notifyEnhanced({
+            userId: project.projectManagerId,
+            type: 'meeting_ai_completed',
+            reason: 'System',
+            title: 'Analyse IA terminée',
+            message: `L'analyse de la réunion est prête (${result.actionItems.length} action(s), ${result.decisions.length} décision(s)).`,
+            projectId: transcript.projectId,
+            entityType: 'meeting',
+            entityId: transcriptId,
+            link: `/app/pm/projects/${transcript.projectId}/meetings?transcriptId=${transcriptId}`,
+          })
+        })
+        .catch((e) => this.logger.warn(`AI completion notify failed: ${e instanceof Error ? e.message : String(e)}`))
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur inconnue'
       this.logger.error(`AI analysis failed for transcript ${transcriptId}: ${message}`)
@@ -173,6 +239,26 @@ export class AiService implements OnModuleInit {
           })
           .catch(() => { /* non-fatal */ })
       }
+    }
+  }
+
+  /** Legacy single-shot analyze path. Used as the default and as the
+   *  graceful fallback when agent mode emits-miss. */
+  private async singleShotAnalyze(
+    fullText: string,
+    uniqueSpeakers: string[],
+  ): Promise<{ result: AiAnalysisResult; modelUsed: string }> {
+    const primary = this.providerFactory.getPrimary()
+    const fallback = this.providerFactory.getFallback()
+    try {
+      const r = await primary.analyze(fullText, uniqueSpeakers)
+      return { result: r, modelUsed: primary.modelName }
+    } catch (primaryErr: unknown) {
+      if (!fallback) throw primaryErr
+      const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr)
+      this.logger.warn(`Primary provider (${primary.modelName}) failed: ${msg.slice(0, 200)} — falling back to ${fallback.modelName}`)
+      const r = await fallback.analyze(fullText, uniqueSpeakers)
+      return { result: r, modelUsed: `${fallback.modelName} (fallback)` }
     }
   }
 }

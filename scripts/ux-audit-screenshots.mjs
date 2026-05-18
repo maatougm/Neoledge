@@ -5,8 +5,8 @@ import { chromium } from '../web/Front/customapp/node_modules/playwright/index.m
 
 const ROOT = 'https://neoleadge.pythagore-init.com';
 const ADMIN = { email: 'admin@neoleadge.com', password: 'Admin@123' };
-const PM    = { email: 'pm@neoleadge.com',    password: 'Pm@12345'  };
-const SPEC  = { email: 'spec@neoleadge.com',  password: 'Valid@123' };
+const PM    = { email: 'pm@neoleadge.com',    password: 'Pm@123'  };
+const SPEC  = { email: 'spec@neoleadge.com',  password: 'Spec@123' };
 const SHOTS = './scripts/ux-audit-shots';
 
 const browser = await chromium.launch({ headless: true });

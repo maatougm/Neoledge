@@ -62,7 +62,8 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NeoInputText, NeoSelect } from '@neolibrary/components'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
+import { useNeoToast } from '@neolibrary/components'
 import { useAuthStore } from '@/stores/authStore'
 import { formatDateShort as formatDate } from '@/lib/formatDate'
 import PriorityDot from '@/components/common/PriorityDot.vue'
@@ -88,6 +89,8 @@ const statusOptions = [
   { label: 'Clôturé',                   value: 'Closed' },
 ]
 
+const toast = useNeoToast()
+
 async function load() {
   loading.value = true
   try {
@@ -98,6 +101,12 @@ async function load() {
       `/pm/my-tasks${params.toString() ? `?${params.toString()}` : ''}`,
     )
     items.value = data.items
+  } catch (e: unknown) {
+    toast.add({
+      severity: 'error',
+      detail: extractErrorMessage(e) ?? 'Impossible de charger vos tâches.',
+      life: 5000,
+    })
   } finally {
     loading.value = false
   }

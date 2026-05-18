@@ -49,6 +49,38 @@ export class NotificationsService {
   }
 
   /**
+   * Verify the target user is allowed to receive a project-scoped notification.
+   * Membership = PM, ProjectMember row, or global Admin role.
+   *
+   * Fail-closed: if the check itself errors (DB blip, etc.) we return false so
+   * the caller drops the notification rather than risk persisting a cross-
+   * project leak. The notification is recoverable — the producer log line lets
+   * ops detect it and the user will see it on the next legitimate event.
+   */
+  private async assertProjectMember(userId: string, projectId: string): Promise<boolean> {
+    try {
+      const [asPm, asProjectMember, dbUser] = await Promise.all([
+        this.prisma.project.findFirst({
+          where: { id: projectId, isDeleted: false, projectManagerId: userId },
+          select: { id: true },
+        }),
+        this.prisma.projectMember.findFirst({
+          where: { projectId, userId },
+          select: { id: true },
+        }),
+        this.prisma.appUser.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        }),
+      ]);
+      return Boolean(asPm) || Boolean(asProjectMember) || dbUser?.role === 'Admin';
+    } catch (e) {
+      this.logger.error(`assertProjectMember: check failed for user=${userId} project=${projectId}`, e);
+      return false;
+    }
+  }
+
+  /**
    * Helper for internal use by other services — fire-and-forget style.
    * Creates the in-app notification, then attempts to send an email if the
    * user has `emailNotifications` enabled (default: true when key is absent).
@@ -64,34 +96,21 @@ export class NotificationsService {
     message: string,
     projectId?: string,
     actorId?: string,
+    options: { skipEmail?: boolean; skipScopeCheck?: boolean } = {},
   ): Promise<void> {
     // Skip self-notifications.
     if (actorId && actorId === userId) return;
 
-    // Scope check: when a projectId is provided, verify the target user is a project member.
-    if (projectId) {
-      try {
-        const [asPm, asAssignment, asProjectMember] = await Promise.all([
-          this.prisma.project.findFirst({
-            where: { id: projectId, isDeleted: false, projectManagerId: userId },
-            select: { id: true },
-          }),
-          this.prisma.userRoleAssignment.findFirst({
-            where: { userId, OR: [{ projectId }, { projectId: null }] },
-            select: { id: true },
-          }),
-          this.prisma.projectMember.findFirst({
-            where: { projectId, userId },
-            select: { id: true },
-          }),
-        ]);
-        if (!asPm && !asAssignment && !asProjectMember) {
-          this.logger.warn(`notify: user ${userId} is not a member of project ${projectId} — skipping`);
-          return;
-        }
-      } catch (e) {
-        this.logger.error('notify: project member check failed', e);
-        // Fail open: if the check itself errors, proceed rather than drop the notification.
+    // Scope check: when a projectId is provided, verify the target user is
+    // a member (PM, Admin, or in ProjectMember). Fail-closed on errors.
+    // Callers that have already validated membership (e.g. iterating over
+    // a `findMany({ role: 'Admin' })` result) can pass `skipScopeCheck`
+    // to avoid the N×3 per-target queries that would otherwise fan out.
+    if (projectId && !options.skipScopeCheck) {
+      const allowed = await this.assertProjectMember(userId, projectId);
+      if (!allowed) {
+        this.logger.warn(`notify: user ${userId} not a member of project ${projectId} — skipping`);
+        return;
       }
     }
 
@@ -109,26 +128,11 @@ export class NotificationsService {
       this.gateway.emitToUser(userId, created);
     }
 
-    // 2. Optionally send email
-    try {
-      const user = await this.prisma.appUser.findUnique({
-        where: { id: userId },
-        select: { email: true, preferences: true },
-      });
-
-      if (!user) return;
-
-      const prefs = parsePreferences(user.preferences);
-      // Default to true when key is absent
-      const wantsEmail = prefs.emailNotifications !== false;
-
-      if (wantsEmail) {
-        // Build a simple plain HTML fallback — callers can override with rich templates
-        const html = buildGenericHtml(title, message);
-        await this.mail.send(user.email, title, html);
-      }
-    } catch (e) {
-      this.logger.error('notify: email delivery failed', e);
+    // 2. Optionally send email — callers that send their own rich-template
+    // email (deadlines, validation digests) pass `skipEmail: true` to avoid
+    // a duplicate generic email landing in the user's inbox alongside theirs.
+    if (!options.skipEmail) {
+      await this.sendEmailIfWanted(userId, title, message, null);
     }
   }
 
@@ -146,8 +150,15 @@ export class NotificationsService {
     title: string;
     message: string;
     projectId?: string | null;
-    reason?: 'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange' | 'Comment' | 'System';
-    entityType?: 'work_package' | 'project' | 'meeting' | 'comment' | 'version' | null;
+    /** Why the notification was generated. Reserved values include
+     *  'Mention' | 'Assignee' | 'Watcher' | 'Deadline' | 'StatusChange'
+     *  | 'Comment' | 'System' | 'AwaitingReview' | 'cahier_generated'
+     *  | 'cahier_approved' | 'cahier_rejected' | 'cahier_validated'.
+     *  Kept as string to allow domain-specific reason codes. */
+    reason?: string;
+    /** Reserved entity types include 'work_package' | 'project' | 'meeting'
+     *  | 'comment' | 'version' | 'Project'. Kept as string for forward-compat. */
+    entityType?: string | null;
     entityId?: string | null;
     actorId?: string | null;
     link?: string | null;
@@ -155,30 +166,13 @@ export class NotificationsService {
     // Skip self-notifications.
     if (params.actorId && params.actorId === params.userId) return;
 
-    // Scope check: when a projectId is provided, verify the target user is a project member.
+    // Scope check: when a projectId is provided, verify the target user is
+    // a member (PM, Admin, or in ProjectMember). Fail-closed on errors.
     if (params.projectId) {
-      try {
-        const [asPm, asAssignment, asProjectMember] = await Promise.all([
-          this.prisma.project.findFirst({
-            where: { id: params.projectId, isDeleted: false, projectManagerId: params.userId },
-            select: { id: true },
-          }),
-          this.prisma.userRoleAssignment.findFirst({
-            where: { userId: params.userId, OR: [{ projectId: params.projectId }, { projectId: null }] },
-            select: { id: true },
-          }),
-          this.prisma.projectMember.findFirst({
-            where: { projectId: params.projectId, userId: params.userId },
-            select: { id: true },
-          }),
-        ]);
-        if (!asPm && !asAssignment && !asProjectMember) {
-          this.logger.warn(`notifyEnhanced: user ${params.userId} is not a member of project ${params.projectId} — skipping`);
-          return;
-        }
-      } catch (e) {
-        this.logger.error('notifyEnhanced: project member check failed', e);
-        // Fail open: if the check itself errors, proceed.
+      const allowed = await this.assertProjectMember(params.userId, params.projectId);
+      if (!allowed) {
+        this.logger.warn(`notifyEnhanced: user ${params.userId} not a member of project ${params.projectId} — skipping`);
+        return;
       }
     }
 
@@ -203,6 +197,39 @@ export class NotificationsService {
       return;
     }
     if (this.gateway && created) this.gateway.emitToUser(params.userId, created);
+
+    // Email delivery — was missing from notifyEnhanced before, so every
+    // modern producer (WP assign, mentions, cahier feedback, bulk-assign)
+    // silently skipped email. The user's emailNotifications preference
+    // is now honored on this path too.
+    await this.sendEmailIfWanted(params.userId, params.title, params.message, params.link);
+  }
+
+  /**
+   * Best-effort email delivery shared by `notify()` and `notifyEnhanced()`.
+   * Reads the user's `emailNotifications` preference (default true) and only
+   * sends if enabled. Never throws — failures are logged and swallowed so
+   * email outages don't break the in-app notification flow.
+   */
+  private async sendEmailIfWanted(
+    userId: string,
+    title: string,
+    message: string,
+    link: string | null | undefined,
+  ): Promise<void> {
+    try {
+      const user = await this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { email: true, preferences: true, isActive: true },
+      });
+      if (!user || !user.isActive || !user.email) return;
+      const prefs = parsePreferences(user.preferences);
+      if (prefs.emailNotifications === false) return;
+      const html = buildGenericHtml(title, message, link ?? null);
+      await this.mail.send(user.email, title, html);
+    } catch (e) {
+      this.logger.warn(`notify email delivery failed for ${userId}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   async getForUser(
@@ -211,9 +238,14 @@ export class NotificationsService {
   ): Promise<Result<{ items: NotificationRecord[]; nextCursor: string | null }>> {
     try {
       const take = Math.min(options.take ?? 50, 100);
+      // Cursor seek + composite order (isRead, createdAt) is incompatible:
+      // cursor.id walks the id-ordered sequence but the result is sorted by
+      // a different key, so page 2 skips or duplicates rows when isRead
+      // changes between fetches. Order by createdAt only and let the UI
+      // group unread vs read visually.
       const notifications = await this.prisma.notification.findMany({
         where: { userId },
-        orderBy: [{ isRead: 'asc' }, { createdAt: 'desc' }],
+        orderBy: { createdAt: 'desc' },
         take: take + 1,
         ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
       });
@@ -228,10 +260,22 @@ export class NotificationsService {
 
   async markAsRead(id: string, userId: string): Promise<Result<void>> {
     try {
-      const notification = await this.prisma.notification.findFirst({ where: { id, userId } });
-      if (!notification) return Result.fail('Notification non trouvée.');
-
-      await this.prisma.notification.update({ where: { id }, data: { isRead: true } });
+      // Single scoped updateMany — atomic, no read-before-write race,
+      // and treating "already read" / "not yours" identically (0-count)
+      // makes the endpoint idempotent.
+      const { count } = await this.prisma.notification.updateMany({
+        where: { id, userId, isRead: false },
+        data: { isRead: true },
+      });
+      if (count === 0) {
+        // Distinguish actual not-found from already-read by a follow-up scoped read.
+        const exists = await this.prisma.notification.findFirst({
+          where: { id, userId },
+          select: { id: true },
+        });
+        if (!exists) return Result.fail('Notification non trouvée.');
+        // Already-read: idempotent success.
+      }
       return Result.ok();
     } catch {
       return Result.fail('Impossible de mettre à jour la notification.');
@@ -261,10 +305,12 @@ export class NotificationsService {
 
   async delete(id: string, userId: string): Promise<Result<void>> {
     try {
-      const notification = await this.prisma.notification.findFirst({ where: { id, userId } });
-      if (!notification) return Result.fail('Notification non trouvée.');
-
-      await this.prisma.notification.delete({ where: { id } });
+      // Scoped deleteMany — atomic and resistant to refactors of the gate
+      // forgetting to filter by userId.
+      const { count } = await this.prisma.notification.deleteMany({
+        where: { id, userId },
+      });
+      if (count === 0) return Result.fail('Notification non trouvée.');
       return Result.ok();
     } catch {
       return Result.fail('Impossible de supprimer la notification.');
@@ -300,10 +346,17 @@ function parsePreferences(raw: string | null | undefined): UserPreferences {
   return {};
 }
 
-function buildGenericHtml(title: string, message: string): string {
+function buildGenericHtml(title: string, message: string, link: string | null = null): string {
   const BRAND = '#0d9488';
   const safeTitle = escapeHtml(title);
   const safeMessage = escapeHtml(message);
+  // Only build a CTA when the link is a path starting with "/" (defence
+  // against open-redirect through a tampered notification row).
+  const APP_URL = (process.env.APP_URL ?? 'https://neoleadge.pythagore-init.com').replace(/\/$/, '');
+  const safeLink = link && link.startsWith('/') ? `${APP_URL}${link}` : null;
+  const cta = safeLink
+    ? `<p style="margin:18px 0 0 0;"><a href="${safeLink}" style="display:inline-block;background:${BRAND};color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;font-size:14px;">Ouvrir dans NeoLeadge</a></p>`
+    : '';
   return `<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="UTF-8" /><title>${safeTitle}</title></head>
@@ -317,6 +370,7 @@ function buildGenericHtml(title: string, message: string): string {
         <tr><td style="padding:28px;">
           <h2 style="margin:0 0 12px 0;font-size:18px;color:#111827;">${safeTitle}</h2>
           <p style="margin:0;font-size:15px;color:#374151;line-height:1.6;">${safeMessage}</p>
+          ${cta}
         </td></tr>
         <tr><td style="background:#f9fafb;padding:14px 28px;border-top:1px solid #e5e7eb;">
           <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Email automatique — merci de ne pas y répondre.</p>

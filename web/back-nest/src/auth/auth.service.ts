@@ -194,10 +194,15 @@ export class AuthService {
       return;
     }
 
-    // If 2FA setup started but never enabled (totpEnabled=false, secret present),
-    // we still let the user clear the orphan secret WITHOUT a code — it's a
-    // stuck state, not an active protection.
+    // 2FA setup started but never enabled (totpEnabled=false, secret present).
+    // We still require proof-of-possession via a valid TOTP code computed against
+    // the in-progress secret. Otherwise a stolen JWT could silently wipe a
+    // pending setup so the attacker can re-enroll their own device.
     if (!user.totpEnabled) {
+      const isValidPending = await this.totpService.verify(code, user.totpSecret);
+      if (!isValidPending) {
+        throw new UnauthorizedException(this.authFailureMessage('Code TOTP invalide.'));
+      }
       await this.prisma.appUser.update({
         where: { id: userId },
         data: {
@@ -463,62 +468,15 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('User not found');
 
-    const [assignments, permissionsSet] = await Promise.all([
-      this.prisma.userRoleAssignment.findMany({
-        where: { userId },
-        select: {
-          projectId: true,
-          role: { select: { id: true, name: true } },
-        },
-      }),
-      this.loadUserPermissions(userId),
-    ]);
-
+    // The dynamic RBAC stack was removed; AppUser.role is the single
+    // source of truth for authorization. We keep the response shape
+    // for one release so old browser tabs mid-deploy don't break, but
+    // both arrays are always empty going forward.
     return {
       user,
-      permissions: permissionsSet,
-      roles: assignments.map((a) => ({
-        id: a.role.id,
-        name: a.role.name,
-        projectId: a.projectId,
-      })),
+      permissions: { global: [], perProject: {} },
+      roles: [],
     };
-  }
-
-  private async loadUserPermissions(
-    userId: string,
-  ): Promise<{ global: string[]; perProject: Record<string, string[]> }> {
-    const rows = await this.prisma.userRoleAssignment.findMany({
-      where: { userId },
-      select: {
-        projectId: true,
-        role: {
-          select: {
-            permissions: { select: { permission: { select: { key: true } } } },
-          },
-        },
-      },
-    });
-    const global = new Set<string>();
-    const perProject = new Map<string, Set<string>>();
-    for (const a of rows) {
-      const keys = a.role.permissions.map((rp) => rp.permission.key);
-      if (a.projectId === null) {
-        keys.forEach((k) => global.add(k));
-      } else {
-        let bucket = perProject.get(a.projectId);
-        if (!bucket) {
-          bucket = new Set<string>();
-          perProject.set(a.projectId, bucket);
-        }
-        keys.forEach((k) => bucket!.add(k));
-      }
-    }
-    const perProjectObj: Record<string, string[]> = {};
-    for (const [pid, set] of perProject.entries()) {
-      perProjectObj[pid] = Array.from(set);
-    }
-    return { global: Array.from(global), perProject: perProjectObj };
   }
 
   private async generateTokenForUser(user: {

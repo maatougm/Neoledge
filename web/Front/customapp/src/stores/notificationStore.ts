@@ -6,7 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/lib/api'
 import { onLogout } from './logoutBus'
-import type { Notification } from '@/types/notification.types'
+import type { Notification, NotificationListResponse } from '@/types/notification.types'
 
 // Re-export for consumers that import from this module directly
 export type { Notification }
@@ -16,6 +16,7 @@ export type { Notification }
 export const useNotificationStore = defineStore('notifications', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const notifications = ref<Notification[]>([])
+  const nextCursor = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -30,8 +31,11 @@ export const useNotificationStore = defineStore('notifications', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<Notification[]>('/notifications')
-      notifications.value = [...data]
+      const { data } = await api.get<NotificationListResponse>('/notifications')
+      // Defensive: API contract is { items, nextCursor } but never crash the
+      // bell on a malformed response (network blip, proxy weirdness, etc).
+      notifications.value = Array.isArray(data?.items) ? [...data.items] : []
+      nextCursor.value = data?.nextCursor ?? null
     } catch (e: unknown) {
       error.value =
         e instanceof Error ? e.message : 'Erreur lors du chargement des notifications.'
@@ -82,6 +86,10 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   const addNotification = (notification: Notification): void => {
+    // Dedupe by id — without this, a notification that arrives via socket
+    // first and then again via the polling refresh ends up rendered twice
+    // and Vue warns about duplicate :key, and unreadCount over-counts.
+    if (notifications.value.some((n) => n.id === notification.id)) return
     notifications.value = [notification, ...notifications.value]
   }
 
@@ -110,6 +118,7 @@ export const useNotificationStore = defineStore('notifications', () => {
   const reset = (): void => {
     stopPolling()
     notifications.value = []
+    nextCursor.value = null
     loading.value = false
     error.value = null
   }
@@ -118,6 +127,7 @@ export const useNotificationStore = defineStore('notifications', () => {
 
   return {
     notifications,
+    nextCursor,
     loading,
     error,
     unreadCount,

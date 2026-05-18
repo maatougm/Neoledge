@@ -5,7 +5,7 @@
    panels) MUST render above the PrimeVue Dialog mask (default 1101) and our
    custom AppModal scrim (9600). Without this fix, opening a Select inside a
    Dialog renders the option panel behind the modal — see
-   /app/admin/templates "Nouveau modèle" report.
+   /app/pm/templates "Nouveau modèle" report.
    The PrimeVue 4 theme system ignores the legacy
    `usePrimeVue().config.zIndex` API, so we override at the CSS level. */
 .p-overlay,

@@ -10,6 +10,13 @@
         />
         <div v-if="!readonly && canAddFields" class="q-actions">
           <NeoButton
+            label="Appliquer un modèle"
+            icon="pi pi-copy"
+            outlined
+            size="small"
+            @click="openTemplatePicker"
+          />
+          <NeoButton
             label="Ajouter un champ"
             icon="pi pi-plus"
             outlined
@@ -157,19 +164,68 @@
         @click="handleSave"
       />
     </div>
+
+    <!-- Apply-template picker -->
+    <AppModal
+      v-model:visible="showTemplatePicker"
+      header="Appliquer un modèle de questionnaire"
+      width="560px"
+    >
+      <p class="tpl-modal-help">
+        Les champs du modèle seront ajoutés au questionnaire. Les libellés
+        déjà présents seront ignorés.
+      </p>
+      <div v-if="templateStore.loading" class="tpl-modal-loading">
+        <i class="pi pi-spin pi-spinner" />
+        <span>Chargement…</span>
+      </div>
+      <div v-else-if="templateStore.templates.length === 0" class="tpl-modal-empty">
+        Aucun modèle disponible. Créez-en un depuis « Modèles ».
+      </div>
+      <ul v-else class="tpl-modal-list">
+        <li
+          v-for="tpl in templateStore.templates"
+          :key="tpl.id"
+          class="tpl-modal-item"
+          :class="{ 'tpl-modal-item--selected': selectedTemplateId === tpl.id }"
+          @click="selectedTemplateId = tpl.id"
+        >
+          <div class="tpl-name">{{ tpl.name }}</div>
+          <div v-if="tpl.description" class="tpl-desc">{{ tpl.description }}</div>
+        </li>
+      </ul>
+      <template #footer>
+        <NeoButton
+          label="Annuler"
+          severity="secondary"
+          outlined
+          @click="showTemplatePicker = false"
+        />
+        <NeoButton
+          label="Appliquer"
+          icon="pi pi-check"
+          :disabled="!selectedTemplateId || applyingTemplate"
+          :loading="applyingTemplate"
+          @click="confirmApplyTemplate"
+        />
+      </template>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
-import { NeoInputText, NeoSelect, NeoDatePicker, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
+import { onBeforeRouteLeave } from 'vue-router'
+import { NeoInputText, NeoSelect, NeoDatePicker, NeoButton, NeoMessage, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import Checkbox from 'primevue/checkbox'
 import { usePmStore } from '@/stores/pmStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useConfigStore } from '@/stores/configStore'
+import { useTemplateStore } from '@/stores/templateStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
 import type { PresenceUser } from '@/composables/useCollaborationSocket'
 import PresenceAvatars from '@/components/common/PresenceAvatars.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import type { ProjectDetail, FieldType } from '@/types/project.types'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -178,11 +234,13 @@ const props = defineProps<{ project: ProjectDetail; readonly?: boolean }>()
 
 // ─── Stores & composables ─────────────────────────────────────────────────────
 
-const store    = usePmStore()
-const auth     = useAuthStore()
-const config   = useConfigStore()
-const toast    = useNeoToast()
-const collab   = useCollaborationSocket()
+const store         = usePmStore()
+const auth          = useAuthStore()
+const config        = useConfigStore()
+const toast         = useNeoToast()
+const confirm       = useNeoConfirm()
+const collab        = useCollaborationSocket()
+const templateStore = useTemplateStore()
 
 // ─── Local state ──────────────────────────────────────────────────────────────
 
@@ -190,10 +248,20 @@ const values: Record<string, string | number | boolean | null> = reactive({})
 const validationErrors: Record<string, string> = reactive({})
 const dirty        = ref(false)
 const saved        = ref(false)
-const showAddField = ref(false)
-const newField     = reactive({ label: '', fieldType: 'Text' as FieldType, isRequired: false })
+const showAddField       = ref(false)
+const newField           = reactive({ label: '', fieldType: 'Text' as FieldType, isRequired: false })
+const showTemplatePicker = ref(false)
+const selectedTemplateId = ref<string | null>(null)
+const applyingTemplate   = ref(false)
 
-const canAddFields = props.project.allowManagerCustomFields
+// Custom-field authoring is allowed for the project's PM and any Admin.
+// Server enforces the same rule (POST /pm/projects/:id/fields).
+const canAddFields = (() => {
+  const role = auth.userRole
+  if (role === 'Admin') return true
+  if (role !== 'ProjectManager') return false
+  return props.project.projectManager?.id === auth.userId
+})()
 
 const fieldTypeOptions = [
   { value: 'Text',     label: 'Texte' },
@@ -245,11 +313,52 @@ onMounted(() => {
       collab.joinProject(props.project.id)
     }, 300)
   }
+
+  // Block hard browser close / refresh / back when the form is dirty.
+  // Modern browsers ignore the custom message and show a generic
+  // "Leave site?" prompt — that's fine, the prompt itself is the goal.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', handleBeforeUnload)
+  }
 })
 
 onUnmounted(() => {
   debouncedSendUpdate.flush()
   collab.leaveProject(props.project.id)
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  }
+})
+
+function handleBeforeUnload(e: BeforeUnloadEvent): void {
+  if (!dirty.value) return
+  e.preventDefault()
+  // Required for Chrome — even though the message is ignored.
+  e.returnValue = ''
+}
+
+// Vue Router intra-app navigation guard. useNeoConfirm.require() returns
+// void; pass `accept`/`reject` callbacks that resolve `next()`. Calling
+// next(false) cancels the navigation and the user stays on the form.
+//
+// Logout path note: when the user logs out, authStore.logout() clears the
+// JWT BEFORE router.push('/login') runs. Blocking that navigation here
+// would leave the user on /questionnaire with no auth — a deadlock.
+// We detect the unauthenticated state and let navigation through.
+onBeforeRouteLeave((_to, _from, next) => {
+  if (!dirty.value || !auth.isAuthenticated) {
+    next()
+    return
+  }
+  confirm.require({
+    message: 'Vous avez des modifications non enregistrées. Voulez-vous vraiment quitter le questionnaire ?',
+    header: 'Modifications non enregistrées',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Quitter sans enregistrer',
+    rejectLabel: 'Rester',
+    accept: () => next(),
+    reject: () => next(false),
+  })
 })
 
 // ─── Watch remote field changes ───────────────────────────────────────────────
@@ -354,6 +463,56 @@ const handleAddField = async () => {
     newField.label = ''
     newField.isRequired = false
     showAddField.value = false
+  }
+}
+
+// ─── Apply template ───────────────────────────────────────────────────────────
+
+const openTemplatePicker = (): void => {
+  selectedTemplateId.value = null
+  showTemplatePicker.value = true
+  // Refresh on every open — templates may have been edited since last visit.
+  void templateStore.fetchTemplates()
+}
+
+const confirmApplyTemplate = (): void => {
+  if (!selectedTemplateId.value || applyingTemplate.value) return
+  const tpl = templateStore.templates.find((t) => t.id === selectedTemplateId.value)
+  const tplName = tpl?.name ?? 'ce modèle'
+  // useNeoConfirm.require() returns void — pass an `accept` callback per
+  // the library contract. NEVER `await` it.
+  confirm.require({
+    message: `Appliquer « ${tplName} » au questionnaire ? Les champs déjà présents seront ignorés.`,
+    header: 'Appliquer le modèle',
+    icon: 'pi pi-question-circle',
+    acceptLabel: 'Appliquer',
+    rejectLabel: 'Annuler',
+    accept: () => { void runApplyTemplate() },
+  })
+}
+
+async function runApplyTemplate(): Promise<void> {
+  if (!selectedTemplateId.value) return
+  applyingTemplate.value = true
+  const before = props.project.fields.length
+  try {
+    await templateStore.applyToProject(selectedTemplateId.value, props.project.id)
+    await store.fetchProject(props.project.id)
+    const after = props.project.fields.length
+    const added = Math.max(0, after - before)
+    toast.add({
+      severity: 'success',
+      detail: added > 0
+        ? `${added} champ${added > 1 ? 's' : ''} ajouté${added > 1 ? 's' : ''} depuis le modèle.`
+        : 'Aucun champ ajouté — tous étaient déjà présents.',
+      life: 4000,
+    })
+    showTemplatePicker.value = false
+  } catch (e: unknown) {
+    const detail = e instanceof Error ? e.message : "Erreur lors de l'application du modèle."
+    toast.add({ severity: 'error', detail, life: 5000 })
+  } finally {
+    applyingTemplate.value = false
   }
 }
 </script>
@@ -499,5 +658,57 @@ const handleAddField = async () => {
   font-size: 0.8125rem;
   color: var(--nl-text-3);
   font-style: italic;
+}
+
+/* ── Apply-template picker modal ──────────────────────────────────────────── */
+.tpl-modal-help {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: var(--nl-text-2);
+}
+.tpl-modal-loading,
+.tpl-modal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  color: var(--nl-text-3);
+  font-size: 0.875rem;
+}
+.tpl-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.tpl-modal-item {
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.tpl-modal-item:hover {
+  border-color: var(--nl-accent);
+  background: var(--nl-accent-light);
+}
+.tpl-modal-item--selected {
+  border-color: var(--nl-accent);
+  background: var(--nl-accent-light);
+}
+.tpl-name {
+  font-weight: 600;
+  color: var(--nl-text-1);
+  font-size: 0.9375rem;
+}
+.tpl-desc {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--nl-text-3);
 }
 </style>

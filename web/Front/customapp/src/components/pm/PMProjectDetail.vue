@@ -7,6 +7,16 @@
         <i class="pi pi-arrow-left" /> Mes projets
       </button>
       <div class="detail-header-right">
+        <!-- Cahier validation badge — only shown when in_review or validated.
+             Rejected goes back to "no badge" state per UX spec; the PM gets
+             the rejection details via the existing notification + the
+             reject banner inside the cahier tab. -->
+        <NeoTag
+          v-if="cahierBadge"
+          :value="cahierBadge.label"
+          :severity="cahierBadge.severity"
+          :icon="cahierBadge.icon"
+        />
         <NeoTag
           :value="PROJECT_STATUS_LABELS[project.status]"
           :severity="statusSeverity(project.status)"
@@ -86,13 +96,10 @@
       <MeetingSection
         v-else-if="activeTab === 'meetings'"
         :project-id="project.id"
+        :readonly="readonly"
       />
       <CommentsSection
         v-else-if="activeTab === 'comments'"
-        :project-id="project.id"
-      />
-      <AutomationSection
-        v-else-if="activeTab === 'automation'"
         :project-id="project.id"
       />
       <CahierDesChargesSection
@@ -116,11 +123,11 @@ import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
 import MeetingSection        from '@/components/pm/MeetingSection.vue'
 import CommentsSection       from '@/components/pm/CommentsSection.vue'
 import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
-import AutomationSection     from '@/components/pm/AutomationSection.vue'
 import CahierDesChargesSection from '@/components/pm/CahierDesChargesSection.vue'
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
 import { useAuthStore }      from '@/stores/authStore'
+import api                   from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
@@ -137,8 +144,8 @@ const store = usePmStore()
 const commentStore = useCommentStore()
 const authStore = useAuthStore()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'automation' | 'cahier'
-const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'automation', 'cahier']
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'cahier'
+const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'cahier']
 const activeTab = ref<TabId>(
   (VALID_TABS as string[]).includes(props.initialTab ?? '')
     ? (props.initialTab as TabId)
@@ -159,10 +166,7 @@ watch(activeTab, (tab) => {
 // Ordre aligné sur le flux de travail réel du chef de projet :
 // 1. Remplir le questionnaire → 2. Faire les réunions → 3. Générer l'analyse IA
 // → 4. Finaliser le cahier des charges → 5. Validation par les équipes
-// → 6. Consulter l'historique → 7. Échanger en commentaires
-// → 8. Consulter l'activité → 9. Configurer les automatisations
-// Order matches the workflow narrative: Questionnaire → Réunions → IA → Cahier
-// → Validation → Historique → Commentaires → Activité → Automatisations.
+// → 6. Consulter l'historique → 7. Échanger en commentaires → 8. Activité.
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'questionnaire', label: 'Questionnaire',           icon: 'pi-list-check' },
   { id: 'meetings',      label: 'Réunions',                icon: 'pi-microphone' },
@@ -172,7 +176,6 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'history',       label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'comments',      label: 'Commentaires',            icon: 'pi-comments' },
   { id: 'activity',      label: 'Activité',                icon: 'pi-history' },
-  { id: 'automation',    label: 'Automatisations',         icon: 'pi-bolt' },
 ]
 
 // Per-role tab visibility.
@@ -183,8 +186,11 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 // - SpecificationTeam: focused on validation
 // - Member: read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
-  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity', 'automation'],
-  SpecificationTeam: ['validation', 'cahier', 'history', 'comments', 'activity'],
+  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity'],
+  // Validation team needs full read context to review the cahier:
+  // questionnaire (formulaire), meetings (transcripts), the cahier itself
+  // (which they can edit), and the validation actions.
+  SpecificationTeam: ['questionnaire', 'meetings', 'cahier', 'validation', 'history', 'comments', 'activity'],
   Member:            ['cahier', 'history', 'comments', 'activity'],
 }
 
@@ -202,7 +208,7 @@ watch(visibleTabs, (list) => {
   }
 }, { immediate: true })
 
-// ── Live stepper polling — phase changes propagate when another user / automation
+// ── Live stepper polling — phase changes propagate when another user
 // bumps the status. Two safeguards:
 //  1. Pause polling when the document is hidden (browser tab in background) — no
 //     point burning bandwidth or hammering the API.
@@ -214,14 +220,62 @@ function shouldPoll(): boolean {
   if (activeTab.value === 'questionnaire') return false
   return true
 }
+
+// ─── Cahier validation status (drives the header badge) ───────────────────────
+//
+// Per UX spec: only show badge for `pending` (En validation) and `approved`
+// (Validé). `none` and `rejected` show no badge — when rejected, the cahier
+// is back to a draft-like state and the PM is expected to fix-and-resave.
+// The rejection feedback reaches the PM via:
+//   - the existing notification (cahier_rejected) triggered by saveFeedback()
+//   - the inline reject banner inside CahierDesChargesSection
+type CahierStatusValue = 'none' | 'pending' | 'approved' | 'rejected'
+const cahierStatus = ref<CahierStatusValue>('none')
+
+async function refreshCahierStatus(): Promise<void> {
+  const id = props.project?.id
+  if (!id) return
+  try {
+    const { data } = await api.get<{ status: CahierStatusValue }>(
+      `/pm/projects/${id}/cahier-des-charges/status`,
+    )
+    cahierStatus.value = data.status
+  } catch {
+    cahierStatus.value = 'none'
+  }
+}
+
+const cahierBadge = computed<{
+  label: string
+  severity: 'info' | 'success'
+  icon: string
+} | null>(() => {
+  if (cahierStatus.value === 'pending') {
+    return { label: 'Cahier en validation', severity: 'info', icon: 'pi pi-hourglass' }
+  }
+  if (cahierStatus.value === 'approved') {
+    return { label: 'Cahier validé', severity: 'success', icon: 'pi pi-check-circle' }
+  }
+  return null
+})
+
 onMounted(() => {
+  void refreshCahierStatus()
   _poll = window.setInterval(() => {
     if (!shouldPoll()) return
-    store.fetchProject(props.project.id)
+    const id = props.project?.id
+    if (!id) return
+    store.fetchProject(id)
+    void refreshCahierStatus()
   }, 15_000)
 })
 onUnmounted(() => {
   if (_poll !== null) clearInterval(_poll)
+})
+
+// Refetch the status when the project id changes (route navigation between projects).
+watch(() => props.project?.id, (id) => {
+  if (id) void refreshCahierStatus()
 })
 
 const statusSeverity = (s: ProjectStatus) =>

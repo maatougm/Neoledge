@@ -2,9 +2,10 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
-import { AutomationService } from '../automation/automation.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
+import { AgentRunnerService } from '../ai/agent/agent-runner.service.js';
+import { runAssignmentAgent, runAssignmentPlannerWorker, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
 
 export interface WorkPackageFilters {
   status?: string;
@@ -28,8 +29,8 @@ export class WorkPackagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly automation: AutomationService,
     private readonly analyticsCache: AnalyticsCacheService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
 
   /** Log an entry to ProjectActivity. Fire-and-forget. */
@@ -40,6 +41,34 @@ export class WorkPackagesService {
       });
     } catch {
       // Never break the caller.
+    }
+  }
+
+  /**
+   * Idempotently add the given user as a ProjectMember so the assignee actually
+   * gains read access to the project they were just assigned a WP on. PMs and
+   * Admins already have access; everyone else needs a ProjectMember row to pass
+   * ProjectAccessGuard. Fire-and-forget — never blocks the caller.
+   */
+  private async ensureProjectMembership(projectId: string, userId: string): Promise<void> {
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { projectManagerId: true },
+      });
+      if (!project || project.projectManagerId === userId) return;
+      const user = await this.prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { role: true, isActive: true },
+      });
+      if (!user || !user.isActive || user.role === 'Admin') return;
+      await this.prisma.projectMember.upsert({
+        where: { project_member_uq: { projectId, userId } },
+        update: {},
+        create: { id: crypto.randomUUID(), projectId, userId, label: '' },
+      });
+    } catch (e) {
+      this.logger.warn(`ensureProjectMembership(${projectId}, ${userId}) failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -69,28 +98,26 @@ export class WorkPackagesService {
       // Remove the explicitly excluded user (already notified via assignee path).
       if (excludeUserId) userIds.delete(excludeUserId);
 
-      // Batch DB inserts in a single createMany to avoid N+1 writes.
-      // Side effects that are per-user (socket emit) still run individually below.
+      // Route through notifyEnhanced so each recipient gets the realtime emit
+      // in addition to the persisted row. Promise.allSettled keeps a single
+      // failed delivery from breaking the rest.
       if (userIds.size > 0) {
-        try {
-          await this.prisma.notification.createMany({
-            data: Array.from(userIds).map((userId) => ({
+        await Promise.allSettled(
+          Array.from(userIds).map((userId) =>
+            this.notifications.notifyEnhanced({
               userId,
               type: 'work_package',
               title,
               message,
               projectId,
               reason,
-              entityType: 'work_package' as const,
+              entityType: 'work_package',
               entityId: wpId,
               actorId,
               link: `/app/pm/projects/${projectId}/workpackages`,
-            })),
-            skipDuplicates: true,
-          });
-        } catch (e) {
-          this.logger.error('notifyWatchersAndAssignee: createMany failed', e);
-        }
+            }),
+          ),
+        );
       }
     } catch {
       // Never break the caller.
@@ -114,30 +141,37 @@ export class WorkPackagesService {
     });
     if (!project || !project.projectManagerId) return;
     if (project.projectManagerId === actorId) return;
-    await this.prisma.notification.create({
-      data: {
-        userId: project.projectManagerId,
-        type: 'work_package_awaiting_review',
-        reason: 'AwaitingReview',
-        title: 'Tâche à valider',
-        message: `"${wpTitle}" est en attente de votre validation (projet « ${project.name} »).`,
-        projectId,
-        entityType: 'work_package',
-        entityId: wpId,
-        actorId,
-        link: `/app/pm/projects/${projectId}/workpackages?wpId=${wpId}`,
-      },
+    await this.notifications.notifyEnhanced({
+      userId: project.projectManagerId,
+      type: 'work_package_awaiting_review',
+      reason: 'AwaitingReview',
+      title: 'Tâche à valider',
+      message: `"${wpTitle}" est en attente de votre validation (projet « ${project.name} »).`,
+      projectId,
+      entityType: 'work_package',
+      entityId: wpId,
+      actorId,
+      link: `/app/pm/projects/${projectId}/workpackages?wpId=${wpId}`,
     });
   }
 
   /** Cross-project work packages for a specific user (assignee). Used by "Mes tâches". */
-  async findForAssignee(userId: string, filters: { status?: string; q?: string; page?: number; limit?: number } = {}) {
+  async findForAssignee(userId: string, filters: {
+    status?: string;
+    q?: string;
+    projectId?: string;
+    sprintId?: string;
+    page?: number;
+    limit?: number;
+  } = {}) {
     try {
       const page = Math.max(1, filters.page ?? 1);
       const limit = Math.min(200, Math.max(1, filters.limit ?? 100));
       const where: Record<string, unknown> = { assigneeId: userId, isDeleted: false };
       if (filters.status) where.status = filters.status;
       if (filters.q) where.title = { contains: filters.q };
+      if (filters.projectId) where.projectId = filters.projectId;
+      if (filters.sprintId) where.sprintId = filters.sprintId;
 
       const [items, total] = await Promise.all([
         this.prisma.workPackage.findMany({
@@ -146,6 +180,7 @@ export class WorkPackagesService {
             assignee: { select: USER_SELECT },
             author: { select: USER_SELECT },
             project: { select: { id: true, name: true } },
+            sprint: { select: { id: true, name: true, status: true } },
           },
           orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
           skip: (page - 1) * limit,
@@ -157,6 +192,34 @@ export class WorkPackagesService {
     } catch (e) {
       this.logger.error('findForAssignee failed', e);
       return Result.fail<{ items: unknown[]; total: number; page: number; limit: number }>('Échec du chargement des tâches.');
+    }
+  }
+
+  /**
+   * Top-N urgent OPEN tasks (status in {New, InProgress, AwaitingReview}) for
+   * the Member dashboard. Ordering: overdue first, then ascending due date,
+   * then priority desc. Default limit 6.
+   */
+  async findTodayForAssignee(userId: string, limit = 6) {
+    try {
+      const cap = Math.min(20, Math.max(1, limit));
+      const items = await this.prisma.workPackage.findMany({
+        where: {
+          assigneeId: userId,
+          isDeleted: false,
+          status: { in: ['New', 'InProgress', 'AwaitingReview'] },
+        },
+        include: {
+          project: { select: { id: true, name: true } },
+          sprint: { select: { id: true, name: true } },
+        },
+        orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
+        take: cap,
+      });
+      return Result.ok({ items });
+    } catch (e) {
+      this.logger.error('findTodayForAssignee failed', e);
+      return Result.fail<{ items: unknown[] }>('Échec du chargement des tâches du jour.');
     }
   }
 
@@ -263,8 +326,14 @@ export class WorkPackagesService {
           author: { select: USER_SELECT },
         },
       });
-      // Notify assignee (if different from author)
+      // Notify assignee (if different from author). Deep-link goes to the
+      // assignee's "Mes tâches" view — the PM workpackages page 403s for
+      // Member-role assignees.
       if (wp.assigneeId && wp.assigneeId !== authorId) {
+        // Auto-add to ProjectMember so the assignee can actually open the
+        // project. Runs first so the notify guard (which checks membership)
+        // doesn't filter the toast out.
+        await this.ensureProjectMembership(projectId, wp.assigneeId);
         void this.notifications.notifyEnhanced({
           userId: wp.assigneeId,
           type: 'work_package_assigned',
@@ -275,13 +344,10 @@ export class WorkPackagesService {
           entityType: 'work_package',
           entityId: wp.id,
           actorId: authorId,
-          link: `/app/pm/projects/${projectId}/workpackages`,
+          link: `/app/team/my-tasks?projectId=${projectId}`,
         }).catch((e) => this.logger.error('notifyEnhanced (wp assignee create) failed', e));
       }
       void this.logActivity(projectId, authorId, 'work_package_created', `WP "${wp.title}" créé`);
-      void this.automation.executeRulesForEvent(projectId, 'work_package_created', {
-        workPackageId: wp.id, title: wp.title, type: wp.type, status: wp.status, assigneeId: wp.assigneeId,
-      }).catch((e) => this.logger.error('automation work_package_created failed', e));
       void this.analyticsCache.invalidate('team_workload');
       return Result.ok(wp);
     } catch (e) {
@@ -291,10 +357,28 @@ export class WorkPackagesService {
     }
   }
 
-  async update(id: string, projectId: string, dto: UpdateWorkPackageDto, actorId?: string) {
+  async update(id: string, projectId: string, dto: UpdateWorkPackageDto, actorId?: string, actorRole?: string) {
     try {
       const existing = await this.prisma.workPackage.findFirst({ where: { id, projectId, isDeleted: false } });
       if (!existing) return Result.fail('Work package introuvable.');
+
+      // Members can only edit their own tasks, and only progress-related
+      // fields. Reassignment / priority / dates / parenting / sprint moves
+      // stay PM/Admin-only. This closes the gap where Member role in
+      // @Roles('Admin','ProjectManager','Member') let any team member
+      // mass-reassign colleagues' tasks.
+      if (actorRole === 'Member') {
+        if (existing.assigneeId !== actorId) {
+          return Result.fail('Vous ne pouvez modifier que vos propres tâches.');
+        }
+        const MEMBER_ALLOWED_FIELDS = new Set(['status', 'percentDone', 'spentHours', 'description']);
+        const forbidden = Object.keys(dto).filter(
+          (k) => dto[k as keyof UpdateWorkPackageDto] !== undefined && !MEMBER_ALLOWED_FIELDS.has(k),
+        );
+        if (forbidden.length > 0) {
+          return Result.fail(`Champs non autorisés pour le rôle Member: ${forbidden.join(', ')}.`);
+        }
+      }
 
       // C2: reject self-parent cycles. null/undefined mean "no change" or "clear" — OK.
       if (dto.parentId !== undefined && dto.parentId !== null) {
@@ -334,11 +418,20 @@ export class WorkPackagesService {
       // watcher blast explicitly skips that user to avoid double-notifying.
       if (actorId) {
         const newAssignee = dto.assigneeId;
-        const assigneeChanged =
-          newAssignee !== undefined && newAssignee !== existing.assigneeId && !!newAssignee;
+        // Detect both directions:
+        //  - reassign (was X → is Y, both non-null)
+        //  - newly assigned (was null → is Y)
+        //  - unassigned (was X → is null)
+        const assigneeWasSet = !!existing.assigneeId;
+        const assigneeProvided = newAssignee !== undefined; // explicit change in DTO
+        const assigneeChanged = assigneeProvided && newAssignee !== existing.assigneeId && !!newAssignee;
+        const assigneeRemoved = assigneeProvided && newAssignee === null && assigneeWasSet;
         const statusChanged = dto.status !== undefined && dto.status !== existing.status;
 
         if (assigneeChanged) {
+          // Grant the new assignee project access before the notify call —
+          // notify's scope guard checks ProjectMember.
+          await this.ensureProjectMembership(projectId, newAssignee as string);
           void this.notifications.notifyEnhanced({
             userId: newAssignee as string,
             type: 'work_package_assigned',
@@ -351,8 +444,42 @@ export class WorkPackagesService {
             entityType: 'work_package',
             entityId: id,
             actorId,
-            link: `/app/pm/projects/${projectId}/workpackages`,
+            link: `/app/team/my-tasks?projectId=${projectId}`,
           }).catch((e) => this.logger.error('notifyEnhanced (wp reassign) failed', e));
+          void this.logActivity(
+            projectId,
+            actorId,
+            'work_package_assigned',
+            `"${wp.title}" assigné à ${newAssignee as string}`,
+          );
+        }
+
+        // Notify the previous assignee they lost the task (re-assign OR explicit unassign).
+        // Without this the task silently disappears from their "Mes tâches".
+        if (assigneeWasSet && (assigneeChanged || assigneeRemoved) && existing.assigneeId !== actorId) {
+          void this.notifications.notifyEnhanced({
+            userId: existing.assigneeId as string,
+            type: 'work_package_unassigned',
+            title: 'Tâche retirée',
+            message: assigneeRemoved
+              ? `"${wp.title}" vous a été retirée.`
+              : `"${wp.title}" a été réassignée.`,
+            projectId,
+            reason: 'Assignee',
+            entityType: 'work_package',
+            entityId: id,
+            actorId,
+            link: `/app/pm/projects/${projectId}/workpackages`,
+          }).catch((e) => this.logger.error('notifyEnhanced (wp unassign) failed', e));
+        }
+
+        if (assigneeRemoved) {
+          void this.logActivity(
+            projectId,
+            actorId,
+            'work_package_unassigned',
+            `"${wp.title}" : assigné retiré`,
+          );
         }
 
         if (statusChanged) {
@@ -368,9 +495,6 @@ export class WorkPackagesService {
             assigneeChanged ? (newAssignee as string) : undefined,
           );
           void this.logActivity(projectId, actorId, 'work_package_status_changed', `"${wp.title}" : ${existing.status} → ${dto.status}`);
-          void this.automation.executeRulesForEvent(projectId, 'work_package_status_changed', {
-            workPackageId: id, title: wp.title, fromStatus: existing.status, toStatus: dto.status,
-          }).catch((e) => this.logger.error('automation work_package_status_changed failed', e));
           void this.analyticsCache.invalidate('team_workload');
 
           // When a Member pushes a WP into AwaitingReview, notify the project's PM
@@ -405,12 +529,18 @@ export class WorkPackagesService {
     }
   }
 
-  async moveCard(id: string, dto: MoveWorkPackageDto) {
+  async moveCard(id: string, dto: MoveWorkPackageDto, projectId?: string) {
     try {
       // H2: verify target column (if provided) belongs to a board in the same project as the WP.
       // Also C1/C2 guard on parent moves.
-      const wpExisting = await this.prisma.workPackage.findUnique({
-        where: { id },
+      // When projectId is provided (always from PM controller now), enforce
+      // it matches the WP's project — closes the cross-project move IDOR
+      // where a Member of project A could pass a wpId of project B and
+      // succeed because the service only used wp.projectId, not the URL.
+      const wpExisting = await this.prisma.workPackage.findFirst({
+        where: projectId
+          ? { id, projectId, isDeleted: false }
+          : { id, isDeleted: false },
         select: { id: true, projectId: true },
       });
       if (!wpExisting) throw new BadRequestException('Work package introuvable.');
@@ -489,6 +619,25 @@ export class WorkPackagesService {
 
       // C3: detect circular dependencies via DFS from `toWpId` following existing deps.
       // If we can reach `fromWpId`, adding fromWpId -> toWpId would close a cycle.
+      // Pull the project's full adjacency once instead of one query per node —
+      // the loop used to issue O(graph) DB round-trips.
+      const wp = await this.prisma.workPackage.findUnique({
+        where: { id: toWpId },
+        select: { projectId: true },
+      });
+      if (!wp) return Result.fail('Work package introuvable.');
+
+      const allDeps = await this.prisma.workPackageDependency.findMany({
+        where: { fromWp: { projectId: wp.projectId } },
+        select: { fromWpId: true, toWpId: true },
+      });
+      const adjacency = new Map<string, string[]>();
+      for (const d of allDeps) {
+        const list = adjacency.get(d.fromWpId);
+        if (list) list.push(d.toWpId);
+        else adjacency.set(d.fromWpId, [d.toWpId]);
+      }
+
       const visited = new Set<string>();
       const stack: string[] = [toWpId];
       while (stack.length > 0) {
@@ -498,12 +647,11 @@ export class WorkPackagesService {
         }
         if (visited.has(current)) continue;
         visited.add(current);
-        const outgoing = await this.prisma.workPackageDependency.findMany({
-          where: { fromWpId: current },
-          select: { toWpId: true },
-        });
-        for (const dep of outgoing) {
-          if (!visited.has(dep.toWpId)) stack.push(dep.toWpId);
+        const outgoing = adjacency.get(current);
+        if (outgoing) {
+          for (const next of outgoing) {
+            if (!visited.has(next)) stack.push(next);
+          }
         }
       }
 
@@ -575,11 +723,15 @@ export class WorkPackagesService {
   }
 
   /** Bulk-assign multiple work packages to users in a single transaction.
-   *  `assigneeId === null` un-assigns the work package. */
+   *  `assigneeId === null` un-assigns the work package.
+   *  `sprintId` is optional context — when provided, the grouped
+   *  notification carries the sprint name and a deep-link to the
+   *  assignee's filtered "Mes tâches" view. */
   async bulkAssign(
     projectId: string,
     assignments: Array<{ wpId: string; assigneeId: string | null }>,
     actorId: string,
+    sprintId?: string,
   ): Promise<Result<{ updated: number }>> {
     if (assignments.length === 0) return Result.ok({ updated: 0 });
 
@@ -589,17 +741,55 @@ export class WorkPackagesService {
     });
     if (!project) return Result.fail('Projet introuvable');
 
-    // Validate all non-null assignees are real, active users.
+    // Resolve sprint name once for the notification message + scope check.
+    let sprintName: string | null = null;
+    if (sprintId) {
+      const sprint = await this.prisma.sprint.findUnique({
+        where: { id: sprintId },
+        select: { name: true, board: { select: { projectId: true } } },
+      });
+      if (!sprint || sprint.board.projectId !== projectId) {
+        return Result.fail('Sprint introuvable ou hors projet.');
+      }
+      sprintName = sprint.name;
+    }
+
+    // Validate every non-null assignee is an active user whose role allows
+    // assignment on this project. Per-project team selection was removed,
+    // so the eligible union is:
+    //   - The project's own PM (so they can self-assign).
+    //   - Every active Member / SpecificationTeam user.
+    //   - Admins and PMs of OTHER projects are NOT allowed (they have no
+    //     place on this project's task board; the UI dropdown matches).
+    //
+    // This is the single source of truth — the UI's /assignable-users
+    // endpoint and the AI's read_project_members tool both return the
+    // exact same union. If you tighten this, tighten those too.
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
+      const projectRow = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { projectManagerId: true },
+      });
+      const projectPmId = projectRow?.projectManagerId ?? null;
+
       const users = await this.prisma.appUser.findMany({
         where: { id: { in: uniqueAssignees }, isActive: true },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       if (users.length !== uniqueAssignees.length) {
         return Result.fail('Certains utilisateurs sont introuvables ou inactifs.');
+      }
+      const ASSIGNABLE_ROLES = new Set(['Member', 'SpecificationTeam']);
+      const outsiders = users
+        .filter((u) => !ASSIGNABLE_ROLES.has(u.role) && u.id !== projectPmId)
+        .map((u) => u.id);
+      if (outsiders.length > 0) {
+        return Result.fail(
+          `Certains utilisateurs ne sont pas assignables sur ce projet : ${outsiders.length} ID(s).`,
+        );
       }
     }
 
@@ -636,7 +826,15 @@ export class WorkPackagesService {
       byAssignee.set(a.assigneeId, (byAssignee.get(a.assigneeId) ?? 0) + 1);
     }
 
+    const myTasksLink = sprintId
+      ? `/app/team/my-tasks?projectId=${projectId}&sprintId=${sprintId}`
+      : `/app/team/my-tasks?projectId=${projectId}`;
+
     for (const [assigneeId, count] of byAssignee) {
+      // Bulk-assigned recipients also need project access — auto-add them
+      // before the notify call (notify's scope check would otherwise filter
+      // the toast out for users who weren't members yet).
+      await this.ensureProjectMembership(projectId, assigneeId);
       try {
         await this.notifications.notifyEnhanced({
           userId: assigneeId,
@@ -644,11 +842,13 @@ export class WorkPackagesService {
           type: 'wp_bulk_assigned',
           reason: 'Assignee',
           title: 'Nouvelles tâches assignées',
-          message: `${count} tâche(s) vous ont été assignées sur « ${project.name} ».`,
+          message: sprintName
+            ? `${count} tâche(s) vous ont été assignées dans le sprint « ${sprintName} » sur « ${project.name} ».`
+            : `${count} tâche(s) vous ont été assignées sur « ${project.name} ».`,
           projectId,
           entityType: 'project',
           entityId: projectId,
-          link: `/app/pm/projects/${projectId}/workpackages`,
+          link: myTasksLink,
         });
       } catch (e) {
         this.logger.warn(`bulkAssign notify ${assigneeId} failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -656,5 +856,35 @@ export class WorkPackagesService {
     }
 
     return Result.ok({ updated });
+  }
+
+  /**
+   * Run the AI-assisted assignment agent for a list of candidate WPs.
+   * The agent reads members + workload + history and emits per-WP
+   * suggestions (advisory; PM still confirms via bulk-assign).
+   */
+  async suggestAssignments(
+    projectId: string,
+    wpIds: string[],
+  ): Promise<Result<{ items: AssignmentSuggestionForWp[] }>> {
+    if (!wpIds || wpIds.length === 0) {
+      return Result.ok({ items: [] });
+    }
+    // Trim to 50 — controller DTO already enforces, but be safe.
+    const candidate = wpIds.slice(0, 50);
+    // ASSIGNMENT_USE_PLANNER=on routes to the planner-worker variant — same
+    // pattern as cahier + backlog (see docs/agent-orchestra/PHASE_5_FINDINGS.md).
+    // Default off; falls back to the agent loop on any error inside the
+    // planner-worker path via the existing catch below.
+    const usePlanner = (process.env.ASSIGNMENT_USE_PLANNER ?? 'off').toLowerCase() === 'on';
+    try {
+      const items = usePlanner
+        ? await runAssignmentPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId, candidate)
+        : await runAssignmentAgent(this.agentRunner, this.logger, projectId, candidate);
+      return Result.ok({ items });
+    } catch (e) {
+      this.logger.warn(`suggestAssignments failed: ${e instanceof Error ? e.message : String(e)}`);
+      return Result.fail<{ items: AssignmentSuggestionForWp[] }>('Suggestions IA indisponibles, réessayez.');
+    }
   }
 }

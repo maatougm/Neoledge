@@ -33,6 +33,35 @@
       </div>
     </div>
 
+    <!-- Audio replay (when a recording was attached to this meeting) -->
+    <div v-if="transcript.hasAudio" class="audio-panel">
+      <div class="audio-panel__head">
+        <i class="pi pi-volume-up" />
+        <span>Réécouter la réunion</span>
+      </div>
+      <div v-if="audioLoading" class="audio-panel__loading">
+        <i class="pi pi-spin pi-spinner" /> Chargement de l'audio…
+      </div>
+      <div v-else-if="audioError" class="audio-panel__error">
+        {{ audioError }}
+      </div>
+      <audio
+        v-else-if="audioObjectUrl"
+        :src="audioObjectUrl"
+        controls
+        preload="metadata"
+        class="audio-panel__player"
+      />
+      <button
+        v-else
+        class="audio-panel__load-btn"
+        type="button"
+        @click="loadAudio"
+      >
+        <i class="pi pi-play" /> Charger et écouter
+      </button>
+    </div>
+
     <!-- Speaker rename panel -->
     <div v-if="showRenamePanel" class="rename-panel">
       <p class="rename-hint">Renommez les intervenants détectés par l'IA :</p>
@@ -96,10 +125,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onBeforeUnmount } from 'vue'
 import { NeoTag, NeoButton, NeoInputText } from '@neolibrary/components'
 import { useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
+import api from '@/lib/api'
 import type { MeetingTranscriptDetail } from '@/types/pm.types'
 import MeetingAiPanel from './MeetingAiPanel.vue'
 
@@ -113,6 +143,35 @@ const showFullText = ref(false)
 const showRenamePanel = ref(false)
 const renaming = ref(false)
 const speakerNames = reactive<Record<string, string>>({})
+
+// ── Audio replay (authenticated blob → object URL) ──────────────────────────
+const audioObjectUrl = ref<string | null>(null)
+const audioLoading = ref(false)
+const audioError = ref<string | null>(null)
+
+async function loadAudio(): Promise<void> {
+  if (audioObjectUrl.value || audioLoading.value) return
+  audioLoading.value = true
+  audioError.value = null
+  try {
+    const { data } = await api.get<Blob>(
+      `/pm/projects/${props.projectId}/meetings/${props.transcript.id}/audio`,
+      { responseType: 'blob' },
+    )
+    audioObjectUrl.value = URL.createObjectURL(data)
+  } catch {
+    audioError.value = 'Impossible de charger l\'audio.'
+  } finally {
+    audioLoading.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  if (audioObjectUrl.value) {
+    URL.revokeObjectURL(audioObjectUrl.value)
+    audioObjectUrl.value = null
+  }
+})
 
 const LANGUAGE_LABELS: Record<string, string> = {
   fr: 'Français',
@@ -466,4 +525,45 @@ async function applyRenames() {
 .dot--speaker-2 { background: #8b5cf6; }
 .dot--speaker-3 { background: #f59e0b; }
 .dot--speaker-4 { background: #ec4899; }
+
+/* Audio replay panel */
+.audio-panel {
+  background: var(--nl-surface-2);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.audio-panel__head {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.8125rem; font-weight: 600; color: var(--nl-text-2);
+}
+.audio-panel__head .pi { color: var(--nl-accent); }
+.audio-panel__player {
+  width: 100%;
+}
+.audio-panel__loading {
+  font-size: 0.8125rem; color: var(--nl-text-3);
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.audio-panel__error {
+  font-size: 0.8125rem; color: var(--nl-danger, #dc2626);
+}
+.audio-panel__load-btn {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--nl-surface);
+  border: 1px solid var(--nl-border);
+  border-radius: var(--nl-radius);
+  color: var(--nl-text-2);
+  font-size: 0.8125rem; font-weight: 600;
+  cursor: pointer;
+  transition: var(--nl-transition);
+}
+.audio-panel__load-btn:hover {
+  border-color: var(--nl-accent); color: var(--nl-accent);
+}
 </style>

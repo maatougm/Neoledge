@@ -5,7 +5,7 @@
     width="420px"
     @update:visible="emit('update:visible', $event)"
   >
-    <div class="form-body">
+    <div class="form-body change-password-form">
       <div class="field-wrap">
         <NeoPassword
           v-model="current"
@@ -46,13 +46,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import AppModal from '@/components/common/AppModal.vue'
 import { NeoPassword, NeoButton, NeoMessage, useNeoToast } from '@neolibrary/components'
 import api from '@/lib/api'
+import { applyAutofill } from '@/lib/autofillFix'
 
-defineProps<{ visible: boolean }>()
+const props = defineProps<{ visible: boolean }>()
 const emit  = defineEmits<{ (e: 'update:visible', v: boolean): void }>()
+
+// NeoPassword doesn't forward `autocomplete` to the underlying <input>, so Chrome's
+// password manager skips the fields and DOM Issues warns about missing autocomplete.
+// Patch the inner inputs once the dialog is mounted in the DOM (Teleport) and visible.
+watch(
+  () => props.visible,
+  async (v) => {
+    if (!v) return
+    await nextTick()
+    applyAutofill({
+      scope: '.change-password-form',
+      password: 'current-password',
+      passwordSecond: 'new-password',
+    })
+    // The helper only patches the first two password inputs; tag the confirm field too.
+    const inputs = document.querySelectorAll<HTMLInputElement>(
+      '.change-password-form input[type="password"]',
+    )
+    const third = inputs[2]
+    if (third && !third.getAttribute('autocomplete')) {
+      third.setAttribute('autocomplete', 'new-password')
+      third.setAttribute('name', 'new-password-confirm')
+    }
+  },
+)
 
 const toast   = useNeoToast()
 const current = ref('')

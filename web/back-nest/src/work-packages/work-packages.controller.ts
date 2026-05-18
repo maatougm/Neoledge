@@ -2,11 +2,11 @@ import { Controller, Get, Post, Patch, Delete, Put, Param, Body, Query, UseGuard
 import { WorkPackagesService } from './work-packages.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
-import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto } from './dto/work-package.dto.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
+import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto, AddDependencyDto, UpsertCustomValuesDto, BulkAssignDto, SuggestAssignmentsDto } from './dto/work-package.dto.js';
 
 interface AuthUser { userId: string; role: string }
 
@@ -20,27 +20,43 @@ export class MyTasksController {
     @CurrentUser() user: AuthUser,
     @Query('status') status?: string,
     @Query('q') q?: string,
+    @Query('projectId') projectId?: string,
+    @Query('sprintId') sprintId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     const r = await this.service.findForAssignee(user.userId, {
-      status, q,
+      status, q, projectId, sprintId,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
+
+  /** Top-N urgent open tasks for the Member dashboard's "À faire aujourd'hui" widget. */
+  @Get('today')
+  async myTasksToday(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit?: string,
+  ) {
+    const r = await this.service.findTodayForAssignee(
+      user.userId,
+      limit ? parseInt(limit, 10) : 6,
+    );
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
+  }
 }
 
 @Controller('pm/projects/:projectId/work-packages')
-@UseGuards(JwtAuthGuard, ProjectAccessGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
 @ProjectAccess('projectId')
 export class WorkPackagesController {
   constructor(private readonly service: WorkPackagesService) {}
 
   @Get()
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async findAll(
     @Param('projectId') projectId: string,
     @Query('status') status?: string,
@@ -67,7 +83,7 @@ export class WorkPackagesController {
   }
 
   @Get(':id')
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async findOne(@Param('projectId') projectId: string, @Param('id') id: string) {
     const r = await this.service.findOne(id, projectId);
     if (r.isFailure) throw new NotFoundException(r.error);
@@ -76,7 +92,7 @@ export class WorkPackagesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @RequirePermission('wp.create')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async create(
     @Param('projectId') projectId: string,
     @Body() dto: CreateWorkPackageDto,
@@ -88,29 +104,37 @@ export class WorkPackagesController {
   }
 
   @Patch(':id')
-  @RequirePermission('wp.edit')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async update(
     @Param('projectId') projectId: string,
     @Param('id') id: string,
     @Body() dto: UpdateWorkPackageDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const r = await this.service.update(id, projectId, dto, user.userId);
+    // Members can only edit their own tasks and only a whitelisted set of
+    // fields (status / progress / spent hours / description). Reassignment,
+    // priority, dates, parenting all stay PM/Admin-only.
+    const r = await this.service.update(id, projectId, dto, user.userId, user.role);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission('wp.delete')
+  @Roles('Admin', 'ProjectManager')
   async remove(@Param('projectId') projectId: string, @Param('id') id: string) {
     const r = await this.service.softDelete(id, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
   }
 
   @Patch(':id/move')
-  async move(@Param('id') id: string, @Body() dto: MoveWorkPackageDto) {
-    const r = await this.service.moveCard(id, dto);
+  @Roles('Admin', 'ProjectManager', 'Member')
+  async move(
+    @Param('projectId') projectId: string,
+    @Param('id') id: string,
+    @Body() dto: MoveWorkPackageDto,
+  ) {
+    const r = await this.service.moveCard(id, dto, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
@@ -167,6 +191,7 @@ export class WorkPackagesController {
   }
 
   @Put(':id/custom-values')
+  @Roles('Admin', 'ProjectManager', 'Member')
   async upsertCustomValues(@Param('id') id: string, @Body() dto: UpsertCustomValuesDto) {
     const r = await this.service.upsertCustomValues(id, dto.values || []);
     if (r.isFailure) throw new BadRequestException(r.error);
@@ -174,13 +199,30 @@ export class WorkPackagesController {
   }
 
   @Post('bulk-assign')
-  @RequirePermission('wp.assign')
+  @Roles('Admin', 'ProjectManager')
   async bulkAssign(
     @Param('projectId') projectId: string,
     @Body() dto: BulkAssignDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId);
+    const r = await this.service.bulkAssign(projectId, dto.assignments, user.userId, dto.sprintId);
+    if (r.isFailure) throw new BadRequestException(r.error);
+    return r.value;
+  }
+
+  /**
+   * AI-assisted assignment suggestions. PMs select a sprint + N tasks
+   * in the UI, then call this endpoint to get ranked assignee proposals
+   * per task with rationale. The PM still confirms via the regular
+   * bulk-assign endpoint — this is decision-aid only.
+   */
+  @Post('suggest-assignments')
+  @Roles('Admin', 'ProjectManager')
+  async suggestAssignments(
+    @Param('projectId') projectId: string,
+    @Body() dto: SuggestAssignmentsDto,
+  ) {
+    const r = await this.service.suggestAssignments(projectId, dto.wpIds);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

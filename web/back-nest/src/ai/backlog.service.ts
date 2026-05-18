@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadGatewayException, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   generateBacklogViaOpenAi,
@@ -7,6 +8,9 @@ import {
   type ProposedBacklog,
   type ProposedEpic,
 } from './backlog-generator.js';
+import { AgentRunnerService } from './agent/agent-runner.service.js';
+import { runBacklogAgent, runBacklogPlannerWorker } from './backlog-agent.js';
+import { AgentEmitMissedError } from './agent/agent-errors.js';
 
 const AI_GENERATED_TAG = 'questionnaire+cahier+meeting';
 
@@ -26,7 +30,14 @@ export class BacklogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly agentRunner: AgentRunnerService,
   ) {}
+
+  /** True when the backlog agent loop should run instead of the legacy single-shot path. */
+  private isAgentModeEnabled(): boolean {
+    const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    return raw === 'all' || raw.split(/[,\s]+/).includes('backlog')
+  }
 
   /**
    * Assemble the context from (a) backlog-driver field answers, (b) latest
@@ -56,6 +67,28 @@ export class BacklogService {
     // missing instead of a degraded AI output.
     await this.assertDriverFieldsFilled(projectId);
 
+    // Agent mode — model fetches what it needs via tools, no pre-built context.
+    // BACKLOG_USE_PLANNER=on routes to the planner-worker variant (deterministic
+    // parallel reads + single-shot worker emit) which cut the cahier path's
+    // wall time by 81% — same architecture, same expected win profile here.
+    if (this.isAgentModeEnabled()) {
+      const usePlanner = (this.config.get<string>('BACKLOG_USE_PLANNER') ?? 'off').toLowerCase() === 'on';
+      try {
+        return usePlanner
+          ? await runBacklogPlannerWorker(this.agentRunner, this.prisma, this.logger, projectId)
+          : await runBacklogAgent(this.agentRunner, this.logger, projectId);
+      } catch (e) {
+        // AgentEmitMissedError → fall through to single-shot. Other errors
+        // surface as 502 like before.
+        if (e instanceof AgentEmitMissedError) {
+          this.logger.warn(`backlog agent emit missed; falling back to single-shot: ${e.message}`);
+        } else {
+          this.logger.error(`backlog agent failed: ${e instanceof Error ? e.message : String(e)}`);
+          throw new BadGatewayException('La génération IA a échoué. Réessayez dans un instant.');
+        }
+      }
+    }
+
     const context = await this.buildContext(projectId, project.name, project.aiOutput);
     if (context.length < 40) {
       // Not enough signal — return empty rather than burning an AI call.
@@ -82,19 +115,31 @@ export class BacklogService {
     const safe = sanitizeBacklog(backlog);
     if (safe.epics.length === 0) return { created: 0 };
 
+    // Pre-generate parent IDs client-side so we can batch tasks under each epic
+    // with a single createMany — was previously 1 insert per epic + 1 insert
+    // per task, holding the transaction open for dozens of round-trips.
+    const epicsWithIds = safe.epics.map((epic) => ({ epic, id: randomUUID() }));
+
     let created = 0;
     await this.prisma.$transaction(async (tx) => {
-      for (const epic of safe.epics) {
-        const epicRow = await tx.workPackage.create({
-          data: this.toWpCreate(projectId, authorId, epic, 'Epic', null),
-        });
-        created += 1;
+      // 1. All epics in one shot.
+      const epicRows = epicsWithIds.map(({ epic, id }) => ({
+        id,
+        ...this.toWpCreate(projectId, authorId, epic, 'Epic', null),
+      }));
+      const epicResult = await tx.workPackage.createMany({ data: epicRows });
+      created += epicResult.count;
+
+      // 2. All tasks in one shot (with the epic id we generated above as parentId).
+      const taskRows: ReturnType<typeof this.toWpCreate>[] = [];
+      for (const { epic, id: epicId } of epicsWithIds) {
         for (const task of epic.children) {
-          await tx.workPackage.create({
-            data: this.toWpCreate(projectId, authorId, task, task.type, epicRow.id),
-          });
-          created += 1;
+          taskRows.push(this.toWpCreate(projectId, authorId, task, task.type, epicId));
         }
+      }
+      if (taskRows.length > 0) {
+        const taskResult = await tx.workPackage.createMany({ data: taskRows });
+        created += taskResult.count;
       }
     });
     this.logger.log(`accepted backlog for project ${projectId}: ${created} WP(s) created`);

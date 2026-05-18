@@ -162,7 +162,7 @@
                     {{ activityLabel(a.action) }}
                     <span v-if="a.details">— {{ a.details }}</span>
                   </div>
-                  <div class="po__activity-time">{{ formatRelative(a.createdAt) }}</div>
+                  <div class="po__activity-time">{{ formatRelative(a.timestamp) }}</div>
                 </div>
               </li>
             </ul>
@@ -185,44 +185,6 @@
             </div>
           </div>
 
-          <!-- Team responsibilities card -->
-          <div class="nl-card">
-            <div class="po__head">
-              <h2 class="po__head-title"><i class="pi pi-id-card" /> Responsables équipes</h2>
-              <button v-if="canEditResponsibilities && !editingResp" class="po__head-link" @click="editingResp = true">Modifier →</button>
-              <button v-if="editingResp" class="po__head-link" @click="saveResponsibilities">Enregistrer</button>
-            </div>
-
-            <div class="po__resp-grid">
-              <!-- Validation responsible -->
-              <div class="po__resp-row">
-                <span class="po__resp-label"><i class="pi pi-shield" /> Responsable validation</span>
-                <template v-if="editingResp">
-                  <select v-model="respValidationId" class="po__resp-select">
-                    <option value="">— Non assigné —</option>
-                    <option v-for="u in specUsers" :key="u.id" :value="u.id">{{ u.firstName }} {{ u.lastName }}</option>
-                  </select>
-                </template>
-                <span v-else class="po__resp-value">
-                  {{ responsibilities.validationResponsible ? `${responsibilities.validationResponsible.firstName} ${responsibilities.validationResponsible.lastName}` : '—' }}
-                </span>
-              </div>
-
-              <!-- Deployment responsible -->
-              <div class="po__resp-row">
-                <span class="po__resp-label"><i class="pi pi-send" /> Responsable déploiement</span>
-                <template v-if="editingResp">
-                  <select v-model="respDeploymentId" class="po__resp-select">
-                    <option value="">— Non assigné —</option>
-                    <option v-for="u in deployUsers" :key="u.id" :value="u.id">{{ u.firstName }} {{ u.lastName }}</option>
-                  </select>
-                </template>
-                <span v-else class="po__resp-value">
-                  {{ responsibilities.deploymentResponsible ? `${responsibilities.deploymentResponsible.firstName} ${responsibilities.deploymentResponsible.lastName}` : '—' }}
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -234,7 +196,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { NeoButton, useNeoToast } from '@neolibrary/components'
+import { NeoButton } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
@@ -243,7 +205,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
 import { formatRelative } from '@/lib/formatDate'
 import { isTerminal } from '@/lib/wpStatus'
-import api, { extractErrorMessage } from '@/lib/api'
+import api from '@/lib/api'
 
 interface WorkPackage {
   id: string; title: string; status: string; priority: string;
@@ -251,20 +213,11 @@ interface WorkPackage {
   assignee: { id: string; firstName: string; lastName: string } | null
 }
 interface Milestone  { id: string; title: string; date: string; isReached: boolean }
-interface Activity   { action: string; details: string | null; userName: string | null; createdAt: string }
+interface Activity   { action: string; details: string | null; userName: string | null; timestamp: string }
 interface Sprint     { id: string; name: string; isActive: boolean; startDate: string; endDate: string }
-interface AssignableUser { id: string; firstName: string; lastName: string; role: string }
-interface Responsibilities {
-  validationResponsibleId: string | null
-  deploymentResponsibleId: string | null
-  validationResponsible: { id: string; firstName: string; lastName: string } | null
-  deploymentResponsible: { id: string; firstName: string; lastName: string } | null
-}
-
 const props   = defineProps<{ id: string }>()
 const router  = useRouter()
 const uiStore = useUiStore()
-const toast   = useNeoToast()
 const authStore = useAuthStore()
 const collab  = useCollaborationSocket()
 
@@ -276,17 +229,6 @@ const wps             = ref<WorkPackage[]>([])
 const milestones      = ref<Milestone[]>([])
 const activity        = ref<Activity[]>([])
 const activeSprint    = ref<Sprint | null>(null)
-
-// Team responsibilities
-const allAssignableUsers  = ref<AssignableUser[]>([])
-const responsibilities    = ref<Responsibilities>({ validationResponsibleId: null, deploymentResponsibleId: null, validationResponsible: null, deploymentResponsible: null })
-const editingResp         = ref(false)
-const respValidationId    = ref<string>('')
-const respDeploymentId    = ref<string>('')
-
-const canEditResponsibilities = computed(() => authStore.userRole === 'Admin' || authStore.userRole === 'ProjectManager')
-const specUsers   = computed(() => allAssignableUsers.value.filter((u) => u.role === 'SpecificationTeam'))
-const deployUsers = computed(() => allAssignableUsers.value.filter((u) => u.role === 'Member'))
 
 const presenceList = collab.presenceList
 
@@ -421,34 +363,8 @@ async function loadAll(): Promise<void> {
       }
     } catch { /* silent */ }
 
-    try {
-      const [usersRes, respRes] = await Promise.all([
-        api.get<AssignableUser[]>(`/pm/projects/${props.id}/assignable-users`, { suppressErrorToast: true } as never),
-        api.get<Responsibilities>(`/pm/projects/${props.id}/responsibilities`, { suppressErrorToast: true } as never),
-      ])
-      allAssignableUsers.value = usersRes.data
-      responsibilities.value   = respRes.data
-      respValidationId.value   = respRes.data.validationResponsibleId ?? ''
-      respDeploymentId.value   = respRes.data.deploymentResponsibleId ?? ''
-    } catch { /* silent */ }
-
   } finally {
     loading.value = false
-  }
-}
-
-async function saveResponsibilities(): Promise<void> {
-  try {
-    const { data } = await api.patch<Responsibilities>(`/pm/projects/${props.id}/responsibilities`, {
-      validationResponsibleId:  respValidationId.value  || null,
-      deploymentResponsibleId:  respDeploymentId.value  || null,
-    })
-    responsibilities.value = data
-    editingResp.value = false
-    toast.add({ severity: 'success', detail: 'Responsabilités enregistrées.', life: 2500 })
-  } catch (err: unknown) {
-    const msg = extractErrorMessage(err) ?? 'Échec de l\'enregistrement.'
-    toast.add({ severity: 'error', detail: msg, life: 5000 })
   }
 }
 
@@ -545,23 +461,6 @@ onUnmounted(() => {
   color: #fff; font-size: 11px; font-weight: 600;
   border: 2px solid var(--nl-surface);
 }
-
-/* Team responsibilities */
-.po__resp-grid { display: flex; flex-direction: column; gap: var(--nl-sp-3); }
-.po__resp-row  { display: flex; flex-direction: column; gap: 4px; }
-.po__resp-label {
-  font-size: var(--nl-fs-xs); font-weight: 600; color: var(--nl-text-3);
-  text-transform: uppercase; letter-spacing: 0.05em;
-  display: flex; align-items: center; gap: 4px;
-}
-.po__resp-value { font-size: var(--nl-fs-sm); color: var(--nl-text-1); font-weight: 500; }
-.po__resp-select {
-  width: 100%; padding: 6px 10px; border: 1px solid var(--nl-border);
-  border-radius: var(--nl-radius); background: var(--nl-surface-2);
-  color: var(--nl-text-1); font-size: var(--nl-fs-sm); font-family: var(--nl-font);
-  cursor: pointer;
-}
-.po__resp-select:focus { outline: 2px solid var(--nl-accent); outline-offset: 1px; }
 
 /* Mobile */
 @media (max-width: 900px) {

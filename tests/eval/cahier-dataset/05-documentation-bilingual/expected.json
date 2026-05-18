@@ -1,0 +1,29 @@
+{
+  "mustMention": [
+    "TotalEnergies",
+    "Backstage",
+    "OpenAPI",
+    "Azure AD",
+    "PostgreSQL",
+    "AKS",
+    "450"
+  ],
+  "mustNotMention": [
+    "Okta",
+    "Auth0",
+    "Vue 3",
+    "AWS Lambda",
+    "Google Cloud"
+  ],
+  "requiredSections": [
+    "objectifDocument",
+    "contexte",
+    "objectifProjet",
+    "perimetreInclus",
+    "perimetreExclus",
+    "exigencesFonctionnelles",
+    "architectureTechnique",
+    "livrables",
+    "conclusion"
+  ]
+}

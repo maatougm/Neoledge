@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from './projects.service.js';
 import { UsersService } from '../users/users.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -53,7 +53,25 @@ export class PmController {
 
   @Post('projects/:id/fields')
   @ProjectAccess('id')
-  async addField(@Param('id') id: string, @Body() dto: AddFieldDto) {
+  async addField(
+    @Param('id') id: string,
+    @Body() dto: AddFieldDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    // Custom-field authoring is reserved for the project's PM (and Admin).
+    // ProjectAccessGuard would otherwise also let any ProjectMember through —
+    // closes the audit IDOR finding (docs/qa/backend/projects.md:47-63).
+    const project = await this.prisma.project.findFirst({
+      where: { id, isDeleted: false },
+      select: { projectManagerId: true },
+    });
+    if (!project) throw new NotFoundException('Projet non trouvé.');
+    const isOwner = project.projectManagerId === user.userId;
+    const isAdmin = user.role === 'Admin';
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('Seul le chef de projet peut ajouter des champs personnalisés.');
+    }
+
     const result = await this.service.addField(id, dto);
     if (result.isFailure) throw new BadRequestException(result.error);
     return result.value;
@@ -73,30 +91,207 @@ export class PmController {
     return result.value;
   }
 
-  /** Active users list — used by PM views like Members, assignee dropdowns, etc. */
+  /**
+   * Active users list — used by PM views like Members, assignee dropdowns, etc.
+   *
+   * `?forMembers=true` filters out inactive users + Admin / Viewer roles
+   * (system roles that should never be added as project members) so the
+   * Members page doesn't leak that list to the UI. Default behaviour
+   * (no flag) stays unchanged for legacy callers.
+   */
   @Get('users')
-  async getUsers() {
+  async getUsers(@CurrentUser() user: JwtUser, @Query('forMembers') forMembers?: string) {
+    // Restricted to staff who legitimately need a user list:
+    //  - Admins (system-wide).
+    //  - PMs (need an assignable user list to build their team).
+    // Members and SpecificationTeam never need to enumerate the directory.
+    if (user.role !== 'Admin' && user.role !== 'ProjectManager') {
+      throw new ForbiddenException('Accès réservé aux administrateurs et chefs de projet.');
+    }
     const result = await this.usersService.getAll(0, 500);
     if (result.isFailure) return [];
-    return (result.value as unknown as { items: unknown[] }).items;
+    const items = (result.value as unknown as { items: any[] }).items;
+    if (forMembers !== 'true') return items;
+    return items.filter(
+      (u) => u.isActive !== false && u.role !== 'Admin' && u.role !== 'Viewer',
+    );
   }
 
-  /** All active projects — used by team-member roles who are not project managers */
+  /**
+   * Projects the caller is a member of (PM, ProjectMember row, or — for Admins —
+   * everything). Used by the team home / non-PM landing.
+   * Closes the leak where any auth'd user could enumerate every project.
+   */
   @Get('team-projects')
-  async getTeamProjects() {
-    const result = await this.service.getProjectsPaged(0, 200);
-    if (result.isFailure) return [];
-    return (result.value as { items: unknown[] }).items;
+  async getTeamProjects(@CurrentUser() user: JwtUser) {
+    if (user.role === 'Admin') {
+      const result = await this.service.getProjectsPaged(0, 200);
+      if (result.isFailure) return [];
+      return (result.value as { items: unknown[] }).items;
+    }
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId: user.userId },
+      select: { projectId: true },
+    });
+    const memberIds = memberships.map((m) => m.projectId);
+    const projects = await this.prisma.project.findMany({
+      where: {
+        isDeleted: false,
+        OR: [
+          { projectManagerId: user.userId },
+          { id: { in: memberIds } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return projects;
   }
 
-  /** Users available to be assigned as team responsibles (SpecificationTeam + Member). */
+  /**
+   * Strict ProjectMember-scoped project list for the Member dashboard.
+   * Returns only projects where the caller has a `ProjectMember` row.
+   * Each item carries the active sprint (if any) + the caller's
+   * in-progress WP count for that project.
+   */
+  @Get('my-projects')
+  async getMyMemberProjects(@CurrentUser() user: JwtUser) {
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId: user.userId },
+      include: {
+        project: {
+          select: {
+            id: true, name: true, clientName: true, status: true,
+            startDate: true, endDate: true, isDeleted: true,
+            boards: {
+              select: {
+                sprints: {
+                  where: { status: 'Active' },
+                  orderBy: { startDate: 'desc' },
+                  take: 1,
+                  select: { id: true, name: true, status: true, startDate: true, endDate: true, goal: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const projects = memberships
+      .map((m) => m.project)
+      .filter((p): p is NonNullable<typeof p> => !!p && !p.isDeleted);
+
+    if (projects.length === 0) return { items: [] };
+
+    const wpCounts = await this.prisma.workPackage.groupBy({
+      by: ['projectId'],
+      where: {
+        assigneeId: user.userId,
+        isDeleted: false,
+        status: 'InProgress',
+        projectId: { in: projects.map((p) => p.id) },
+      },
+      _count: { _all: true },
+    });
+    const inProgressByProject = new Map(wpCounts.map((c) => [c.projectId, c._count._all]));
+
+    return {
+      items: projects.map((p) => {
+        const activeSprint = p.boards?.[0]?.sprints?.[0] ?? null;
+        return {
+          id: p.id,
+          name: p.name,
+          clientName: p.clientName,
+          status: p.status,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          activeSprint,
+          myInProgressCount: inProgressByProject.get(p.id) ?? 0,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Cross-project active + planning sprints where the caller has at least
+   * one assigned WP. Powers the Member dashboard's "Sprint en cours" widget.
+   */
+  @Get('my-sprints')
+  async getMyAssignedSprints(@CurrentUser() user: JwtUser) {
+    const wps = await this.prisma.workPackage.findMany({
+      where: {
+        assigneeId: user.userId,
+        isDeleted: false,
+        sprintId: { not: null },
+      },
+      select: { sprintId: true, projectId: true },
+    });
+    if (wps.length === 0) return { items: [] };
+
+    const sprintIds = Array.from(new Set(wps.map((w) => w.sprintId).filter((x): x is string => !!x)));
+    const sprints = await this.prisma.sprint.findMany({
+      where: { id: { in: sprintIds }, status: { in: ['Active', 'Planning'] } },
+      include: { board: { select: { project: { select: { id: true, name: true } } } } },
+      orderBy: [{ status: 'asc' }, { startDate: 'desc' }],
+    });
+
+    const myTasksBySprint = new Map<string, number>();
+    for (const w of wps) {
+      if (!w.sprintId) continue;
+      myTasksBySprint.set(w.sprintId, (myTasksBySprint.get(w.sprintId) ?? 0) + 1);
+    }
+
+    return {
+      items: sprints.map((s) => ({
+        sprint: {
+          id: s.id,
+          name: s.name,
+          goal: s.goal,
+          status: s.status,
+          startDate: s.startDate,
+          endDate: s.endDate,
+        },
+        projectId: s.board.project.id,
+        projectName: s.board.project.name,
+        myTaskCount: myTasksBySprint.get(s.id) ?? 0,
+      })),
+    };
+  }
+
+  /**
+   * Users who can be assigned a WorkPackage on this project.
+   *
+   * Per-project team selection was deliberately removed — the PM should be
+   * able to assign any Member or SpecificationTeam user without first adding
+   * them to `ProjectMember`. The legitimate set is therefore:
+   *   - The project's own PM (so they can assign themselves a task).
+   *   - Every active user with role in {Member, SpecificationTeam}.
+   *
+   * Admins and PMs from OTHER projects are deliberately excluded — they
+   * have no place on this project's task board and showing them up there
+   * was the source of "Certains utilisateurs ne sont pas membres du projet"
+   * errors when the PM picked one. The matching write-path validation in
+   * `WorkPackagesService.bulkAssign` enforces the same union.
+   */
   @Get('projects/:id/assignable-users')
   @ProjectAccess('id')
-  async getAssignableUsers() {
+  async getAssignableUsers(@Param('id') projectId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
+      select: { projectManagerId: true },
+    });
+    if (!project) return [];
+
     const users = await this.prisma.appUser.findMany({
       where: {
         isActive: true,
-        role: { in: ['SpecificationTeam', 'Member', 'ProjectManager', 'Admin'] },
+        OR: [
+          { role: { in: ['Member', 'SpecificationTeam'] } },
+          // The project's own PM — even if their role on the platform is
+          // ProjectManager (which we otherwise exclude to keep other PMs out).
+          ...(project.projectManagerId ? [{ id: project.projectManagerId }] : []),
+        ],
       },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
@@ -240,8 +435,19 @@ export class PmController {
 
     for (const admin of admins) {
       if (admin.id !== submitterId) {
+        // skipScopeCheck — we already know this user is an active Admin,
+        // so the per-target assertProjectMember (which fires 3 parallel
+        // queries) would just confirm the same thing N times.
         notifyTargets.push(
-          this.notifications.notify(admin.id, type, title, message, projectId),
+          this.notifications.notify(
+            admin.id,
+            type,
+            title,
+            message,
+            projectId,
+            submitterId,
+            { skipScopeCheck: true },
+          ),
         );
       }
     }

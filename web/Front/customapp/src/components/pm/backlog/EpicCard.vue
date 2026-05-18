@@ -7,8 +7,8 @@
       <input
         class="ec__title"
         :value="epic.title"
-        @input="emitUpdate({ title: ($event.target as HTMLInputElement).value })"
         placeholder="Titre de l'epic"
+        @input="emitUpdate({ title: ($event.target as HTMLInputElement).value })"
       />
       <select
         class="ec__select"
@@ -30,7 +30,7 @@
       />
       <span class="ec__h-suffix">h</span>
       <span class="ec__count">{{ epic.children.length }} tâche{{ epic.children.length === 1 ? '' : 's' }}</span>
-      <button class="ec__btn ec__btn--danger" @click="emit('remove')" title="Supprimer l'epic">
+      <button class="ec__btn ec__btn--danger" title="Supprimer l'epic" @click="emit('remove')">
         <i class="pi pi-trash" />
       </button>
     </header>
@@ -39,9 +39,9 @@
       <textarea
         class="ec__desc"
         :value="epic.description"
-        @input="emitUpdate({ description: ($event.target as HTMLTextAreaElement).value })"
         placeholder="Description de l'epic"
         rows="2"
+        @input="emitUpdate({ description: ($event.target as HTMLTextAreaElement).value })"
       />
       <TaskCard
         v-for="(t, ti) in epic.children"

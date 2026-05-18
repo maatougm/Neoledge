@@ -128,13 +128,35 @@ export class TeamPlannerService {
     }
   }
 
-  async reassign(wpId: string, dto: { assigneeId: string; startDate?: string; dueDate?: string }, actorId?: string) {
+  async reassign(
+    wpId: string,
+    dto: { assigneeId: string; startDate?: string; dueDate?: string },
+    actorId: string,
+    actorRole?: string,
+  ) {
     try {
       const existing = await this.prisma.workPackage.findUnique({
         where: { id: wpId },
-        select: { id: true, title: true, projectId: true, assigneeId: true, isDeleted: true },
+        select: {
+          id: true, title: true, projectId: true, assigneeId: true, isDeleted: true,
+          project: { select: { projectManagerId: true, isDeleted: true } },
+        },
       });
-      if (!existing || existing.isDeleted) return Result.fail('Work package introuvable.');
+      if (!existing || existing.isDeleted || existing.project.isDeleted) {
+        return Result.fail('Work package introuvable.');
+      }
+
+      // Scope check — Admin passes; everyone else must be PM of the WP's project.
+      if (actorRole !== 'Admin' && existing.project.projectManagerId !== actorId) {
+        return Result.fail('Work package introuvable.');
+      }
+
+      // Validate target assignee actually belongs to this project — prevents
+      // The "must be a member" gate is gone: the PM is allowed to assign any
+      // active user (per product decision to drop per-project team selection).
+      // We auto-upsert ProjectMember below so ProjectAccessGuard still passes
+      // for the new assignee when they open the project.
+      const isPmOfProject = existing.project.projectManagerId === dto.assigneeId;
 
       const data: Record<string, unknown> = { assigneeId: dto.assigneeId };
       if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
@@ -144,6 +166,25 @@ export class TeamPlannerService {
       // Notify the new assignee if it actually changed and isn't the actor themselves.
       const assigneeChanged = !!dto.assigneeId && dto.assigneeId !== existing.assigneeId;
       if (assigneeChanged) {
+        // Idempotent membership upsert before the notify call — silent for
+        // PMs (they already have access) and Admins.
+        if (!isPmOfProject) {
+          try {
+            const user = await this.prisma.appUser.findUnique({
+              where: { id: dto.assigneeId },
+              select: { role: true, isActive: true },
+            });
+            if (user && user.isActive && user.role !== 'Admin') {
+              await this.prisma.projectMember.upsert({
+                where: { project_member_uq: { projectId: existing.projectId, userId: dto.assigneeId } },
+                update: {},
+                create: { id: crypto.randomUUID(), projectId: existing.projectId, userId: dto.assigneeId, label: '' },
+              });
+            }
+          } catch (e) {
+            this.logger.warn(`team-planner ensureMember failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
         void this.notifications
           .notifyEnhanced({
             userId: dto.assigneeId,
@@ -155,7 +196,7 @@ export class TeamPlannerService {
             entityType: 'work_package',
             entityId: wpId,
             actorId: actorId ?? null,
-            link: `/app/pm/projects/${existing.projectId}/workpackages`,
+            link: `/app/team/my-tasks?projectId=${existing.projectId}`,
           })
           .catch((e) => this.logger.error('notifyEnhanced (team-planner reassign) failed', e));
       }

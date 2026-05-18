@@ -1,14 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AiAnalysisResult } from '../ai.types.js'
+import { redactPii } from '../../common/pii-redact.js'
+import { wrapTranscriptForLlm, TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT } from '../prompts/transcript-prompt.js'
 
-const SYSTEM_PROMPT = `Tu es un assistant expert en gestion de projet. Analyse la transcription de réunion suivante et retourne un JSON structuré (sans markdown, juste le JSON brut) avec exactement ce format:
-{
-  "summary": "compte-rendu en markdown (# titres, ## sections, - listes)",
-  "actionItems": [{ "description": "...", "assigneeName": "nom ou null", "dueDate": "YYYY-MM-DD ou null" }],
-  "decisions": [{ "description": "...", "category": "decision" | "risk" }]
-}
-Langue: français. Sois concis et factuel.`
+const SYSTEM_PROMPT = TRANSCRIPT_ANALYSIS_SYSTEM_PROMPT
 
 @Injectable()
 export class OpenAiProvider {
@@ -24,6 +20,12 @@ export class OpenAiProvider {
     const apiKey = this.config.get<string>('OPENAI_API_KEY')
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
 
+    // Mask emails / phones / IBAN before the transcript leaves our backend,
+    // and wrap it in a delimiter so prompt-injection inside the transcript
+    // ("Ignore previous instructions...") cannot escape into the system role.
+    const { text: redacted } = redactPii(transcriptText)
+    const safeUserMessage = wrapTranscriptForLlm(redacted)
+
     const baseUrl = this.config.get<string>('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1'
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -36,7 +38,7 @@ export class OpenAiProvider {
         model: this.modelName,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: transcriptText },
+          { role: 'user', content: safeUserMessage },
         ],
         temperature: 0.3,
         max_tokens: 4096,

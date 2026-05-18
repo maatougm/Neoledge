@@ -49,7 +49,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { NeoButton, NeoSelect, NeoTag } from '@neolibrary/components'
 import ModulePageHeader from '@/components/common/ModulePageHeader.vue'
 import { formatDateTime } from '@/lib/formatDate'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
+import { useNeoToast } from '@neolibrary/components'
 
 interface AuditLog {
   id: string
@@ -64,6 +65,9 @@ interface AuditLog {
 
 const logs = ref<AuditLog[]>([])
 const filters = reactive<{ entityType: string }>({ entityType: '' })
+const loading = ref(false)
+const error = ref<string | null>(null)
+const toast = useNeoToast()
 
 const entityOptions = [
   { label: 'Tous les types', value: '' },
@@ -74,10 +78,20 @@ const entityOptions = [
 ]
 
 async function load() {
-  const params = new URLSearchParams({ limit: '100' })
-  if (filters.entityType) params.append('entityType', filters.entityType)
-  const { data } = await api.get<AuditLog[]>(`/api/audit?${params.toString()}`)
-  logs.value = Array.isArray(data) ? data : []
+  loading.value = true
+  error.value = null
+  try {
+    const params = new URLSearchParams({ limit: '100' })
+    if (filters.entityType) params.append('entityType', filters.entityType)
+    const { data } = await api.get<AuditLog[]>(`/api/audit?${params.toString()}`)
+    logs.value = Array.isArray(data) ? data : []
+  } catch (e: unknown) {
+    const msg = extractErrorMessage(e) ?? 'Impossible de charger les journaux.'
+    error.value = msg
+    toast.add({ severity: 'error', detail: msg, life: 5000 })
+  } finally {
+    loading.value = false
+  }
 }
 
 function truncate(s: string): string {
@@ -85,7 +99,7 @@ function truncate(s: string): string {
   return s.length > 80 ? s.slice(0, 80) + '…' : s
 }
 
-onMounted(load)
+onMounted(() => { void load() })
 </script>
 
 <style scoped>

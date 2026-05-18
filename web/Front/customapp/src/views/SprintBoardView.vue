@@ -10,7 +10,7 @@
         placeholder="Sprint"
       />
       <NeoButton v-if="activeSprint?.status === 'Planning'" label="Démarrer" icon="pi pi-play" @click="start" />
-      <NeoButton v-if="activeSprint?.status === 'Active'" label="Clôturer" icon="pi pi-check" outlined @click="close" />
+      <NeoButton v-if="activeSprint?.status === 'Active'" label="Clôturer" icon="pi pi-check" outlined @click="openCloseModal" />
     </template>
 
     <div v-if="activeSprint" class="sb">
@@ -58,6 +58,14 @@
       </div>
     </div>
     <div v-else class="sb-empty">Sélectionnez un sprint.</div>
+
+    <SprintCloseReviewModal
+      v-if="activeSprintId"
+      v-model:visible="showCloseModal"
+      :project-id="id"
+      :sprint-id="activeSprintId"
+      @confirmed="onSprintClosed"
+    />
   </ProjectModuleShell>
 </template>
 
@@ -65,6 +73,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { NeoButton, NeoSelect, NeoTag, useNeoToast } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
+import SprintCloseReviewModal from '@/components/sprint/SprintCloseReviewModal.vue'
 import { formatDateShort as formatDate } from '@/lib/formatDate'
 import { useAgileStore } from '@/stores/agileStore'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
@@ -139,14 +148,26 @@ function renderChart() {
 
 async function start() {
   if (!activeSprintId.value) return
-  await agileStore.startSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  try {
+    await agileStore.startSprint(props.id, activeSprintId.value)
+    toast.add({ severity: 'success', detail: 'Sprint démarré.', life: 3000 })
+  } catch {
+    toast.add({ severity: 'error', detail: 'Échec du démarrage du sprint.', life: 5000 })
+  }
 }
 
-async function close() {
+// Sprint close now goes through SprintCloseReviewModal so the PM can review
+// every WP and pick a disposition for unfinished ones before the sprint
+// actually transitions to Closed.
+const showCloseModal = ref(false)
+function openCloseModal(): void {
   if (!activeSprintId.value) return
-  await agileStore.closeSprint(props.id, activeSprintId.value)
-  toast.add({ severity: 'success', detail: 'Sprint clôturé.', life: 3000 })
+  showCloseModal.value = true
+}
+async function onSprintClosed(): Promise<void> {
+  // Refresh local state — the modal already toasted success on its side.
+  await load()
+  await loadBurndown()
 }
 
 watch(activeSprintId, loadBurndown)

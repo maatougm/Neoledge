@@ -60,7 +60,7 @@ describe('useTemplateStore', () => {
       const store = await getStore()
       await store.fetchTemplates()
 
-      expect(api.get).toHaveBeenCalledWith('/admin/projecttemplate')
+      expect(api.get).toHaveBeenCalledWith('/pm/templates')
       expect(store.templates).toHaveLength(2)
       expect(store.templates[0]).toEqual(mockTemplate)
       expect(store.loading).toBe(false)
@@ -103,7 +103,7 @@ describe('useTemplateStore', () => {
       const store = await getStore()
       const result = await store.fetchTemplate('tpl-1')
 
-      expect(api.get).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1')
+      expect(api.get).toHaveBeenCalledWith('/pm/templates/tpl-1')
       expect(result).toEqual(detail)
       expect(store.currentTemplate).toEqual(detail)
     })
@@ -129,7 +129,7 @@ describe('useTemplateStore', () => {
       const store = await getStore()
       const result = await store.createTemplate(createPayload)
 
-      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate', createPayload)
+      expect(api.post).toHaveBeenCalledWith('/pm/templates', createPayload)
       expect(result).toEqual(mockTemplate)
       expect(store.templates).toHaveLength(1)
     })
@@ -158,7 +158,7 @@ describe('useTemplateStore', () => {
       vi.mocked(api.delete).mockResolvedValueOnce({ data: undefined } as never)
       await store.deleteTemplate('tpl-1')
 
-      expect(api.delete).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1')
+      expect(api.delete).toHaveBeenCalledWith('/pm/templates/tpl-1')
       expect(store.templates).toHaveLength(1)
       expect(store.templates[0].id).toBe('tpl-2')
       expect(store.templates).not.toBe(originalRef)
@@ -187,7 +187,7 @@ describe('useTemplateStore', () => {
       const store = await getStore()
       await store.applyToProject('tpl-1', 'proj-42')
 
-      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate/tpl-1/apply/proj-42', {})
+      expect(api.post).toHaveBeenCalledWith('/pm/templates/tpl-1/apply/proj-42', {})
       expect(store.error).toBeNull()
     })
 
@@ -210,7 +210,7 @@ describe('useTemplateStore', () => {
       const store = await getStore()
       const result = await store.createFromProject('proj-1', { name: 'Modèle Standard' })
 
-      expect(api.post).toHaveBeenCalledWith('/admin/projecttemplate/from-project/proj-1', {
+      expect(api.post).toHaveBeenCalledWith('/pm/templates/from-project/proj-1', {
         name: 'Modèle Standard',
       })
       expect(result).toEqual(mockTemplate)

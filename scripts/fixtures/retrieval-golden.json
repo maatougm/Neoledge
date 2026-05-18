@@ -1,0 +1,193 @@
+{
+  "_doc": [
+    "Golden retrieval dataset for Phase 4 pgvector eval.",
+    "Each entry references a fixture under tests/eval/cahier-dataset/<fixture>.",
+    "The eval script seeds the fixture (same flow as eval-cahier.mjs), waits",
+    "for backfill, then issues each query against /admin/eval/retrieval/batch.",
+    "For each query, the hit is considered a match if ANY string in",
+    "mustContain (case-insensitive substring) appears in the hit's text/value.",
+    "Metrics: recall@k (any match in top-k), MRR (1/rank of first match)."
+  ],
+  "queries": [
+    {
+      "fixture": "01-ged-rich",
+      "target": "field-values",
+      "query": "stack technique frontend retenue",
+      "mustContain": ["Neoform", "PrimeVue", "Vue 3"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "field-values",
+      "query": "calendrier de mise en production",
+      "mustContain": ["20 octobre 2026", "octobre"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "field-values",
+      "query": "objectif principal du projet",
+      "mustContain": ["Archimed", "Elise", "GED"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "field-values",
+      "query": "applications hors périmètre",
+      "mustContain": ["Murex", "Avaloq", "Exchange"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "field-values",
+      "query": "documentation technique attendue",
+      "mustContain": ["documentation technique", "architecture", "exploitation"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "segments",
+      "query": "signature électronique qualifiée",
+      "mustContain": ["SwissSign", "DocuSign", "signature qualifiée"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "segments",
+      "query": "classification documents par IA",
+      "mustContain": ["gpt-4o", "classification", "Azure OpenAI"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "segments",
+      "query": "volumétrie de la migration",
+      "mustContain": ["8M", "8 millions", "SharePoint"]
+    },
+    {
+      "fixture": "01-ged-rich",
+      "target": "segments",
+      "query": "certification archivage légal",
+      "mustContain": ["NF Z42-013", "conformité", "certification"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "field-values",
+      "query": "moteur de workflow choisi",
+      "mustContain": ["Camunda", "BPMN"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "field-values",
+      "query": "intégration RH",
+      "mustContain": ["Workday", "SCIM", "HRIS"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "field-values",
+      "query": "exclusions fonctionnelles",
+      "mustContain": ["Offboarding", "mobilité interne", "intérimaires"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "field-values",
+      "query": "objectif délai d'onboarding",
+      "mustContain": ["3 jours", "14 jours", "onboarding"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "segments",
+      "query": "date de mise en production décalée",
+      "mustContain": ["1er novembre", "novembre 2026"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "segments",
+      "query": "rejet intégration badges API",
+      "mustContain": ["HID Origo", "S/MIME", "email signé"]
+    },
+    {
+      "fixture": "03-workflow-contradictory",
+      "target": "segments",
+      "query": "périmètre étendu sites pilotes",
+      "mustContain": ["Gennevilliers", "Issy", "phase 1"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "field-values",
+      "query": "hébergement et souveraineté",
+      "mustContain": ["OVH", "SecNumCloud", "Strasbourg"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "field-values",
+      "query": "vagues de déploiement",
+      "mustContain": ["12 mairies", "15 restantes", "deux vagues"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "field-values",
+      "query": "signature numérique conforme",
+      "mustContain": ["RGS", "ANSSI", "CertEurope"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "field-values",
+      "query": "fonctionnalités hors périmètre",
+      "mustContain": ["cimetières", "concessions", "bulletins de paie"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "segments",
+      "query": "version de l'API COMEDEC",
+      "mustContain": ["v2.3", "version 2.3", "COMEDEC"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "segments",
+      "query": "budget total du projet",
+      "mustContain": ["1,8 million", "1.8 million", "budget"]
+    },
+    {
+      "fixture": "04-deployment-francophone",
+      "target": "segments",
+      "query": "logistique de formation",
+      "mustContain": ["formateurs itinérants", "480 agents", "27 sites"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "field-values",
+      "query": "framework du portail développeur",
+      "mustContain": ["Backstage", "React"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "field-values",
+      "query": "APIs externes exclues",
+      "mustContain": ["Bloomberg", "Refinitiv", "SOAP"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "field-values",
+      "query": "support multilingue de l'interface",
+      "mustContain": ["bilingual", "FR/EN", "français", "anglais"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "field-values",
+      "query": "authentification SSO retenue",
+      "mustContain": ["Azure AD", "OAuth", "OIDC"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "segments",
+      "query": "stratégie multi-région cloud",
+      "mustContain": ["West Europe", "Central US", "AKS"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "segments",
+      "query": "traduction de la documentation technique",
+      "mustContain": ["technical writers", "i18n", "6 mois", "bilingues"]
+    },
+    {
+      "fixture": "05-documentation-bilingual",
+      "target": "segments",
+      "query": "langages d'exemples de code retenus",
+      "mustContain": ["cURL", "Python", "Node.js"]
+    }
+  ]
+}

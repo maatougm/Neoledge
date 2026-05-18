@@ -140,7 +140,11 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<ProjectDetail>(`/admin/project/${id}`)
+      // Use the PM endpoint (no strict UUID validation) — the access guard
+      // auto-passes for Admin role, so this also works from the admin
+      // overview panel. The legacy /admin/project/:id route uses
+      // ParseUUIDPipe which rejects the patterned demo UUIDs.
+      const { data } = await api.get<ProjectDetail>(`/pm/projects/${id}`)
       currentProject.value = { ...data }
       return data
     } catch (e: unknown) {
@@ -306,21 +310,6 @@ export const useProjectStore = defineStore('projects', () => {
     }
   }
 
-  const toggleManagerFields = async (projectId: string, allow: boolean) => {
-    loading.value = true
-    error.value = null
-    try {
-      await api.patch(`/admin/project/${projectId}/toggle-manager-fields`, { allow })
-      if (currentProject.value?.id === projectId) {
-        currentProject.value = { ...currentProject.value, allowManagerCustomFields: allow }
-      }
-    } catch (e: unknown) {
-      error.value =
-        e instanceof Error ? e.message : 'Erreur lors de la mise à jour des permissions.'
-    } finally {
-      loading.value = false
-    }
-  }
 
   // ─── Selection ───────────────────────────────────────────────────────────────
 
@@ -388,8 +377,14 @@ export const useProjectStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const { data } = await api.get<DeletedProjectSummary[]>('/admin/project/deleted')
-      deletedProjects.value = [...data]
+      // The backend now returns a paginated envelope `{ items, total, skip, take }`
+      // but used to return a raw array. Accept both shapes so a future change to
+      // either side doesn't silently empty the trash again.
+      const { data } = await api.get<
+        DeletedProjectSummary[] | { items: DeletedProjectSummary[]; total?: number }
+      >('/admin/project/deleted')
+      const items = Array.isArray(data) ? data : (data?.items ?? [])
+      deletedProjects.value = [...items]
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Erreur lors du chargement de la corbeille.'
     } finally {
@@ -441,7 +436,7 @@ export const useProjectStore = defineStore('projects', () => {
 
   const fetchTemplates = async () => {
     try {
-      const { data } = await api.get<ProjectTemplateSummary[]>('/admin/projecttemplate')
+      const { data } = await api.get<ProjectTemplateSummary[]>('/pm/templates')
       templates.value = [...data]
     } catch {
       templates.value = []
@@ -449,17 +444,17 @@ export const useProjectStore = defineStore('projects', () => {
   }
 
   const createTemplate = async (payload: CreateTemplatePayload) => {
-    await api.post('/admin/projecttemplate', payload)
+    await api.post('/pm/templates', payload)
     await fetchTemplates()
   }
 
   const deleteTemplate = async (id: string) => {
-    await api.delete(`/admin/projecttemplate/${id}`)
+    await api.delete(`/pm/templates/${id}`)
     templates.value = templates.value.filter((t) => t.id !== id)
   }
 
   const applyTemplate = async (templateId: string, projectId: string) => {
-    await api.post(`/admin/projecttemplate/${templateId}/apply/${projectId}`, {})
+    await api.post(`/pm/templates/${templateId}/apply/${projectId}`, {})
   }
 
   // ─── Logout reset ────────────────────────────────────────────────────────────
@@ -511,7 +506,6 @@ export const useProjectStore = defineStore('projects', () => {
     duplicateProject,
     addField,
     removeField,
-    toggleManagerFields,
     fetchDeletedProjects,
     restoreProject,
     purgeProject,

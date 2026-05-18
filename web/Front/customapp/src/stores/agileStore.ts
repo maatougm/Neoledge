@@ -127,6 +127,16 @@ export const useAgileStore = defineStore('agile', () => {
     }
   }
 
+  async function deleteSprint(projectId: string, sprintId: string) {
+    try {
+      await api.delete(`/pm/projects/${projectId}/sprints/${sprintId}`)
+      sprints.value = sprints.value.filter((s) => s.id !== sprintId)
+    } catch (err) {
+      error.value = _errMsg(err)
+      throw err
+    }
+  }
+
   async function startSprint(projectId: string, sprintId: string) {
     try {
       const { data } = await api.post<Sprint>(`/pm/projects/${projectId}/sprints/${sprintId}/start`)
@@ -139,12 +149,23 @@ export const useAgileStore = defineStore('agile', () => {
     }
   }
 
-  async function closeSprint(projectId: string, sprintId: string) {
+  async function closeSprint(
+    projectId: string,
+    sprintId: string,
+    payload: {
+      dispositions?: Array<{ workPackageId: string; disposition: 'next_sprint' | 'backlog' | 'keep' }>
+      targetSprintId?: string
+    } = {},
+  ) {
     try {
-      const { data } = await api.post<Sprint>(`/pm/projects/${projectId}/sprints/${sprintId}/close`)
+      const { data } = await api.post<{ sprint: Sprint; movedToNext: number; movedToBacklog: number; kept: number }>(
+        `/pm/projects/${projectId}/sprints/${sprintId}/close`,
+        { dispositions: payload.dispositions ?? [], targetSprintId: payload.targetSprintId },
+      )
+      const closed = data.sprint
       const idx = sprints.value.findIndex((s) => s.id === sprintId)
-      if (idx >= 0) sprints.value = [...sprints.value.slice(0, idx), data, ...sprints.value.slice(idx + 1)]
-      return data
+      if (idx >= 0) sprints.value = [...sprints.value.slice(0, idx), closed, ...sprints.value.slice(idx + 1)]
+      return closed
     } catch (err) {
       error.value = _errMsg(err)
       throw err
@@ -187,7 +208,7 @@ export const useAgileStore = defineStore('agile', () => {
   return {
     boards, currentBoard, sprints, currentSprint, burndown, loading, error,
     fetchBoards, fetchBoard, createBoard, createColumn, moveCard,
-    fetchSprints, createSprint, startSprint, closeSprint, addWpsToSprint, fetchBurndown,
+    fetchSprints, createSprint, deleteSprint, startSprint, closeSprint, addWpsToSprint, fetchBurndown,
     reset,
   }
 })

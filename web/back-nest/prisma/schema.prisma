@@ -37,7 +37,9 @@ model Team {
   createdAt     DateTime  @default(now())
 
   members AppUser[] @relation("TeamMembers")
+  manager AppUser?  @relation("TeamManager", fields: [managerUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@index([managerUserId])
   @@map("Teams")
 }
 
@@ -80,6 +82,8 @@ model AppUser {
   checkedItems     PhaseChecklist[]
 
   auditLogs    AuditLog[]
+  cahierVersions CahierVersion[]
+  aiUsages       AiUsage[]
   // Sprint 0+ back-relations (work packages, time, etc.)
   wpAssignments      WorkPackage[]        @relation("WpAssignee")
   wpAuthored         WorkPackage[]        @relation("WpAuthor")
@@ -92,70 +96,19 @@ model AppUser {
   actedNotifications Notification[]       @relation("NotificationActor")
   wpComments         WorkPackageComment[] @relation("WpCommentAuthor")
   wpAttachments      WorkPackageAttachment[] @relation("WpAttachmentUploader")
-  roleAssignments    UserRoleAssignment[] @relation("UserRoleAssignmentUser")
   cahierFeedback     CahierFeedback[]     @relation("CahierFeedbackUser")
   projectMemberships ProjectMember[]      @relation("ProjectMemberships")
+  managedTeams       Team[]               @relation("TeamManager")
+  ackedWorkPackages  WorkPackage[]        @relation("WpAcker")
+  escalatedWorkPackages WorkPackage[]     @relation("WpEscalation")
 
   @@map("AppUsers")
 }
 
-// ─── Permissions (Phase 1 — OpenProject-style data-driven roles) ─────────────
-
-model Permission {
-  id          String   @id @default(uuid())
-  key         String   @unique @db.VarChar(100)
-  resource    String   @db.VarChar(50)
-  description String   @db.VarChar(255)
-  createdAt   DateTime @default(now())
-
-  roles       RolePermission[]
-
-  @@index([resource])
-  @@map("Permissions")
-}
-
-model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique @db.VarChar(100)
-  description String?  @db.VarChar(500)
-  isPreset    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  permissions RolePermission[]
-  assignments UserRoleAssignment[]
-
-  @@map("Roles")
-}
-
-model RolePermission {
-  roleId       String
-  permissionId String
-
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@index([permissionId])
-  @@map("RolePermissions")
-}
-
-model UserRoleAssignment {
-  id        String   @id @default(uuid())
-  userId    String
-  roleId    String
-  projectId String?
-  createdAt DateTime @default(now())
-
-  user    AppUser  @relation("UserRoleAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
-  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  project Project? @relation("ProjectRoleAssignments", fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, roleId, projectId], name: "user_role_project_uq")
-  @@index([roleId])
-  @@index([projectId])
-  @@map("UserRoleAssignments")
-}
+// Note: the dynamic RBAC stack (Permission / Role / RolePermission /
+// UserRoleAssignment) was removed in May 2026 — see migration
+// 20260507000000_drop_rbac_tables. Authorization is now driven by
+// AppUser.role + ProjectMember rows.
 
 model Project {
   id                       String   @id @default(uuid())
@@ -166,7 +119,6 @@ model Project {
   projectManagerId         String
   status                   String   @default("Draft") @db.VarChar(50)
   priority                 String   @default("Medium") @db.VarChar(50)
-  allowManagerCustomFields Boolean  @default(false)
   createdByAdminId         String
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
@@ -190,7 +142,9 @@ model Project {
   transcripts    MeetingTranscript[]
   notifications  Notification[]
   checklists      PhaseChecklist[]
-  automationRules AutomationRule[]
+  cahierVersions  CahierVersion[]
+  aiUsages        AiUsage[]
+  liveMeetingSuggestions LiveMeetingSuggestion[]
 
   // Sprint 0+ back-relations
   boards         Board[]
@@ -200,7 +154,6 @@ model Project {
   timeEntries    TimeEntry[]
   milestones     Milestone[]
   ganttBaselines GanttBaseline[]
-  roleAssignments UserRoleAssignment[] @relation("ProjectRoleAssignments")
   cahierFeedback  CahierFeedback[]
   projectMembers  ProjectMember[]  @relation("ProjectMembers")
 
@@ -280,10 +233,12 @@ model ProjectActivity {
 
   // Relations
   project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    AppUser? @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([projectId])
   @@index([createdAt])
+  @@index([userId])
+  @@index([projectId, createdAt])
   @@map("ProjectActivities")
 }
 
@@ -325,7 +280,7 @@ model ProjectComment {
   userId          String
   content         String    @db.Text
   createdAt       DateTime  @default(now())
-  updatedAt       DateTime?
+  updatedAt       DateTime? @updatedAt
   isDeleted       Boolean   @default(false)
   parentCommentId String?
   mentions        String?   @db.VarChar(500)
@@ -382,15 +337,26 @@ model MeetingTranscript {
   aiProcessedAt     DateTime?
   aiModel           String?   @db.VarChar(50)
   aiError           String?   @db.VarChar(500)
+  audioPath         String?   @db.VarChar(500)
+  audioMimeType     String?   @db.VarChar(80)
+  audioSize         Int?
+  // When true, the retention cron will not purge this audio. Used for
+  // meetings the team explicitly wants to keep beyond the global window.
+  audioPreserved    Boolean   @default(false)
+  // Meeting type — drives copilot prompt selection and downstream
+  // analysis tone. One of: kickoff | cadrage | validation | standup |
+  // retrospective | other.
+  meetingType       String?   @db.VarChar(20)
 
   // Relations
-  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  segments    TranscriptSegment[]
-  actionItems MeetingActionItem[]
-  decisions   MeetingDecision[]
-  agendaItems MeetingAgendaItem[]
-  attendees   MeetingAttendee[]
-  outcomes    MeetingOutcome[]
+  project           Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments          TranscriptSegment[]
+  actionItems       MeetingActionItem[]
+  decisions         MeetingDecision[]
+  agendaItems       MeetingAgendaItem[]
+  attendees         MeetingAttendee[]
+  outcomes          MeetingOutcome[]
+  copilotSuggestions LiveMeetingSuggestion[]
 
   @@index([projectId])
   @@index([createdAt])
@@ -441,6 +407,34 @@ model TranscriptSegment {
 
   @@index([transcriptId])
   @@map("TranscriptSegments")
+}
+
+/// Real-time meeting copilot suggestions. One row per question card the
+/// AI proposes during a live meeting. `liveSessionId` is a UUID generated
+/// by the frontend on session start; `meetingTranscriptId` is null until
+/// the meeting is saved (live session converts to a stored transcript).
+/// `forNextMeeting` flags cards produced post-hoc against an uploaded
+/// audio — they belong to a follow-up meeting, not the analyzed one.
+model LiveMeetingSuggestion {
+  id                  String   @id @default(uuid())
+  projectId           String
+  liveSessionId       String   @db.VarChar(80)
+  meetingTranscriptId String?
+  question            String   @db.Text
+  rationale           String   @db.Text
+  urgency             String   @default("medium") @db.VarChar(10) // low | medium | high
+  section             String   @db.VarChar(50)                    // 9 cahier keys + backlog_driver
+  status              String   @default("pending") @db.VarChar(20) // pending | dismissed | asked
+  forNextMeeting      Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  transcript MeetingTranscript? @relation(fields: [meetingTranscriptId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, liveSessionId, status])
+  @@index([meetingTranscriptId])
+  @@map("LiveMeetingSuggestions")
 }
 
 model Notification {
@@ -511,6 +505,58 @@ model AuditLog {
   @@map("AuditLogs")
 }
 
+// ─── Cahier versioning ─────────────────────────────────────────────────────
+// Every save / manual edit / approval snapshots a row here so the validation
+// team can see what was changed by whom, and the PM can roll back to any
+// earlier version without re-running the AI.
+model CahierVersion {
+  id          String   @id @default(uuid())
+  projectId   String
+  version     Int      // Monotonic counter per project, starts at 1
+  kind        String   @db.VarChar(20)    // 'generated' | 'edited' | 'approved'
+  aiContent   String   @db.Text           // Stringified JSON of the cahier
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy AppUser? @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
+  @@map("CahierVersions")
+}
+
+// ─── AI usage tracking ─────────────────────────────────────────────────────
+// One row per AI call (cahier generation, checklist refresh, backlog gen,
+// transcribe-chunk, redoDiarization). Drives the per-project soft cap and
+// the admin cost dashboard.
+model AiUsage {
+  id                String   @id @default(uuid())
+  projectId         String?
+  userId            String?
+  provider          String   @db.VarChar(40)   // 'openai' | 'gemini' | 'assemblyai' | 'zai-fallback' | 'local-whisper'
+  model             String   @db.VarChar(80)
+  feature           String   @db.VarChar(40)   // 'cahier' | 'checklist' | 'backlog' | 'meeting-analysis' | 'transcribe' | 'transcribe-chunk'
+  promptTokens      Int      @default(0)
+  completionTokens  Int      @default(0)
+  totalTokens       Int      @default(0)
+  audioSeconds      Int      @default(0)       // For STT calls
+  costEstimateUsd   Decimal  @default(0) @db.Decimal(12, 6)
+  durationMs        Int      @default(0)
+  success           Boolean  @default(true)
+  errorMessage      String?  @db.VarChar(500)
+  createdAt         DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  user    AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([projectId, createdAt])
+  @@index([feature, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("AiUsages")
+}
+
 model AnalyticsCache {
   id         String   @id @default(uuid())
   cacheKey   String   @unique @db.VarChar(100)
@@ -520,42 +566,11 @@ model AnalyticsCache {
   @@map("AnalyticsCache")
 }
 
-model AutomationRule {
-  id               String    @id @default(uuid())
-  projectId        String
-  name             String    @db.VarChar(200)
-  triggerEvent     String    @db.VarChar(100)
-  triggerCondition String?   @db.Text
-  actionType       String    @db.VarChar(100)
-  actionConfig     String    @db.Text
-  isActive         Boolean   @default(true)
-  executionCount   Int       @default(0)
-  lastExecutedAt   DateTime?
-  createdAt        DateTime  @default(now())
-
-  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  logs    AutomationLog[]
-
-  @@index([projectId])
-  @@index([triggerEvent])
-  @@map("AutomationRules")
-}
-
-model AutomationLog {
-  id         String   @id @default(uuid())
-  ruleId     String
-  projectId  String
-  status     String   @db.VarChar(20)
-  detail     String?  @db.VarChar(500)
-  executedAt DateTime @default(now())
-
-  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-
-  @@index([ruleId])
-  @@index([projectId])
-  @@index([executedAt])
-  @@map("AutomationLog")
-}
+// Note: the dynamic automation rules engine (AutomationRule + AutomationLog)
+// was removed in May 2026 — see migration 20260507020000_drop_automation.
+// The hardcoded notification flows (cahier_generated → notifyReviewTeams,
+// validation_submitted → DeploymentTeam, work_package_assigned, etc.) live
+// directly in their respective services now.
 
 // ─── Sprint 0+ new models (OpenProject parity) ───────────────────────────────
 
@@ -671,6 +686,8 @@ model WorkPackage {
   project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee        AppUser?                 @relation("WpAssignee", fields: [assigneeId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   author          AppUser                  @relation("WpAuthor", fields: [authorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ackedBy         AppUser?                 @relation("WpAcker", fields: [ackedByUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  escalatedTo     AppUser?                 @relation("WpEscalation", fields: [escalatedToUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   parent          WorkPackage?             @relation("WpHierarchy", fields: [parentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   children        WorkPackage[]            @relation("WpHierarchy")
   sprint          Sprint?                  @relation(fields: [sprintId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -696,6 +713,8 @@ model WorkPackage {
   @@index([versionId])
   @@index([boardColumnId])
   @@index([slaDeadline, slaBreached])
+  @@index([ackedByUserId])
+  @@index([escalatedToUserId])
   @@map("WorkPackages")
 }
 
@@ -887,7 +906,7 @@ model WorkPackageComment {
   userId        String
   content       String   @db.Text
   createdAt     DateTime @default(now())
-  updatedAt     DateTime?
+  updatedAt     DateTime? @updatedAt
   isDeleted     Boolean  @default(false)
 
   workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Cascade)
@@ -936,6 +955,7 @@ model CahierFeedback {
   user    AppUser? @relation("CahierFeedbackUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([projectId, createdAt])
+  @@index([projectId, status])
   @@map("CahierFeedback")
 }
 

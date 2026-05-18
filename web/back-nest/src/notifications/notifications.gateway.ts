@@ -19,6 +19,12 @@ export interface NotificationPayload {
   projectId: string | null;
   isRead: boolean;
   createdAt: Date;
+  // Enhanced fields (Notifications 2.0). Optional to keep legacy callers compiling.
+  reason?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  actorId?: string | null;
+  link?: string | null;
 }
 
 const SESSION_CACHE_TTL_MS = 30_000;

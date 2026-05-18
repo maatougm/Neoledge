@@ -62,21 +62,31 @@ const router = createRouter({
       component: () => import('@/layouts/AppShell.vue'),
       meta: { requiresAuth: true },
       children: [
-        // Unified Home (inbox/today view for PM + team roles).
-        // Admins are redirected to their dashboard via the beforeEnter hook
-        // below — they don't need the personal inbox, their landing IS the
-        // command-center KPIs.
+        // Role-aware landing route. Each role has a dedicated dashboard:
+        //   Admin               → admin-dashboard (KPI command-center)
+        //   ProjectManager      → pm-dashboard (portfolio + tasks)
+        //   SpecificationTeam   → spec-dashboard (validation queue)
+        //   Member              → team-home (today's tasks + sprints)
+        // The route has no component — it pure-redirects in beforeEnter.
         {
           path: '',
           name: 'app-home',
-          component: () => import('@/views/HomeView.vue'),
-          beforeEnter: (_to, _from, next) => {
+          redirect: () => ({ name: 'app-home-redirect' }),
+        },
+        {
+          // Hidden internal anchor used as a redirect target. The
+          // beforeEach guard above sends each role to its real dashboard.
+          path: '_home',
+          name: 'app-home-redirect',
+          redirect: () => {
             const auth = useAuthStore()
-            if (auth.userRole === 'Admin') {
-              next({ name: 'admin-dashboard' })
-              return
+            switch (auth.userRole) {
+              case 'Admin':             return { name: 'admin-dashboard' }
+              case 'ProjectManager':    return { name: 'pm-dashboard' }
+              case 'SpecificationTeam': return { name: 'spec-dashboard' }
+              case 'Member':            return { name: 'team-home' }
+              default:                  return { name: 'login' }
             }
-            next()
           },
         },
         {
@@ -140,11 +150,6 @@ const router = createRouter({
               name: 'admin-audit',
               component: () => import('@/views/AuditLogView.vue'),
             },
-            {
-              path: 'roles',
-              name: 'admin-roles',
-              component: () => import('@/views/admin/RolesView.vue'),
-            },
           ],
         },
 
@@ -157,7 +162,12 @@ const router = createRouter({
           children: [
             {
               path: '',
-              redirect: { name: 'pm-projects' },
+              redirect: { name: 'pm-dashboard' },
+            },
+            {
+              path: 'dashboard',
+              name: 'pm-dashboard',
+              component: () => import('@/views/PMDashboardView.vue'),
             },
             {
               path: 'projects',
@@ -171,9 +181,9 @@ const router = createRouter({
               component: () => import('@/views/PMProjectDetailView.vue'),
               props: true,
             },
-            // 5 deep-links into the legacy tabbed PMProjectDetail for the
-            // questionnaire / cahier / meeting / validation / automation
-            // workflow. Each route mounts the same wrapper but passes a
+            // Deep-links into the legacy tabbed PMProjectDetail for the
+            // questionnaire / cahier / meeting / validation workflow.
+            // Each route mounts the same wrapper but passes a
             // different ?tab= via the path so the sidebar nav can highlight
             // the active item.
             {
@@ -299,7 +309,29 @@ const router = createRouter({
           children: [
             {
               path: '',
-              redirect: { name: 'team-projects' },
+              name: 'team-home',
+              // Member lands on the dedicated MemberDashboardView;
+              // SpecificationTeam is redirected to their dedicated dashboard.
+              component: () => import('@/views/team/MemberDashboardView.vue'),
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'SpecificationTeam') {
+                  next({ name: 'spec-dashboard' })
+                } else {
+                  next()
+                }
+              },
+            },
+            {
+              path: 'dashboard',
+              name: 'spec-dashboard',
+              component: () => import('@/views/team/SpecTeamDashboardView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
+              },
             },
             {
               path: 'projects',
@@ -309,24 +341,55 @@ const router = createRouter({
             {
               path: 'projects/:id',
               name: 'team-project-detail',
-              component: () => import('@/components/pm/PMProjectDetail.vue'),
-              props: true,
+              component: () => import('@/views/team/MemberProjectRouter.vue'),
+              props: (route) => ({ id: route.params.id }),
               meta: { readonly: true },
+            },
+            {
+              path: 'projects/:projectId/sprint/:sprintId',
+              name: 'team-sprint-detail',
+              component: () => import('@/views/team/MemberSprintView.vue'),
+              props: (route) => ({
+                projectId: route.params.projectId,
+                sprintId: route.params.sprintId,
+              }),
             },
             {
               path: 'validations',
               name: 'team-validations',
               component: () => import('@/views/TeamMemberView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
+              },
             },
             {
               path: 'my-tasks',
               name: 'team-my-tasks',
-              component: () => import('@/views/MyTasksView.vue'),
+              component: () => import('@/views/team/MemberTasksView.vue'),
+            },
+            {
+              path: 'sprints',
+              name: 'team-sprints',
+              component: () => import('@/views/team/MemberSprintsListView.vue'),
+            },
+            {
+              path: 'inbox',
+              name: 'team-inbox',
+              component: () => import('@/views/team/MemberInboxView.vue'),
             },
             {
               path: 'pending-reviews',
               name: 'team-pending-reviews',
               component: () => import('@/views/SpecPendingReviewsView.vue'),
+              meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
+              beforeEnter: (_to, _from, next) => {
+                const auth = useAuthStore()
+                if (auth.userRole === 'Member') next({ name: 'team-home' })
+                else next()
+              },
             },
           ],
         },
@@ -353,6 +416,13 @@ const router = createRouter({
 })
 
 // ─── Global before-each guard ─────────────────────────────────────────────────
+
+// Module-scoped flag — tracks whether /auth/me has been validated once
+// since the JWT was loaded into memory. Reset by the logout bus.
+let meChecked = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('auth:logout', () => { meChecked = false })
+}
 
 router.beforeEach(async (to: RouteLocationNormalized) => {
   const auth = useAuthStore()
@@ -403,9 +473,11 @@ router.beforeEach(async (to: RouteLocationNormalized) => {
       return { name: 'login', query: redirect ? { redirect } : undefined }
     }
 
-// Hydrate permission set on first authenticated navigation (or after login).
-    // fetchMe clears the token if it's been invalidated server-side.
-    if (auth.isAuthenticated && auth.globalPermissions.size === 0) {
+    // Validate the JWT against /auth/me on first authenticated navigation.
+    // fetchMe clears the token if it's been invalidated server-side
+    // (password reset, deactivation, …).
+    if (auth.isAuthenticated && !meChecked) {
+      meChecked = true
       await auth.fetchMe()
       if (!auth.isAuthenticated) {
         return { name: 'login' }

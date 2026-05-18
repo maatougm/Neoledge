@@ -76,4 +76,18 @@ export class BulkAssignDto {
   @ValidateNested({ each: true })
   @Type(() => AssignmentItemDto)
   assignments!: AssignmentItemDto[];
+
+  /**
+   * Optional context. When provided, the grouped assignment notification
+   * mentions the sprint name, and its deep-link carries `sprintId` so the
+   * assignee lands on a pre-filtered "Mes tâches" view.
+   */
+  @IsOptional() @IsString() sprintId?: string;
+}
+
+export class SuggestAssignmentsDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  wpIds!: string[];
 }

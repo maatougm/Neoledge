@@ -56,6 +56,7 @@ export interface MeetingTranscriptDetail {
   detectedLanguages: string
   recordedAt: string
   createdAt: string
+  hasAudio?: boolean
   segments: TranscriptSegment[]
 }
 
@@ -91,27 +92,3 @@ export interface AiResults {
   decisions: AiDecision[]
 }
 
-// ─── Automation ───────────────────────────────────────────────────────────────
-
-export interface AutomationRule {
-  id: string
-  projectId: string
-  name: string
-  triggerEvent: string
-  triggerCondition: Record<string, unknown> | null
-  actionType: string
-  actionConfig: Record<string, unknown>
-  isActive: boolean
-  executionCount: number
-  lastExecutedAt: string | null
-  createdAt: string
-}
-
-export interface AutomationLog {
-  id: string
-  ruleId: string
-  projectId: string
-  status: 'success' | 'failed' | 'skipped'
-  detail: string | null
-  executedAt: string
-}

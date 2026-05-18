@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class WpCommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(WpCommentsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async list(workPackageId: string) {
     try {
@@ -14,7 +20,8 @@ export class WpCommentsService {
         orderBy: { createdAt: 'asc' },
       });
       return Result.ok(comments);
-    } catch {
+    } catch (e) {
+      this.logger.error('wp-comment list failed', e);
       return Result.fail('Échec du chargement des commentaires.');
     }
   }
@@ -26,10 +33,59 @@ export class WpCommentsService {
         data: { workPackageId, userId, content: content.trim() },
         include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatarPath: true } } },
       });
+
+      // Fire-and-forget notifications: assignee + watchers (skip author).
+      // Was previously a silent no-op — the WP author and watchers had no
+      // way to know a comment landed without polling the panel.
+      void this.notifyWatchersAndAssignee(workPackageId, userId, c.content).catch((e) =>
+        this.logger.warn(`wp-comment notify fanout failed: ${e instanceof Error ? e.message : String(e)}`),
+      );
+
       return Result.ok(c);
-    } catch {
+    } catch (e) {
+      this.logger.error('wp-comment create failed', e);
       return Result.fail('Échec de la création.');
     }
+  }
+
+  private async notifyWatchersAndAssignee(
+    workPackageId: string,
+    actorId: string,
+    content: string,
+  ): Promise<void> {
+    const wp = await this.prisma.workPackage.findFirst({
+      where: { id: workPackageId, isDeleted: false },
+      select: {
+        id: true, title: true, projectId: true, assigneeId: true,
+        watchers: { select: { userId: true } },
+      },
+    });
+    if (!wp) return;
+
+    const targets = new Set<string>();
+    if (wp.assigneeId && wp.assigneeId !== actorId) targets.add(wp.assigneeId);
+    for (const w of wp.watchers) {
+      if (w.userId !== actorId) targets.add(w.userId);
+    }
+    if (targets.size === 0) return;
+
+    const snippet = content.length > 120 ? content.slice(0, 120) + '…' : content;
+    await Promise.allSettled(
+      [...targets].map((userId) =>
+        this.notifications.notifyEnhanced({
+          userId,
+          actorId,
+          type: 'wp_comment_added',
+          reason: 'Comment',
+          title: 'Nouveau commentaire',
+          message: `Sur « ${wp.title} » : ${snippet}`,
+          projectId: wp.projectId,
+          entityType: 'work_package',
+          entityId: wp.id,
+          link: `/app/pm/projects/${wp.projectId}/workpackages?wpId=${wp.id}`,
+        }),
+      ),
+    );
   }
 
   async update(id: string, userId: string, content: string) {
@@ -37,14 +93,16 @@ export class WpCommentsService {
       const existing = await this.prisma.workPackageComment.findUnique({ where: { id } });
       if (!existing) return Result.fail('Commentaire introuvable.');
       if (existing.userId !== userId) return Result.fail('Accès refusé.');
+      // updatedAt is auto-stamped via @updatedAt on the schema — no manual set.
       const c = await this.prisma.workPackageComment.update({
         where: { id },
-        data: { content: content.trim(), updatedAt: new Date() },
+        data: { content: content.trim() },
         include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatarPath: true } } },
       });
       return Result.ok(c);
-    } catch {
-      return Result.fail('Échec.');
+    } catch (e) {
+      this.logger.error('wp-comment update failed', e);
+      return Result.fail('Échec de la mise à jour du commentaire.');
     }
   }
 
@@ -55,8 +113,9 @@ export class WpCommentsService {
       if (existing.userId !== userId) return Result.fail<void>('Accès refusé.');
       await this.prisma.workPackageComment.update({ where: { id }, data: { isDeleted: true } });
       return Result.ok<void>();
-    } catch {
-      return Result.fail<void>('Échec.');
+    } catch (e) {
+      this.logger.error('wp-comment delete failed', e);
+      return Result.fail<void>('Échec de la suppression du commentaire.');
     }
   }
 }

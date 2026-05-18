@@ -18,8 +18,8 @@
           <div class="timeline-meta">
             <span class="timeline-user">{{ item.userName ?? 'Système' }}</span>
             <span class="timeline-sep">&bull;</span>
-            <span class="timeline-date">{{ formatDate(item.createdAt ?? '') }}</span>
-            <span class="timeline-time">{{ formatTime(item.createdAt ?? '') }}</span>
+            <span class="timeline-date">{{ formatDate(item.timestamp) }}</span>
+            <span class="timeline-time">{{ formatTime(item.timestamp) }}</span>
           </div>
         </div>
       </div>

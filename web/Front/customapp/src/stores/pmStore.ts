@@ -17,8 +17,6 @@ import type {
   MeetingTranscriptSummary,
   MeetingTranscriptDetail,
   AiResults,
-  AutomationRule,
-  AutomationLog,
 } from '@/types/pm.types'
 
 export const usePmStore = defineStore('pm', () => {
@@ -40,8 +38,6 @@ export const usePmStore = defineStore('pm', () => {
   const aiResults = ref<AiResults | null>(null)
   /** Module-private interval handle — not a ref, avoids unnecessary reactivity. */
   let _aiPolling: ReturnType<typeof setInterval> | null = null
-  const automationRules = ref<AutomationRule[]>([])
-  const automationLogs = ref<AutomationLog[]>([])
   const loading = ref(false)
   const saving = ref(false)
   const error = ref<string | null>(null)
@@ -182,21 +178,6 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  const uploadMeeting = async (projectId: string, formData: FormData) => {
-    saving.value = true
-    error.value = null
-    try {
-      await api.post(`/pm/projects/${projectId}/meetings/upload`, formData, { timeout: 300_000 })
-      return true
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      error.value = msg || "Erreur lors de l'envoi de l'enregistrement."
-      return false
-    } finally {
-      saving.value = false
-    }
-  }
-
   const deleteMeeting = async (projectId: string, meetingId: string) => {
     try {
       await api.delete(`/pm/projects/${projectId}/meetings/${meetingId}`)
@@ -284,75 +265,6 @@ export const usePmStore = defineStore('pm', () => {
     }
   }
 
-  // ─── Automation ──────────────────────────────────────────────────────────────
-
-  const fetchAutomationRules = async (projectId: string) => {
-    try {
-      const { data } = await api.get<{ success: boolean; data: AutomationRule[] }>(
-        `/pm/projects/${projectId}/automation/rules`,
-      )
-      automationRules.value = [...(data.data ?? [])]
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des règles.'
-    }
-  }
-
-  const createAutomationRule = async (projectId: string, payload: Partial<AutomationRule>) => {
-    try {
-      const { data } = await api.post<{ success: boolean; data: AutomationRule }>(
-        `/pm/projects/${projectId}/automation/rules`,
-        payload,
-      )
-      if (data.success && data.data) {
-        automationRules.value = [data.data, ...automationRules.value]
-      }
-      return data.success
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors de la création de la règle.'
-      return false
-    }
-  }
-
-  const toggleAutomationRule = async (projectId: string, ruleId: string, isActive: boolean) => {
-    try {
-      const { data } = await api.patch<{ success: boolean; data: AutomationRule }>(
-        `/pm/projects/${projectId}/automation/rules/${ruleId}/toggle`,
-        { isActive },
-      )
-      if (data.success && data.data) {
-        automationRules.value = automationRules.value.map((r) =>
-          r.id === ruleId ? { ...data.data } : r,
-        )
-      }
-      return data.success
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors de la mise à jour de la règle.'
-      return false
-    }
-  }
-
-  const deleteAutomationRule = async (projectId: string, ruleId: string) => {
-    try {
-      await api.delete(`/pm/projects/${projectId}/automation/rules/${ruleId}`)
-      automationRules.value = automationRules.value.filter((r) => r.id !== ruleId)
-      return true
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors de la suppression de la règle.'
-      return false
-    }
-  }
-
-  const fetchAutomationLogs = async (projectId: string) => {
-    try {
-      const { data } = await api.get<{ success: boolean; data: AutomationLog[] }>(
-        `/pm/projects/${projectId}/automation/logs`,
-      )
-      automationLogs.value = [...(data.data ?? [])]
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Erreur lors du chargement des logs.'
-    }
-  }
-
   // ─── Logout reset ────────────────────────────────────────────────────────────
 
   /** Clear the currently selected project without a full store reset. */
@@ -373,8 +285,6 @@ export const usePmStore = defineStore('pm', () => {
     meetings.value = []
     currentTranscript.value = null
     aiResults.value = null
-    automationRules.value = []
-    automationLogs.value = []
     loading.value = false
     saving.value = false
     error.value = null
@@ -393,8 +303,6 @@ export const usePmStore = defineStore('pm', () => {
     meetings,
     currentTranscript,
     aiResults,
-    automationRules,
-    automationLogs,
     loading,
     saving,
     error,
@@ -407,18 +315,12 @@ export const usePmStore = defineStore('pm', () => {
     fetchActivity,
     fetchMeetings,
     fetchTranscript,
-    uploadMeeting,
     deleteMeeting,
     renameSpeaker,
     triggerAiAnalysis,
     fetchAiResults,
     stopAiPolling,
     resumeAiPolling,
-    fetchAutomationRules,
-    createAutomationRule,
-    toggleAutomationRule,
-    deleteAutomationRule,
-    fetchAutomationLogs,
     clearCurrent,
     reset,
   }

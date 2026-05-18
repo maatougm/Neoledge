@@ -14,26 +14,27 @@ import {
 import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { PermissionsGuard } from '../common/guards/permissions.guard.js';
-import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+import { RolesGuard } from '../common/guards/roles.guard.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
 import { WpAttachmentsService, ALLOWED_ATTACHMENT_MIMES } from './wp-attachments.service.js';
 import { promises as fs } from 'fs';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
 
 @Controller('pm/work-packages/:wpId/attachments')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class WpAttachmentsController {
   constructor(private readonly service: WpAttachmentsService) {}
 
   @Get()
-  @RequirePermission('wp.view')
-  async list(@Param('wpId') wpId: string) {
-    return this.service.list(wpId);
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
+  async list(@Param('wpId') wpId: string, @Req() req: Request) {
+    const { userId, role } = readUser(req);
+    return this.service.list(wpId, userId, role);
   }
 
   @Post()
-  @RequirePermission('attachment.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_FILE_BYTES },
@@ -50,9 +51,9 @@ export class WpAttachmentsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ) {
-    const userId = (req as unknown as { user?: { userId?: string } }).user?.userId ?? '';
+    const { userId, role } = readUser(req);
     if (!file) throw new BadRequestException('Fichier requis.');
-    return this.service.upload(wpId, userId, {
+    return this.service.upload(wpId, userId, role, {
       buffer: file.buffer,
       originalname: file.originalname,
       mimetype: file.mimetype,
@@ -61,12 +62,14 @@ export class WpAttachmentsController {
   }
 
   @Get(':attachmentId/download')
-  @RequirePermission('wp.view')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async download(
     @Param('attachmentId') attachmentId: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const meta = await this.service.getDownload(attachmentId);
+    const { userId, role } = readUser(req);
+    const meta = await this.service.getDownload(attachmentId, userId, role);
     const data = await fs.readFile(meta.absolutePath);
     res.setHeader('Content-Type', meta.contentType);
     res.setHeader(
@@ -81,13 +84,18 @@ export class WpAttachmentsController {
   // attachment.upload (not wp.edit) — Spec/Member/Deploy all have it.
   // Ownership is enforced inside the service: only uploader or project PM
   // may delete; otherwise a 403 ForbiddenException is thrown.
-  @RequirePermission('attachment.upload')
+  @Roles('Admin', 'ProjectManager', 'SpecificationTeam', 'Member')
   async remove(
     @Param('attachmentId') attachmentId: string,
     @Req() req: Request,
   ): Promise<{ success: true }> {
-    const userId = (req as unknown as { user?: { userId?: string } }).user?.userId ?? '';
-    await this.service.softDelete(attachmentId, userId);
+    const { userId, role } = readUser(req);
+    await this.service.softDelete(attachmentId, userId, role);
     return { success: true };
   }
+}
+
+function readUser(req: Request): { userId: string; role: string | undefined } {
+  const u = (req as unknown as { user?: { userId?: string; role?: string } }).user;
+  return { userId: u?.userId ?? '', role: u?.role };
 }

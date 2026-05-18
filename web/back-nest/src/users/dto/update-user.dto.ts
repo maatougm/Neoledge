@@ -6,9 +6,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
-import { PRESET_ROLE_PERMISSIONS } from '../../permissions/permission-keys.js';
-
-const VALID_ROLES = Object.keys(PRESET_ROLE_PERMISSIONS);
+import { VALID_ROLES } from '../../common/constants/roles.js';
 
 export class UpdateUserDto {
   @IsOptional()

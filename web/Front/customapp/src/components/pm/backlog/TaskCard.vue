@@ -4,8 +4,8 @@
     <input
       class="tc__title"
       :value="task.title"
-      @input="emitUpdate({ title: ($event.target as HTMLInputElement).value })"
       placeholder="Titre de la tâche"
+      @input="emitUpdate({ title: ($event.target as HTMLInputElement).value })"
     />
     <select
       class="tc__select"
@@ -35,7 +35,7 @@
       @input="emitUpdate({ estimatedHours: Number(($event.target as HTMLInputElement).value) })"
     />
     <span class="tc__h-suffix">h</span>
-    <button class="tc__btn tc__btn--danger" @click="emit('remove')" title="Supprimer la tâche">
+    <button class="tc__btn tc__btn--danger" title="Supprimer la tâche" @click="emit('remove')">
       <i class="pi pi-trash" />
     </button>
   </div>

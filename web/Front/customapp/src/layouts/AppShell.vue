@@ -71,7 +71,6 @@ const adminNav: NavSection[] = [
   { heading: 'Gestion', items: [
       { key: 'admin-projects',   label: 'Projets',       icon: 'pi-briefcase',  to: '/app/admin/projects'   },
       { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
-      { key: 'admin-roles',      label: 'Rôles',         icon: 'pi-key',        to: '/app/admin/roles'      },
   ]},
   { heading: 'Rapports', items: [
       { key: 'admin-activity',      label: 'Activité',     icon: 'pi-history',    to: '/app/admin/activity'  },
@@ -85,8 +84,8 @@ const adminNav: NavSection[] = [
 
 const pmNav: NavSection[] = [
   { items: [
-      { key: 'app-home',        label: 'Accueil',        icon: 'pi-inbox',     to: '/app' },
-      { key: 'pm-projects',     label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/pm/projects' },
+      { key: 'pm-dashboard',    label: 'Tableau de bord', icon: 'pi-home',      to: '/app/pm/dashboard' },
+      { key: 'pm-projects',     label: 'Mes projets',     icon: 'pi-briefcase', to: '/app/pm/projects' },
   ]},
   { heading: 'Travail', items: [
       { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
@@ -105,11 +104,16 @@ const pmNav: NavSection[] = [
 // Cache per role+projectId so admins and PMs get the correct back-link.
 // LRU-bounded at 50 entries so a long session visiting many projects doesn't
 // leak memory.
+//
+// NAV_VERSION is bumped any time the nav SHAPE changes — entries cached by
+// older versions never collide with the new layout, so we don't need a
+// `.clear()` call (which would defeat the LRU). Bump on every reorder.
+const NAV_VERSION = 'v4'
 const PROJECT_NAV_CACHE_MAX = 50
 const projectNavCache = new Map<string, NavSection[]>()
 function buildProjectModuleNav(projectId: string): NavSection[] {
   const role = authStore.userRole ?? 'ProjectManager'
-  const cacheKey = `${role}:${projectId}`
+  const cacheKey = `${NAV_VERSION}:${role}:${projectId}`
   const cached = projectNavCache.get(cacheKey)
   if (cached) {
     // Refresh recency: delete + re-set moves the entry to the tail of the Map iteration order.
@@ -119,27 +123,36 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
   }
   const base = `/app/pm/projects/${projectId}`
   const isAdmin = role === 'Admin'
+  // Sidebar order mirrors the PM workflow narrative:
+  //   Cadrage    → questionnaire / meetings / cahier / validations
+  //   Planification → Backlog IA (generate + create sprints) → Backlog
+  //                   Sprint (drop tasks into a sprint) → Assignation
+  //                   (sprint-scoped multi-select assign) → Sprint (active
+  //                   burndown).
+  //   Exécution  → views consumed during in-flight work
+  //   Suivi     → bottom-of-list reporting tabs.
   const sections: NavSection[] = [
     { items: [{ key: isAdmin ? 'admin-projects' : 'pm-projects', label: isAdmin ? 'Projets' : 'Mes projets', icon: 'pi-briefcase', to: isAdmin ? '/app/admin/projects' : '/app/pm/projects' }] },
-    { heading: 'Projet', items: [
+    { heading: 'Cadrage', items: [
         { key: 'proj-overview',     label: 'Aperçu',         icon: 'pi-home',        to: base },
         { key: 'proj-questionnaire', label: 'Questionnaire',  icon: 'pi-list-check',  to: `${base}/questionnaire` },
         { key: 'proj-meetings',     label: 'Réunions',       icon: 'pi-microphone',  to: `${base}/meetings` },
         { key: 'proj-cahier',       label: 'Cahier des charges', icon: 'pi-file-word', to: `${base}/cahier` },
         { key: 'proj-validations',  label: 'Validations',    icon: 'pi-shield',      to: `${base}/validations` },
     ]},
-    { heading: 'Exécution', items: [
+    { heading: 'Planification', items: [
         { key: 'proj-backlog-gen',  label: 'Backlog IA',     icon: 'pi-sparkles',    to: `${base}/backlog-generator` },
-        { key: 'proj-assign-tasks', label: 'Assignation',    icon: 'pi-arrows-h',    to: `${base}/assign-tasks` },
-        { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
-        { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
-        { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
         { key: 'proj-backlogs',     label: 'Backlog Sprint', icon: 'pi-inbox',       to: `${base}/backlogs` },
+        { key: 'proj-assign-tasks', label: 'Assignation',    icon: 'pi-arrows-h',    to: `${base}/assign-tasks` },
         { key: 'proj-sprint',       label: 'Sprint',         icon: 'pi-forward',     to: `${base}/sprint` },
+    ]},
+    { heading: 'Exécution', items: [
+        { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
+        { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
+        { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
     ]},
     { heading: 'Suivi', items: [
         { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
-        { key: 'proj-members',      label: 'Membres',        icon: 'pi-users',       to: `${base}/members` },
         { key: 'proj-activity',     label: 'Activité',       icon: 'pi-history',     to: `${base}/activity` },
     ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
@@ -153,15 +166,30 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
   return sections
 }
 
-const teamNav: NavSection[] = [
+// SpecificationTeam-specific nav — validation surface only; spec reviewers
+// don't get personal-task lists (those are for Members).
+const specTeamNav: NavSection[] = [
   { items: [
-      { key: 'app-home',             label: 'Accueil',           icon: 'pi-inbox',        to: '/app' },
-      { key: 'team-my-tasks',        label: 'Mes tâches',        icon: 'pi-list',         to: '/app/team/my-tasks'        },
-      { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
-      { key: 'team-validations',     label: 'Validations',       icon: 'pi-check-circle', to: '/app/team/validations'     },
+      { key: 'spec-dashboard',       label: 'Tableau de bord',   icon: 'pi-home',         to: '/app/team/dashboard'       },
       { key: 'team-pending-reviews', label: 'Cahiers à valider', icon: 'pi-check-square', to: '/app/team/pending-reviews' },
+      { key: 'team-projects',        label: 'Projets',           icon: 'pi-briefcase',    to: '/app/team/projects'        },
+      { key: 'team-validations',     label: 'Mes validations',   icon: 'pi-check-circle', to: '/app/team/validations'     },
   ]},
   { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
+]
+
+// Member-specific nav — task-focused, no validation surface.
+const memberNav: NavSection[] = [
+  { items: [
+      { key: 'team-home',     label: 'Aperçu',         icon: 'pi-home',      to: '/app/team' },
+      { key: 'team-my-tasks', label: 'Mes tâches',     icon: 'pi-list',      to: '/app/team/my-tasks' },
+      { key: 'team-sprints',  label: 'Sprints actifs', icon: 'pi-forward',   to: '/app/team/sprints' },
+      { key: 'team-projects', label: 'Mes projets',    icon: 'pi-briefcase', to: '/app/team/projects' },
+  ]},
+  { heading: 'Mon espace', items: [
+      { key: 'team-inbox', label: 'Notifications', icon: 'pi-bell',  to: '/app/team/inbox' },
+      { key: 'profile',    label: 'Mon profil',    icon: 'pi-user',  to: '/app/profile' },
+  ]},
 ]
 
 // Compute the nav for a given path — imperative helper, not a computed.
@@ -169,9 +197,10 @@ function computeNavForRoute(path: string, params: Record<string, string | string
   const isProjectRoute = path.startsWith('/app/pm/projects/')
   const projectId = isProjectRoute && typeof params.id === 'string' && params.id ? params.id : null
   if (projectId) return buildProjectModuleNav(projectId)
-  if (authStore.userRole === 'Admin')          return adminNav
-  if (authStore.userRole === 'ProjectManager') return pmNav
-  return teamNav
+  if (authStore.userRole === 'Admin')             return adminNav
+  if (authStore.userRole === 'ProjectManager')    return pmNav
+  if (authStore.userRole === 'SpecificationTeam') return specTeamNav
+  return memberNav
 }
 
 // Use a ref (not a computed) updated via router.afterEach — nav changes AFTER

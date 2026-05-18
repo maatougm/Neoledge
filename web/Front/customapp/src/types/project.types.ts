@@ -89,7 +89,6 @@ export interface ProjectDetail {
   name: string
   clientName: string
   status: ProjectStatus
-  allowManagerCustomFields: boolean
   aiOutput?: string | null
   startDate: string
   endDate: string
@@ -143,8 +142,6 @@ export interface ProjectActivity {
   projectId: string | null
   projectName: string | null
   projectClientName: string | null
-  /** @deprecated use timestamp */
-  createdAt?: string
 }
 
 export interface ActivityStats {

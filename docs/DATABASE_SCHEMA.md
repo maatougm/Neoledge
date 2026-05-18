@@ -280,7 +280,6 @@ The root entity. Soft-deletable; carries the saved cahier as JSON.
 | `projectManagerId` | TEXT | no | — | FK → AppUsers — **NoAction** (PM can't be deleted while owning projects) |
 | `status` | VARCHAR(50) | no | `Draft` | The 9-phase project status (see below) |
 | `priority` | VARCHAR(50) | no | `Medium` | `Low` / `Medium` / `High` / `Critical` |
-| `allowManagerCustomFields` | BOOLEAN | no | false | Gate for the PM adding their own questionnaire fields |
 | `createdByAdminId` | TEXT | no | — | FK → AppUsers, NoAction |
 | `createdAt`, `updatedAt` | TIMESTAMPTZ | no | now() | |
 | **`aiOutput`** | TEXT | yes | — | **The saved cahier des charges as JSON.** See [Domain 3](#domain-3--cahier-des-charges-specification-document). |

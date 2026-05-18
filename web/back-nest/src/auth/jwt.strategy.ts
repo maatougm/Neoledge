@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { PermissionsService } from '../permissions/permissions.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { getJwtSecret } from './jwt-secret.js';
 
 interface JwtPayload {
@@ -31,7 +31,7 @@ export interface AuthedUser {
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     configService: ConfigService,
-    private readonly permissions: PermissionsService,
+    private readonly prisma: PrismaService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -57,10 +57,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
 
     // Reject tokens whose tokenVersion is behind the DB — happens when the
-    // user's roles were edited or revoked since the JWT was issued.
+    // password is reset, the account is deactivated, or session-invalidation
+    // is otherwise triggered (users.service bumps the counter).
     const tokenVersion = payload.tokenVersion ?? 0;
-    const currentVersion = await this.permissions.getTokenVersion(payload.sub);
-    if (tokenVersion !== currentVersion) {
+    const dbUser = await this.prisma.appUser.findUnique({
+      where: { id: payload.sub },
+      select: { tokenVersion: true },
+    });
+    if (!dbUser || tokenVersion !== dbUser.tokenVersion) {
       throw new UnauthorizedException('Session invalidated — please log in again');
     }
     return {
