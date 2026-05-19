@@ -17,9 +17,7 @@ const mockEmbeddings = {
   embed: jest.fn(),
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const PID = 'p1';
 
 function okResult<T>(value: T): Result<T> {
   return Result.ok(value);
@@ -55,7 +53,7 @@ describe('EmbeddingIndexerService', () => {
 
   describe('early-exit guards', () => {
     it('returns {indexed:0,failed:0} on empty items array (no embed roundtrip)', async () => {
-      const r = await service.indexAndStore('segment', [], { projectId: 'p1' });
+      const r = await service.indexAndStore('segment', [], { projectId: PID });
       expect(r).toEqual({ indexed: 0, failed: 0 });
       expect(mockEmbeddings.embed).not.toHaveBeenCalled();
       expect(mockPrisma.$executeRawUnsafe).not.toHaveBeenCalled();
@@ -68,7 +66,7 @@ describe('EmbeddingIndexerService', () => {
         { id: 's1', text: 'foo' },
         { id: 's2', text: 'bar' },
       ];
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 0, failed: 2 });
       expect(mockEmbeddings.embed).not.toHaveBeenCalled();
@@ -86,11 +84,10 @@ describe('EmbeddingIndexerService', () => {
         { id: 's4', text: null as unknown as string },
       ];
 
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 1, failed: 0 });
-      // embed called with only the one non-empty text.
-      expect(mockEmbeddings.embed).toHaveBeenCalledWith(['real text'], 'passage', { projectId: undefined });
+      expect(mockEmbeddings.embed).toHaveBeenCalledWith(['real text'], 'passage', { projectId: PID });
     });
 
     it('returns {indexed:0,failed:0} when every item is filtered out', async () => {
@@ -99,10 +96,42 @@ describe('EmbeddingIndexerService', () => {
         { id: 's2', text: '   ' },
       ];
 
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 0, failed: 0 });
       expect(mockEmbeddings.embed).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Multi-tenancy guard (the projectId requirement) ───────────────────────
+
+  describe('multi-tenancy guard', () => {
+    it('throws when projectId is missing (opts omitted)', async () => {
+      await expect(service.indexAndStore('segment', [{ id: 's1', text: 'foo' }])).rejects.toThrow(
+        /requires opts\.projectId/,
+      );
+      expect(mockEmbeddings.embed).not.toHaveBeenCalled();
+      expect(mockPrisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    });
+
+    it('throws when projectId is explicitly null', async () => {
+      await expect(
+        service.indexAndStore('segment', [{ id: 's1', text: 'foo' }], { projectId: null }),
+      ).rejects.toThrow(/requires opts\.projectId/);
+    });
+
+    it('passes projectId as the 3rd positional UPDATE arg', async () => {
+      mockEmbeddings.embed.mockResolvedValue(okResult([[0.1]]));
+      mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
+
+      await service.indexAndStore('field-value', [{ id: 'fv-1', text: 'Stack: PostgreSQL' }], {
+        projectId: 'proj-42',
+      });
+
+      const call = mockPrisma.$executeRawUnsafe.mock.calls[0];
+      expect(call[1]).toBe('[0.1]'); // vector literal
+      expect(call[2]).toBe('fv-1'); // row id
+      expect(call[3]).toBe('proj-42'); // tenant guard
     });
   });
 
@@ -117,21 +146,17 @@ describe('EmbeddingIndexerService', () => {
         { id: 's2', text: 'bar' },
       ];
 
-      const r = await service.indexAndStore('segment', items, { projectId: 'p1' });
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 0, failed: 2 });
       expect(mockPrisma.$executeRawUnsafe).not.toHaveBeenCalled();
     });
 
     it('treats Result.ok with missing .value as failure', async () => {
-      // Pathological: ok-flagged result without value. The code checks
-      // `result.isFailure || !result.value`.
       const weird = { isFailure: false, isSuccess: true, value: undefined, error: undefined } as unknown as Result<number[][]>;
       mockEmbeddings.embed.mockResolvedValue(weird);
 
-      const items = [{ id: 's1', text: 'foo' }];
-
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }], { projectId: PID });
 
       expect(r).toEqual({ indexed: 0, failed: 1 });
       expect(mockPrisma.$executeRawUnsafe).not.toHaveBeenCalled();
@@ -151,51 +176,58 @@ describe('EmbeddingIndexerService', () => {
       mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
     });
 
-    it("uses TranscriptSegments UPDATE for target='segment'", async () => {
+    it("uses TranscriptSegments UPDATE scoped via parent transcript for target='segment'", async () => {
       const items = [
         { id: 's1', text: 'one' },
         { id: 's2', text: 'two' },
       ];
 
-      const r = await service.indexAndStore('segment', items, { projectId: 'p1' });
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 2, failed: 0 });
       expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledTimes(2);
-      // Both calls use the segment SQL.
       const calls = mockPrisma.$executeRawUnsafe.mock.calls;
-      expect(calls[0][0]).toBe('UPDATE "TranscriptSegments" SET embedding = $1::vector WHERE id = $2');
-      expect(calls[1][0]).toBe('UPDATE "TranscriptSegments" SET embedding = $1::vector WHERE id = $2');
-      // Vectors serialised as [a,b,c] literal.
+      // SQL scopes by the parent transcript's projectId.
+      expect(calls[0][0]).toContain('UPDATE "TranscriptSegments" SET embedding = $1::vector');
+      expect(calls[0][0]).toContain('"MeetingTranscripts"');
+      expect(calls[0][0]).toContain('"projectId" = $3');
       expect(calls[0][1]).toBe('[0.1,0.2,0.3]');
       expect(calls[0][2]).toBe('s1');
-      expect(calls[1][1]).toBe('[0.4,0.5,0.6]');
+      expect(calls[0][3]).toBe(PID);
       expect(calls[1][2]).toBe('s2');
+      expect(calls[1][3]).toBe(PID);
     });
 
-    it("uses ProjectFieldValues UPDATE for target='field-value'", async () => {
+    it("uses ProjectFieldValues UPDATE with projectId guard for target='field-value'", async () => {
       mockEmbeddings.embed.mockResolvedValue(okResult([[0.7, 0.8, 0.9]]));
 
-      const r = await service.indexAndStore('field-value', [{ id: 'fv-1', text: 'Stack: PostgreSQL' }]);
+      const r = await service.indexAndStore('field-value', [{ id: 'fv-1', text: 'Stack: PostgreSQL' }], {
+        projectId: PID,
+      });
 
       expect(r).toEqual({ indexed: 1, failed: 0 });
-      expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
-        'UPDATE "ProjectFieldValues" SET embedding = $1::vector WHERE id = $2',
-        '[0.7,0.8,0.9]',
-        'fv-1',
-      );
+      const call = mockPrisma.$executeRawUnsafe.mock.calls[0];
+      expect(call[0]).toContain('UPDATE "ProjectFieldValues" SET embedding = $1::vector');
+      expect(call[0]).toContain('"projectId" = $3');
+      expect(call[1]).toBe('[0.7,0.8,0.9]');
+      expect(call[2]).toBe('fv-1');
+      expect(call[3]).toBe(PID);
     });
 
-    it("uses MeetingTranscripts summaryEmbedding UPDATE for target='summary'", async () => {
+    it("uses MeetingTranscripts summaryEmbedding UPDATE with projectId guard for target='summary'", async () => {
       mockEmbeddings.embed.mockResolvedValue(okResult([[1, 2, 3]]));
 
-      const r = await service.indexAndStore('summary', [{ id: 'm-1', text: 'meeting summary' }]);
+      const r = await service.indexAndStore('summary', [{ id: 'm-1', text: 'meeting summary' }], {
+        projectId: PID,
+      });
 
       expect(r).toEqual({ indexed: 1, failed: 0 });
-      expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
-        'UPDATE "MeetingTranscripts" SET "summaryEmbedding" = $1::vector WHERE id = $2',
-        '[1,2,3]',
-        'm-1',
-      );
+      const call = mockPrisma.$executeRawUnsafe.mock.calls[0];
+      expect(call[0]).toContain('UPDATE "MeetingTranscripts" SET "summaryEmbedding" = $1::vector');
+      expect(call[0]).toContain('"projectId" = $3');
+      expect(call[1]).toBe('[1,2,3]');
+      expect(call[2]).toBe('m-1');
+      expect(call[3]).toBe(PID);
     });
   });
 
@@ -203,7 +235,6 @@ describe('EmbeddingIndexerService', () => {
 
   describe('per-row failure counting', () => {
     it('counts a row failed when its vector slot is missing (undefined)', async () => {
-      // Two inputs, but embed only returned one vector.
       mockEmbeddings.embed.mockResolvedValue(okResult([[0.1, 0.2]]));
       mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
 
@@ -212,7 +243,7 @@ describe('EmbeddingIndexerService', () => {
         { id: 's2', text: 'two' },
       ];
 
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 1, failed: 1 });
       expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
@@ -221,9 +252,9 @@ describe('EmbeddingIndexerService', () => {
     it('counts UPDATE rejections as failures and continues with the rest', async () => {
       mockEmbeddings.embed.mockResolvedValue(okResult([[0.1], [0.2], [0.3]]));
       mockPrisma.$executeRawUnsafe
-        .mockResolvedValueOnce(1) // s1 ok
-        .mockRejectedValueOnce(new Error('deadlock')) // s2 fails
-        .mockResolvedValueOnce(1); // s3 ok
+        .mockResolvedValueOnce(1)
+        .mockRejectedValueOnce(new Error('deadlock'))
+        .mockResolvedValueOnce(1);
 
       const items = [
         { id: 's1', text: 'one' },
@@ -231,7 +262,7 @@ describe('EmbeddingIndexerService', () => {
         { id: 's3', text: 'three' },
       ];
 
-      const r = await service.indexAndStore('segment', items);
+      const r = await service.indexAndStore('segment', items, { projectId: PID });
 
       expect(r).toEqual({ indexed: 2, failed: 1 });
       expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledTimes(3);
@@ -243,40 +274,9 @@ describe('EmbeddingIndexerService', () => {
         throw 'string error';
       });
 
-      const r = await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }]);
+      const r = await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }], { projectId: PID });
 
       expect(r).toEqual({ indexed: 0, failed: 1 });
-    });
-  });
-
-  // ── projectId plumbing ────────────────────────────────────────────────────
-
-  describe('projectId plumbing', () => {
-    it('forwards projectId to embeddings.embed', async () => {
-      mockEmbeddings.embed.mockResolvedValue(okResult([[0.1]]));
-      mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
-
-      await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }], { projectId: 'proj-42' });
-
-      expect(mockEmbeddings.embed).toHaveBeenCalledWith(['foo'], 'passage', { projectId: 'proj-42' });
-    });
-
-    it('forwards projectId=null when explicitly set', async () => {
-      mockEmbeddings.embed.mockResolvedValue(okResult([[0.1]]));
-      mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
-
-      await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }], { projectId: null });
-
-      expect(mockEmbeddings.embed).toHaveBeenCalledWith(['foo'], 'passage', { projectId: null });
-    });
-
-    it('defaults opts to {} when not passed', async () => {
-      mockEmbeddings.embed.mockResolvedValue(okResult([[0.1]]));
-      mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
-
-      const r = await service.indexAndStore('segment', [{ id: 's1', text: 'foo' }]);
-      expect(r).toEqual({ indexed: 1, failed: 0 });
-      expect(mockEmbeddings.embed).toHaveBeenCalledWith(['foo'], 'passage', { projectId: undefined });
     });
   });
 
@@ -289,8 +289,9 @@ describe('EmbeddingIndexerService', () => {
 
       for (const target of ['segment', 'field-value', 'summary'] as IndexTarget[]) {
         mockEmbeddings.embed.mockClear();
-        await service.indexAndStore(target, [{ id: 'x', text: 'y' }]);
-        expect(mockEmbeddings.embed).toHaveBeenCalledWith(['y'], 'passage', expect.any(Object));
+        mockEmbeddings.embed.mockResolvedValue(okResult([[0.1]]));
+        await service.indexAndStore(target, [{ id: 'x', text: 'y' }], { projectId: PID });
+        expect(mockEmbeddings.embed).toHaveBeenCalledWith(['y'], 'passage', { projectId: PID });
       }
     });
   });

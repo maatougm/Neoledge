@@ -54,8 +54,10 @@ const mkPrisma = () => {
       upsert: jest.fn(async () => ({})),
     },
     project: {
-      findUnique: jest.fn(async () => ({ id: 'p1', name: 'Project', projectManagerId: 'pm-1' })),
-      findFirst: jest.fn(async () => null),
+      // Service reads projects via findFirst({ id, isDeleted: false }) so
+      // soft-deleted projects never serve data. (No findUnique mock — the
+      // service no longer calls it on the Project model.)
+      findFirst: jest.fn(async () => ({ id: 'p1', name: 'Project', projectManagerId: 'pm-1' })),
     },
     projectMember: {
       upsert: jest.fn(async () => ({})),
@@ -181,7 +183,7 @@ describe('WorkPackagesService', () => {
     it('runs ensureProjectMembership for the assignee before notifying', async () => {
       await svc.create('p1', { title: 'Task', assigneeId: 'u-assignee' }, 'u-author');
       // PM lookup → user lookup → upsert
-      expect(prisma.project.findUnique).toHaveBeenCalled();
+      expect(prisma.project.findFirst).toHaveBeenCalled();
       expect(prisma.appUser.findUnique).toHaveBeenCalledWith({
         where: { id: 'u-assignee' },
         select: { role: true, isActive: true },
@@ -703,14 +705,14 @@ describe('WorkPackagesService', () => {
     });
 
     it('rejects when project is missing', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce(null);
+      prisma.project.findFirst.mockResolvedValueOnce(null);
       const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'u-1' }], 'pm-1');
       expect(r.isFailure).toBe(true);
       expect(r.error).toContain('Projet');
     });
 
     it('rejects when sprint is missing or outside the project', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ id: 'p1', name: 'Project', projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ id: 'p1', name: 'Project', projectManagerId: 'pm-1' });
       prisma.sprint.findUnique.mockResolvedValueOnce({ name: 'Other', board: { projectId: 'other' } });
       const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'u-mem' }], 'pm-1', 's-other');
       expect(r.isFailure).toBe(true);
@@ -856,27 +858,27 @@ describe('WorkPackagesService', () => {
 
   describe('ensureProjectMembership (via create path)', () => {
     it('skips when assignee is already the project PM', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
       await svc.create('p1', { title: 'Task', assigneeId: 'pm-1' }, 'u-author');
       expect(prisma.projectMember.upsert).not.toHaveBeenCalled();
     });
 
     it('skips when assignee is an Admin', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
       prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Admin', isActive: true });
       await svc.create('p1', { title: 'Task', assigneeId: 'u-admin' }, 'u-author');
       expect(prisma.projectMember.upsert).not.toHaveBeenCalled();
     });
 
     it('skips when assignee is inactive', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
       prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: false });
       await svc.create('p1', { title: 'Task', assigneeId: 'u-mem' }, 'u-author');
       expect(prisma.projectMember.upsert).not.toHaveBeenCalled();
     });
 
     it('upserts the ProjectMember row for an active Member assignee', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
       prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true });
       await svc.create('p1', { title: 'Task', assigneeId: 'u-mem' }, 'u-author');
       expect(prisma.projectMember.upsert).toHaveBeenCalledWith(
@@ -887,7 +889,7 @@ describe('WorkPackagesService', () => {
     });
 
     it('never throws even when the upsert blows up', async () => {
-      prisma.project.findUnique.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
+      prisma.project.findFirst.mockResolvedValueOnce({ projectManagerId: 'pm-1' });
       prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true });
       prisma.projectMember.upsert.mockRejectedValueOnce(new Error('DB down'));
       const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-mem' }, 'u-author');

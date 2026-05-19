@@ -52,8 +52,8 @@ export class WorkPackagesService {
    */
   private async ensureProjectMembership(projectId: string, userId: string): Promise<void> {
     try {
-      const project = await this.prisma.project.findUnique({
-        where: { id: projectId },
+      const project = await this.prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false },
         select: { projectManagerId: true },
       });
       if (!project || project.projectManagerId === userId) return;
@@ -135,8 +135,8 @@ export class WorkPackagesService {
     wpTitle: string,
     actorId: string,
   ): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { name: true, projectManagerId: true },
     });
     if (!project || !project.projectManagerId) return;
@@ -735,8 +735,8 @@ export class WorkPackagesService {
   ): Promise<Result<{ updated: number }>> {
     if (assignments.length === 0) return Result.ok({ updated: 0 });
 
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { id: true, name: true },
     });
     if (!project) return Result.fail('Projet introuvable');
@@ -769,8 +769,8 @@ export class WorkPackagesService {
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
-      const projectRow = await this.prisma.project.findUnique({
-        where: { id: projectId },
+      const projectRow = await this.prisma.project.findFirst({
+        where: { id: projectId, isDeleted: false },
         select: { projectManagerId: true },
       });
       const projectPmId = projectRow?.projectManagerId ?? null;

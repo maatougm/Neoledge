@@ -11,6 +11,7 @@ const mockPrisma = {
   workPackageComment: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -231,7 +232,7 @@ describe('WpCommentsService', () => {
 
   describe('update()', () => {
     it('returns failure when the comment does not exist', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(null);
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(null);
 
       const result = await service.update('c-1', 'user-1', 'new');
 
@@ -241,7 +242,7 @@ describe('WpCommentsService', () => {
     });
 
     it('refuses to update a comment that belongs to a different user', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment({ userId: 'someone-else' }));
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment({ userId: 'someone-else' }));
 
       const result = await service.update('c-1', 'attacker', 'new');
 
@@ -251,7 +252,7 @@ describe('WpCommentsService', () => {
     });
 
     it('updates with trimmed content when the caller is the author', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment());
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment());
       mockPrisma.workPackageComment.update.mockResolvedValue(makeComment({ content: 'edited' }));
 
       const result = await service.update('c-1', 'user-1', '  edited  ');
@@ -265,8 +266,22 @@ describe('WpCommentsService', () => {
       );
     });
 
+    it('reads with isDeleted:false — a soft-deleted comment cannot be edited', async () => {
+      // The lookup must scope to non-deleted rows. If a deleted comment is
+      // requested, findFirst returns null and update is rejected.
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(null);
+
+      const result = await service.update('c-deleted', 'user-1', 'sneaky edit');
+
+      expect(result.isFailure).toBe(true);
+      expect(mockPrisma.workPackageComment.findFirst).toHaveBeenCalledWith({
+        where: { id: 'c-deleted', isDeleted: false },
+      });
+      expect(mockPrisma.workPackageComment.update).not.toHaveBeenCalled();
+    });
+
     it('returns failure when Prisma update throws', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment());
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment());
       mockPrisma.workPackageComment.update.mockRejectedValue(new Error('DB error'));
 
       const result = await service.update('c-1', 'user-1', 'new');
@@ -280,7 +295,7 @@ describe('WpCommentsService', () => {
 
   describe('delete()', () => {
     it('returns failure when the comment does not exist', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(null);
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(null);
 
       const result = await service.delete('c-1', 'user-1');
 
@@ -290,7 +305,7 @@ describe('WpCommentsService', () => {
     });
 
     it('refuses to delete when caller is not the author', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment({ userId: 'someone-else' }));
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment({ userId: 'someone-else' }));
 
       const result = await service.delete('c-1', 'attacker');
 
@@ -300,7 +315,7 @@ describe('WpCommentsService', () => {
     });
 
     it('soft-deletes (isDeleted:true) when caller is the author', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment());
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment());
       mockPrisma.workPackageComment.update.mockResolvedValue(makeComment({ isDeleted: true }));
 
       const result = await service.delete('c-1', 'user-1');
@@ -313,7 +328,7 @@ describe('WpCommentsService', () => {
     });
 
     it('returns failure when Prisma update throws', async () => {
-      mockPrisma.workPackageComment.findUnique.mockResolvedValue(makeComment());
+      mockPrisma.workPackageComment.findFirst.mockResolvedValue(makeComment());
       mockPrisma.workPackageComment.update.mockRejectedValue(new Error('DB error'));
 
       const result = await service.delete('c-1', 'user-1');

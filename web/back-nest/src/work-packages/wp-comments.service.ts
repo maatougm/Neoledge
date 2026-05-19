@@ -90,7 +90,9 @@ export class WpCommentsService {
 
   async update(id: string, userId: string, content: string) {
     try {
-      const existing = await this.prisma.workPackageComment.findUnique({ where: { id } });
+      // findFirst + isDeleted:false — a soft-deleted comment must not be
+      // editable (was findUnique, which served deleted rows).
+      const existing = await this.prisma.workPackageComment.findFirst({ where: { id, isDeleted: false } });
       if (!existing) return Result.fail('Commentaire introuvable.');
       if (existing.userId !== userId) return Result.fail('Accès refusé.');
       // updatedAt is auto-stamped via @updatedAt on the schema — no manual set.
@@ -108,7 +110,9 @@ export class WpCommentsService {
 
   async delete(id: string, userId: string) {
     try {
-      const existing = await this.prisma.workPackageComment.findUnique({ where: { id } });
+      // findFirst + isDeleted:false — re-deleting an already-soft-deleted
+      // comment should 404, not silently succeed.
+      const existing = await this.prisma.workPackageComment.findFirst({ where: { id, isDeleted: false } });
       if (!existing) return Result.fail<void>('Commentaire introuvable.');
       if (existing.userId !== userId) return Result.fail<void>('Accès refusé.');
       await this.prisma.workPackageComment.update({ where: { id }, data: { isDeleted: true } });
