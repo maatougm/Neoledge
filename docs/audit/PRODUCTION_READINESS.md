@@ -14,13 +14,41 @@
 
 ## TL;DR Verdict
 
-**Status: ship-blocked on a small must-fix list.** The code itself is mature: well-tested (~2,500 tests, 68.83% backend stmt coverage), well-documented (`AI_MODULE_GUIDE.md`), with strong patterns (Result, multi-tenancy guard, planner-worker). The blockers are in the **operational surface** (CI not running tests, no Sentry, no backups, container as root) and a **handful of real correctness bugs** (soft-delete leaks, multi-tenancy hole in pgvector indexer, missing concurrency guards).
+**Status: 🟢 block list CLEARED (14/14) as of `16e44c8`.** All must-fix-before-prod
+items are fixed, tested, and pushed. The code was already mature (~2,500 tests,
+68.83% backend stmt coverage, strong patterns); the remaining 🟠 sprint + 🟡
+backlog items are improvements, not blockers.
 
-| Verdict | Count of issues |
-|---|---|
-| 🔴 **Must fix before next prod deploy** | 14 |
-| 🟠 **Must fix in next sprint** | 24 |
-| 🟡 **Nice to have / future** | 91 |
+| Verdict | Count | Status |
+|---|---|---|
+| 🔴 **Must fix before next prod deploy** | 14 | ✅ **DONE** (commits dff6d77, 20e9549, a2bf787, f802ca9, 16e44c8) |
+| 🟠 **Must fix in next sprint** | 24 | open |
+| 🟡 **Nice to have / future** | 91 | open |
+
+### Block-list completion log
+
+| # | Item | Commit |
+|---|---|---|
+| 1 | backfill `--project-id` SQL injection → parameterised | 20e9549 |
+| 2 | lodash CVE → npm override ≥4.17.24 | dff6d77 |
+| 3 | axios prototype pollution → ^1.16.1 | dff6d77 |
+| 4 | server container runs as root → USER node-app | dff6d77 |
+| 5 | 10 Project.findUnique soft-delete leaks → findFirst+isDeleted | f802ca9 |
+| 6 | pgvector indexer no projectId guard → tenant-scoped UPDATEs | f802ca9 |
+| 7 | wp-comments edit/delete soft-deleted rows → isDeleted filter | f802ca9 |
+| 8 | backlog.accept no concurrency guard → 60s ConflictException | a2bf787 |
+| 9 | cahier.savePersistedCahier race → $transaction + FOR UPDATE | 16e44c8 |
+| 10 | transcribeChunk silent failure → status field surfaced | 16e44c8 |
+| 11 | CI didn't run jest (--passWithNoTests) → runs 1639 tests | a2bf787 |
+| 12 | CI didn't run vitest → runs 867 tests | a2bf787 |
+| 13 | deploy.sh broken on prod (docker stop) → kill-then-rm | a2bf787 |
+| 14 | .env.prod.example 9/40 vars → all 40 documented | 16e44c8 |
+
+Bonus fixes landed alongside: fast-uri + picomatch CVE overrides; restored
+@types/multer + supertest (removed in an earlier cleanup but still referenced);
+removed stale MariaDB service + `prisma db push` from CI (CLAUDE.md violation).
+
+Backend after all fixes: **1639/1639 jest passing**, 0 critical/high npm audit.
 
 ---
 
