@@ -31,6 +31,21 @@ if [ ! -f .env.prod ]; then
   exit 1
 fi
 
+# Recreate one container by kill-then-rm-then-up.
+# AppArmor on the deploy host blocks `docker stop` — `docker compose up -d`
+# alone is a no-op when the container already exists (the rebuilt image sits
+# unused). See CLAUDE.md "Container restart on prod uses kill-then-rm".
+recreate_container() {
+  local name="$1"
+  local pid
+  pid=$(docker inspect -f '{{.State.Pid}}' "$name" 2>/dev/null || true)
+  if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+    echo "  → killing $name (pid $pid)"
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  docker rm -f "$name" 2>/dev/null || true
+}
+
 echo "[1/5] Pulling latest source via git fetch + reset…"
 ( cd /root/neoleadge && git fetch origin nest-back && git reset --hard origin/nest-back )
 
@@ -43,9 +58,20 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres
 until docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres pg_isready -U "${DB_USER:-neoleadge}" >/dev/null 2>&1; do
   sleep 2
 done
+
+# Kill + remove the app containers so the freshly-built images get picked up.
+# Without this, `docker compose up -d server web` is a no-op against the
+# existing containers running the OLD image.
+recreate_container neoleadge_server
+recreate_container neoleadge_web
+
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d server web
 
 echo "[4/5] Applying Prisma migrations inside the server container…"
+# The container entrypoint already runs `prisma migrate deploy` on boot
+# (see Dockerfile), but rerun here for an idempotent log line + so a CI
+# operator running deploy.sh against a half-failed previous deploy still
+# gets the migrations applied.
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T server \
   npx prisma migrate deploy
 

@@ -59,13 +59,15 @@ interface PrismaMock {
   project: { findUnique: jest.Mock }
   projectField: { findMany: jest.Mock }
   meetingTranscript: { findMany: jest.Mock }
-  workPackage: { createMany: jest.Mock }
+  workPackage: { createMany: jest.Mock; count: jest.Mock }
   $transaction: jest.Mock
 }
 
 function makePrismaMock(overrides: Partial<PrismaMock> = {}): PrismaMock {
   const workPackage = {
     createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    // Concurrency guard reads this — default 0 (no recent accept).
+    count: jest.fn().mockResolvedValue(0),
   }
   const prisma: PrismaMock = {
     project: {
@@ -408,5 +410,34 @@ describe('BacklogService.accept', () => {
     const { service } = await buildService({ prisma })
 
     await expect(service.accept('p-fail', 'a', makeBacklog())).rejects.toThrow('DB down')
+  })
+
+  it('rejects a duplicate accept within the 60s concurrency window (409)', async () => {
+    const prisma = makePrismaMock()
+    // A recent AI-generated WP exists → a previous accept just landed.
+    prisma.workPackage.count.mockResolvedValueOnce(1)
+    const { service } = await buildService({ prisma })
+
+    await expect(service.accept('p-dup', 'author-1', makeBacklog())).rejects.toThrow(
+      /déjà accepté récemment/,
+    )
+    // Guard fires BEFORE the transaction — no rows written.
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+    expect(prisma.workPackage.createMany).not.toHaveBeenCalled()
+  })
+
+  it('proceeds when no recent accept exists (count 0)', async () => {
+    const prisma = makePrismaMock()
+    prisma.workPackage.count.mockResolvedValueOnce(0)
+    prisma.workPackage.createMany.mockResolvedValueOnce({ count: 2 }).mockResolvedValueOnce({ count: 3 })
+    const { service } = await buildService({ prisma })
+
+    const out = await service.accept('p-fresh', 'author-1', makeBacklog())
+    expect(out).toEqual({ created: 5 })
+    expect(prisma.workPackage.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ projectId: 'p-fresh' }),
+      }),
+    )
   })
 })
