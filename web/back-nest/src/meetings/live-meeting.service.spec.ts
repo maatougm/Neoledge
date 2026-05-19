@@ -125,18 +125,35 @@ describe('LiveMeetingService', () => {
       expect(out.language).toBe('fr')
     })
 
-    it('returns empty text + null on a non-200 response (graceful)', async () => {
+    it('reports status=service_unavailable on a 503 (model loading)', async () => {
       global.fetch = jest.fn().mockResolvedValue(textResponse(503, 'service unavailable')) as unknown as typeof fetch
 
       const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
-      expect(out).toEqual({ text: '', language: null })
+      expect(out).toEqual({ text: '', language: null, status: 'service_unavailable' })
     })
 
-    it('returns empty text + null on network error (graceful)', async () => {
+    it('reports status=transient_failure on a generic 5xx', async () => {
+      global.fetch = jest.fn().mockResolvedValue(textResponse(500, 'boom')) as unknown as typeof fetch
+
+      const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
+      expect(out).toEqual({ text: '', language: null, status: 'transient_failure' })
+    })
+
+    it('reports status=transient_failure on network error', async () => {
       global.fetch = jest.fn().mockRejectedValue(new Error('network down')) as unknown as typeof fetch
 
       const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
-      expect(out).toEqual({ text: '', language: null })
+      expect(out).toEqual({ text: '', language: null, status: 'transient_failure' })
+    })
+
+    it('reports status=ok on a successful transcription', async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse(200, { segments: [{ text: 'hi', language: 'en' }] }),
+      ) as unknown as typeof fetch
+
+      const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
+      expect(out.status).toBe('ok')
+      expect(out.text).toBe('hi')
     })
 
     it('attaches x-transcription-secret header when configured', async () => {
