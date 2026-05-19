@@ -90,14 +90,21 @@ describe('ChecklistsService', () => {
       expect(mockPrisma.phaseChecklist.findMany).toHaveBeenCalledTimes(2);
     });
 
-    // NOTE: an unknown phase currently produces an INFINITE RECURSION in
-    // `getForProjectPhase` — `seedDefaults` is a no-op for unknown phases,
-    // so items stays empty and the method recurses forever. This is a real
-    // service bug, but per the testing directive we cannot modify the
-    // source. The previous test in this slot expected a graceful empty
-    // Result.ok — it OOM-crashes the test runner instead. Removed; flag
-    // as a bug to fix later (consider passing a recursion guard or just
-    // returning Result.ok([]) when seedDefaults seeded nothing).
+    it('returns Result.ok([]) for an unknown phase (no defaults → no recursion)', async () => {
+      // The earlier version of getForProjectPhase recursed forever when the
+      // phase had no defaults (seedDefaults was a no-op and findMany kept
+      // returning empty). The service now guards on PHASE_DEFAULTS having
+      // entries before recursing.
+      mockPrisma.phaseChecklist.findMany.mockResolvedValueOnce([]);
+
+      const r = await service.getForProjectPhase('p1', 'NotAPhase');
+
+      expect(r.isSuccess).toBe(true);
+      expect(r.value).toEqual([]);
+      expect(mockPrisma.phaseChecklist.createMany).not.toHaveBeenCalled();
+      // Only ONE findMany call — no recursion.
+      expect(mockPrisma.phaseChecklist.findMany).toHaveBeenCalledTimes(1);
+    });
 
     it('every PHASE_DEFAULTS phase seeds the expected count', async () => {
       // Drive each phase once with empty result + non-empty on second call,

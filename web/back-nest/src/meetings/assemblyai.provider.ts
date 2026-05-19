@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config'
  * service response so a provider swap doesn't ripple through the persistence
  * layer.
  */
-export interface AssemblyAiSegment {
+interface AssemblyAiSegment {
   speaker: string
   text: string
   start_time: number

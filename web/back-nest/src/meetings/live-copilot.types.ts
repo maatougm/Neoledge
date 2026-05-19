@@ -105,7 +105,7 @@ export interface ChecklistItem {
   userAction: UserItemAction | null
 }
 
-export interface ChecklistSuggestion {
+interface ChecklistSuggestion {
   question: string
   rationale: string
   urgency: SuggestionUrgency

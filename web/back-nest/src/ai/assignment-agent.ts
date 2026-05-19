@@ -16,7 +16,7 @@ import { buildAssignmentTools } from './agent/tools/assignment-tools.js'
 import { readGlossaryTool } from './agent/tools/glossary-tools.js'
 import { readProjectSummaryTool } from './agent/tools/project-tools.js'
 
-export interface AssignmentSuggestion {
+interface AssignmentSuggestion {
   userId: string
   confidence: number
   rationale: string
