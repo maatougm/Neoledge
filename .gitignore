@@ -37,6 +37,9 @@ dist/
 /tmp/smoke-*.json
 testsprite_tests/
 
+# Stray empty scratch dir (typo of neoleadge)
+neloadge/
+
 # Temp / backup
 *.bak
 *.tmp
