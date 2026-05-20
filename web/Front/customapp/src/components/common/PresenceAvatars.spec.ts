@@ -1,15 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PresenceAvatars from './PresenceAvatars.vue'
-
-interface PresenceUser {
-  userId: string
-  name: string
-  color: string
-}
+import type { PresenceUser } from '@/composables/useCollaborationSocket'
 
 function makeUser(i: number): PresenceUser {
-  return { userId: `u${i}`, name: `User ${i}`, color: '#abcdef' }
+  return { userId: `u${i}`, name: `User ${i}`, color: '#abcdef', editingFieldId: null }
 }
 
 describe('PresenceAvatars', () => {
@@ -40,7 +35,7 @@ describe('PresenceAvatars', () => {
 
   it('uses "?" as initial when a name is empty', () => {
     const wrapper = mount(PresenceAvatars, {
-      props: { presenceList: [{ userId: 'u0', name: '', color: '#000' }] },
+      props: { presenceList: [{ userId: 'u0', name: '', color: '#000', editingFieldId: null }] },
     })
     expect(wrapper.find('.avatar').text()).toBe('?')
   })

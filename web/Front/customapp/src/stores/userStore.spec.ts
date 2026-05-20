@@ -12,7 +12,7 @@ import { _clearHandlers } from './logoutBus'
 const mockedApi = api as unknown as Record<'get' | 'post' | 'put' | 'patch' | 'delete', ReturnType<typeof vi.fn>>
 
 function makeUser(id: string, opts: Partial<{ role: string; isActive: boolean }> = {}) {
-  return { id, email: `${id}@test`, firstName: 'F', lastName: 'L', role: opts.role ?? 'Member', isActive: opts.isActive ?? true }
+  return { id, email: `${id}@test`, firstName: 'F', lastName: 'L', role: opts.role ?? 'Member', isActive: opts.isActive ?? true, createdAt: '2026-01-01T00:00:00Z', lastLoginAt: null as string | null }
 }
 
 beforeEach(() => {

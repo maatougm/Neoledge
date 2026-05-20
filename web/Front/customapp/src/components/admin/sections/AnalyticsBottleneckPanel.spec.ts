@@ -28,7 +28,7 @@ describe('AnalyticsBottleneckPanel', () => {
   it('renders rows when data is present', () => {
     const w = mount(AnalyticsBottleneckPanel, {
       global: { stubs: NEO_LIBRARY_STUBS },
-      props: { loading: false, rows: [{ projectId: 'p1', projectName: 'X', daysStuck: 12, severity: 'high' }] },
+      props: { loading: false, rows: [{ phase: 'Kickoff', currentCount: 3, avgDays: 12, severity: 'high' }] },
     })
     expect(w.exists()).toBe(true)
   })

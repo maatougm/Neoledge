@@ -12,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { computeCoverage } from './coverage-engine'
+import type { CahierSection } from '@/composables/useLiveCopilot'
 
 describe('computeCoverage — empty inputs', () => {
   it('returns 0% coverage when transcript empty and nothing emitted', () => {
@@ -128,7 +129,7 @@ describe('computeCoverage — combined coverage %', () => {
     // 4 / 9 = 44.4% → 44
     expect(computeCoverage('', [], ['contexte', 'livrables', 'conclusion', 'perimetreInclus']).cahierCoveragePct).toBe(44)
     // 9 / 9 = 100
-    const all: Array<Parameters<typeof computeCoverage>[2][number]> = [
+    const all: CahierSection[] = [
       'objectifDocument', 'contexte', 'objectifProjet',
       'perimetreInclus', 'perimetreExclus', 'exigencesFonctionnelles',
       'architectureTechnique', 'livrables', 'conclusion',

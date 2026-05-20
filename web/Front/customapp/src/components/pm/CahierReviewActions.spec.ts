@@ -85,9 +85,9 @@ const AppModalStub = {
   template: `<div v-if="visible" data-stub="AppModal"><slot /><slot name="footer" /></div>`,
 }
 
-function mountIt(props: { projectId?: string; status?: string } = {}) {
+function mountIt(props: { projectId?: string; status?: 'none' | 'pending' | 'approved' | 'rejected' } = {}) {
   return mount(CahierReviewActions, {
-    props: { projectId: 'p1', ...props } as Record<string, unknown>,
+    props: { projectId: 'p1', ...props },
     global: { stubs: { AppModal: AppModalStub } },
   })
 }

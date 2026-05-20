@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { makeApiMock, makeNeolibMock, initPinia, stubs } from '@/__spec-utils'
+import type { ChecklistItem } from '@/composables/useLiveCopilot'
 
 vi.mock('@/lib/api', () => ({
   default: makeApiMock(),
@@ -18,11 +19,12 @@ const baseProps = {
   enabled: true,
   connected: true,
   refreshing: false,
-  checklist: [],
+  checklist: [] as ChecklistItem[],
   hint: null as string | null,
   readyForCahier: false,
   lastSkipReason: null,
   coveredCount: 0,
+  totalCount: 0,
 }
 
 describe('CopilotChecklistPanel', () => {
@@ -33,19 +35,19 @@ describe('CopilotChecklistPanel', () => {
 
   it('mounts in the empty checklist state', () => {
     const w = mount(CopilotChecklistPanel, {
-      props: baseProps as Record<string, unknown>,
+      props: baseProps,
       global: { stubs },
     })
     expect(w.exists()).toBe(true)
   })
 
   it('renders checklist items when provided', () => {
-    const checklist = [
-      { id: 'i1', category: 'contexte', topic: 'Contexte général', status: 'covered', evidence: 'discussed' },
-      { id: 'i2', category: 'perimetreInclus', topic: 'Périmètre', status: 'not_covered', evidence: null },
+    const checklist: ChecklistItem[] = [
+      { id: 'i1', category: 'context', topic: 'Contexte général', question: '', section: 'contexte', status: 'covered', evidence: 'discussed', suggestion: null, userAction: null },
+      { id: 'i2', category: 'features', topic: 'Périmètre', question: '', section: 'perimetreInclus', status: 'missing', evidence: null, suggestion: null, userAction: null },
     ]
     const w = mount(CopilotChecklistPanel, {
-      props: { ...baseProps, checklist, coveredCount: 1 } as Record<string, unknown>,
+      props: { ...baseProps, checklist, coveredCount: 1 },
       global: { stubs },
     })
     expect(w.text()).toMatch(/Contexte|Périmètre/)
@@ -53,7 +55,7 @@ describe('CopilotChecklistPanel', () => {
 
   it('renders the disconnected-state text when connected=false', () => {
     const w = mount(CopilotChecklistPanel, {
-      props: { ...baseProps, connected: false } as Record<string, unknown>,
+      props: { ...baseProps, connected: false },
       global: { stubs },
     })
     // The exact text varies but the panel always renders something about

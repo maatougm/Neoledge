@@ -27,7 +27,7 @@ describe('AnalyticsRiskPanel', () => {
       global: { stubs: NEO_LIBRARY_STUBS },
       props: {
         loading: false,
-        rows: [{ projectId: 'p1', projectName: 'X', clientName: 'Y', riskScore: 75, daysToDeadline: 5 }],
+        rows: [{ projectId: 'p1', projectName: 'X', pmName: null, status: 'Active', riskScore: 75, daysRemaining: 5 }],
       },
     })
     expect(w.exists()).toBe(true)

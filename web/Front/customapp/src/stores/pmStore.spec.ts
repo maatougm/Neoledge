@@ -8,6 +8,7 @@ vi.mock('@/lib/api', () => ({
 import api from '@/lib/api'
 import { usePmStore } from './pmStore'
 import { _clearHandlers } from './logoutBus'
+import type { MeetingTranscriptDetail } from '@/types/pm.types'
 
 const mockedApi = api as unknown as Record<'get' | 'post' | 'put' | 'patch' | 'delete', ReturnType<typeof vi.fn>>
 
@@ -181,11 +182,17 @@ describe('pmStore', () => {
       const s = usePmStore()
       s.currentTranscript = {
         id: 'm1',
+        projectId: 'p1',
+        title: 'Test',
+        durationSeconds: 0,
+        detectedLanguages: 'fr',
+        recordedAt: '2026-01-01T00:00:00Z',
+        createdAt: '2026-01-01T00:00:00Z',
         segments: [
-          { speaker: 'A', text: 'x' },
-          { speaker: 'B', text: 'y' },
+          { id: 's1', speaker: 'A', text: 'x', startTime: 0, endTime: 1, language: 'fr', confidence: 1 },
+          { id: 's2', speaker: 'B', text: 'y', startTime: 1, endTime: 2, language: 'fr', confidence: 1 },
         ],
-      } as never
+      } satisfies MeetingTranscriptDetail
       const r = await s.renameSpeaker('p1', 'm1', 'A', 'Alice')
       expect(r).toBe(true)
       expect(s.currentTranscript?.segments[0].speaker).toBe('Alice')

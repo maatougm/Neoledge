@@ -7,6 +7,7 @@ vi.mock('@/lib/api', () => ({
 
 import api from '@/lib/api'
 import { useSavedFiltersStore } from './savedFiltersStore'
+import type { SavedFilter } from '@/types/filter.types'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -16,11 +17,12 @@ const mockedApi = api as unknown as {
   delete: ReturnType<typeof vi.fn>
 }
 
-const row = (over: Partial<{ id: string; name: string; isDefault: boolean }> = {}) => ({
+const row = (over: Partial<{ id: string; name: string; isDefault: boolean }> = {}): SavedFilter => ({
   id: 'f1',
   name: 'My filter',
   filters: { status: ['Active'] },
   isDefault: false,
+  createdAt: '2026-01-01T00:00:00Z',
   ...over,
 })
 
@@ -79,8 +81,8 @@ describe('savedFiltersStore', () => {
     const patched = row({ name: 'new' })
     mockedApi.put.mockResolvedValueOnce({ data: patched })
     const s = useSavedFiltersStore()
-    s.filters = [r] as never
-    s.activeFilter = r as never
+    s.filters = [r]
+    s.activeFilter = r
     await s.update('f1', { name: 'new' })
     expect(s.filters[0].name).toBe('new')
     expect(s.activeFilter!.name).toBe('new')
@@ -97,8 +99,8 @@ describe('savedFiltersStore', () => {
     const r = row()
     mockedApi.delete.mockResolvedValueOnce({})
     const s = useSavedFiltersStore()
-    s.filters = [r] as never
-    s.activeFilter = r as never
+    s.filters = [r]
+    s.activeFilter = r
     await s.remove('f1')
     expect(s.filters).toEqual([])
     expect(s.activeFilter).toBeNull()
@@ -114,7 +116,7 @@ describe('savedFiltersStore', () => {
   it('setDefault toggles isDefault across the list', async () => {
     mockedApi.patch.mockResolvedValueOnce({})
     const s = useSavedFiltersStore()
-    s.filters = [row({ id: 'a' }), row({ id: 'b', isDefault: true })] as never
+    s.filters = [row({ id: 'a' }), row({ id: 'b', isDefault: true })]
     await s.setDefault('a')
     expect(s.filters.find((f: { id: string; isDefault: boolean }) => f.id === 'a')!.isDefault).toBe(true)
     expect(s.filters.find((f: { id: string; isDefault: boolean }) => f.id === 'b')!.isDefault).toBe(false)
@@ -123,7 +125,7 @@ describe('savedFiltersStore', () => {
   it('applyFilter / clearActiveFilter', () => {
     const r = row()
     const s = useSavedFiltersStore()
-    s.applyFilter(r as never)
+    s.applyFilter(r)
     expect(s.activeFilter).toEqual(r)
     s.clearActiveFilter()
     expect(s.activeFilter).toBeNull()
@@ -131,8 +133,8 @@ describe('savedFiltersStore', () => {
 
   it('reset wipes everything', () => {
     const s = useSavedFiltersStore()
-    s.filters = [row()] as never
-    s.activeFilter = row() as never
+    s.filters = [row()]
+    s.activeFilter = row()
     s.error = 'x'
     s.reset()
     expect(s.filters).toEqual([])

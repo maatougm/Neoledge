@@ -7,6 +7,7 @@ vi.mock('@/lib/api', () => ({
 
 import api from '@/lib/api'
 import { useWorkPackageStore } from './workPackageStore'
+import type { WorkPackage } from '@/types/work-package.types'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -16,12 +17,20 @@ const mockedApi = api as unknown as {
   delete: ReturnType<typeof vi.fn>
 }
 
-const wp = (over: Partial<{ id: string; title: string }> = {}) => ({
+const wp = (over: Partial<{ id: string; title: string }> = {}): WorkPackage => ({
   id: 'w1',
+  projectId: 'p1',
   title: 'Task A',
-  status: 'Open',
+  status: 'New',
   priority: 'Normal',
   type: 'Task',
+  authorId: 'u1',
+  spentHours: 0,
+  percentDone: 0,
+  position: 0,
+  isDeleted: false,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
   ...over,
 })
 
@@ -89,7 +98,7 @@ describe('workPackageStore', () => {
     const w = wp({ id: 'new' })
     mockedApi.post.mockResolvedValueOnce({ data: w })
     const s = useWorkPackageStore()
-    s.items = [wp()] as never
+    s.items = [wp()]
     const out = await s.create('p1', { title: 'New' } as never)
     expect(out).toEqual(w)
     expect(s.items[0].id).toBe('new')
@@ -105,8 +114,8 @@ describe('workPackageStore', () => {
     const patched = { ...wp(), title: 'Renamed' }
     mockedApi.patch.mockResolvedValueOnce({ data: patched })
     const s = useWorkPackageStore()
-    s.items = [wp()] as never
-    s.currentWp = wp() as never
+    s.items = [wp()]
+    s.currentWp = wp()
     await s.update('p1', 'w1', { title: 'Renamed' } as never)
     expect(s.items[0].title).toBe('Renamed')
     expect(s.currentWp!.title).toBe('Renamed')
@@ -115,8 +124,8 @@ describe('workPackageStore', () => {
   it('remove filters items + clears currentWp when matching', async () => {
     mockedApi.delete.mockResolvedValueOnce({})
     const s = useWorkPackageStore()
-    s.items = [wp(), wp({ id: 'w2' })] as never
-    s.currentWp = wp() as never
+    s.items = [wp(), wp({ id: 'w2' })]
+    s.currentWp = wp()
     expect(await s.remove('p1', 'w1')).toBe(true)
     expect(s.items.map((w: { id: string }) => w.id)).toEqual(['w2'])
     expect(s.currentWp).toBeNull()
@@ -204,9 +213,9 @@ describe('workPackageStore', () => {
 
   it('reset clears everything', () => {
     const s = useWorkPackageStore()
-    s.items = [wp()] as never
+    s.items = [wp()]
     s.total = 5
-    s.currentWp = wp() as never
+    s.currentWp = wp()
     s.customFields = [{ id: 'f1' }] as never
     s.error = 'x'
     s.reset()

@@ -13,8 +13,10 @@ import type { ProjectDetail } from '@/types/project.types'
 
 const mockedApi = api as unknown as Record<'get' | 'post' | 'put' | 'patch' | 'delete', ReturnType<typeof vi.fn>>
 
-function makeProject(id = 'p1', opts: Partial<{ name: string; status: string }> = {}) {
-  return { id, name: opts.name ?? 'Proj', clientName: 'ACME', status: opts.status ?? 'Active' }
+import type { ProjectSummary, ProjectStatus } from '@/types/project.types'
+
+function makeProject(id = 'p1', opts: Partial<{ name: string; status: string }> = {}): ProjectSummary {
+  return { id, name: opts.name ?? 'Proj', clientName: 'ACME', status: (opts.status ?? 'Active') as ProjectStatus, projectManagerName: null, projectManagerEmail: null, startDate: '2026-01-01', endDate: '2026-12-31', createdAt: '2026-01-01T00:00:00Z' }
 }
 function makeDetail(id = 'p1'): ProjectDetail {
   return {

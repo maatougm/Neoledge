@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { defineComponent, h, type Ref } from 'vue'
+import { defineComponent, h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -48,11 +48,11 @@ import { useUserManagement } from './useUserManagement'
 
 interface HostExposed {
   store: unknown
-  showCreateDialog: Ref<boolean>
-  showEditDialog: Ref<boolean>
-  editingUser: Ref<{ id: string; firstName: string; lastName: string; email: string } | null>
-  tempPassword: Ref<string | null>
-  showTempPasswordDialog: Ref<boolean>
+  showCreateDialog: boolean
+  showEditDialog: boolean
+  editingUser: { id: string; firstName: string; lastName: string; email: string } | null
+  tempPassword: string | null
+  showTempPasswordDialog: boolean
   openCreate: () => void
   openEdit: (u: { id: string; firstName: string; lastName: string; email: string }) => void
   handleCreate: (p: object) => Promise<void>
