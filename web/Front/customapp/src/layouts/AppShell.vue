@@ -73,11 +73,10 @@ const adminNav: NavSection[] = [
       { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
   ]},
   { heading: 'Rapports', items: [
-      { key: 'admin-activity',      label: 'Activité',     icon: 'pi-history',    to: '/app/admin/activity'  },
+      { key: 'admin-journal',   label: 'Journal',        icon: 'pi-history',  to: '/app/admin/journal'   },
   ]},
   { heading: 'Système', items: [
       { key: 'admin-system',    label: 'Statut système', icon: 'pi-server',   to: '/app/admin/system'    },
-      { key: 'admin-audit',     label: 'Audit',          icon: 'pi-shield',   to: '/app/admin/audit'     },
       { key: 'admin-trash',     label: 'Corbeille',      icon: 'pi-trash',    to: '/app/admin/trash'     },
   ]},
 ]

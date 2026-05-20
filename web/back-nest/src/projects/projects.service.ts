@@ -994,6 +994,7 @@ export class ProjectsService {
       endDate: p.endDate,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
+      manualProgressPct: p.manualProgressPct ?? null,
       projectManager: p.projectManager,
       fields: p.fields?.map((f: any) => ({
         id: f.id, label: f.label, fieldType: f.fieldType, isRequired: f.isRequired,

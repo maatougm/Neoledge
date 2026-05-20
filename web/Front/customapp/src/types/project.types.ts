@@ -94,6 +94,7 @@ export interface ProjectDetail {
   endDate: string
   createdAt: string
   updatedAt: string
+  manualProgressPct?: number | null
   projectManager: UserResponse | null
   fields: ProjectField[]
   fieldValues: ProjectFieldValue[]

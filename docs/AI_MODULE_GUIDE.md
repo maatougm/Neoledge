@@ -413,12 +413,11 @@ After every path produces a cahier:
 
 **Eligibility filter — single source of truth across 3 surfaces:**
 
-Per-project team selection was deliberately removed earlier; the PM should be able to assign any Member or SpecificationTeam user without first adding them to a `ProjectMember` row. The eligible set on every assignment-related surface is the **same union**:
+Tasks are executed by the **Member team only** — the PM owns the project and SpecificationTeam does cahier validation, so neither is assignable. The eligible set on every assignment-related surface is the **same set**:
 
-- The project's own PM (so they can self-assign), AND
-- Every active user with role ∈ `{Member, SpecificationTeam}`.
+- Every active user with role `Member`.
 
-Admins and PMs from **other** projects are excluded — they have no place on this project's task board. The three surfaces that enforce this union and MUST stay aligned:
+The PM, SpecificationTeam, Admins, and PMs from other projects are all excluded. The three surfaces that enforce this set and MUST stay aligned:
 
 | Surface | File | Role |
 |---|---|---|

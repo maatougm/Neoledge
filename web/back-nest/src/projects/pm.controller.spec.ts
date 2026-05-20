@@ -240,26 +240,17 @@ describe('PmController', () => {
       expect(await controller.getAssignableUsers('p1')).toEqual([]);
     });
 
-    it('queries with the role-based eligibility union (PM + Member + SpecTeam)', async () => {
-      mockPrisma.project.findFirst.mockResolvedValue({ projectManagerId: 'pm1' });
+    it('queries for active Member-role users only (no PM, no SpecTeam)', async () => {
+      mockPrisma.project.findFirst.mockResolvedValue({ id: 'p1' });
       mockPrisma.appUser.findMany.mockResolvedValue([
-        { id: 'pm1', firstName: 'PM', lastName: 'X', role: 'ProjectManager' },
         { id: 'm1', firstName: 'M', lastName: 'X', role: 'Member' },
       ]);
       const out = await controller.getAssignableUsers('p1');
-      expect(out).toHaveLength(2);
+      expect(out).toHaveLength(1);
       const whereClause = mockPrisma.appUser.findMany.mock.calls[0][0].where;
       expect(whereClause.isActive).toBe(true);
-      expect(whereClause.OR).toBeDefined();
-    });
-
-    it('omits the PM-id clause when project has no PM', async () => {
-      mockPrisma.project.findFirst.mockResolvedValue({ projectManagerId: null });
-      mockPrisma.appUser.findMany.mockResolvedValue([]);
-      await controller.getAssignableUsers('p1');
-      const whereClause = mockPrisma.appUser.findMany.mock.calls[0][0].where;
-      // The OR has only the role clause; no `{ id: ... }`
-      expect(whereClause.OR).toHaveLength(1);
+      expect(whereClause.role).toBe('Member');
+      expect(whereClause.OR).toBeUndefined();
     });
   });
 
