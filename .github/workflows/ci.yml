@@ -14,22 +14,12 @@ jobs:
       run:
         working-directory: web/back-nest
 
-    services:
-      mariadb:
-        image: mariadb:10.11
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: NeoLeadgeDeployment
-        ports: ['3306:3306']
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-
+    # No DB service: all jest specs use mocked PrismaService.
+    # The gated `pgvector.int.spec` skips unless INTEGRATION_DB_URL is set,
+    # which it isn't here.
     env:
-      DATABASE_URL: mysql://root:root@127.0.0.1:3306/NeoLeadgeDeployment
-      JWT_SECRET: ci-secret
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+      JWT_SECRET: ci-secret-at-least-32-chars-long-padding-aaa
       JWT_EXPIRES_IN: 7d
 
     steps:
@@ -44,10 +34,11 @@ jobs:
 
       - run: npm ci
 
-      - name: Apply schema + migrations
-        run: |
-          npx prisma db push --skip-generate
-          npx prisma generate
+      - name: Prisma client generate
+        # `prisma generate` does not need DB connectivity — it just emits TS
+        # types into node_modules/.prisma/client. `prisma db push` is forbidden
+        # per CLAUDE.md, and `migrate deploy` would need a real DB.
+        run: npx prisma generate
 
       - name: Build
         run: npm run build
@@ -56,8 +47,9 @@ jobs:
         run: npm run lint --if-present
         continue-on-error: true
 
-      - name: Tests
-        run: npm test --if-present -- --passWithNoTests
+      - name: Tests (jest, 1632 specs across 92 suites)
+        # No `--passWithNoTests` — fail loudly on missing/failing tests.
+        run: npx jest
 
   frontend:
     name: Frontend (Vue 3)
@@ -77,6 +69,9 @@ jobs:
           cache-dependency-path: web/Front/customapp/package-lock.json
 
       - run: npm ci
+
+      - name: Tests (vitest, 867 specs across 123 suites)
+        run: npx vitest run
 
       - name: Type-check + build
         run: npm run build

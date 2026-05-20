@@ -526,8 +526,8 @@ RÈGLES :
     if (!aiContent || typeof aiContent !== 'object') {
       throw new BadRequestException('aiContent manquant ou invalide')
     }
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { id: true, aiOutput: true },
     })
     if (!project) throw new BadRequestException('Projet introuvable')
@@ -655,17 +655,28 @@ RÈGLES :
       savedAt: new Date().toISOString(),
     })
 
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true, name: true, aiOutput: true },
-    })
-    if (!project) {
-      throw new BadRequestException('Projet introuvable')
-    }
-
-    await this.prisma.project.update({
-      where: { id: projectId },
-      data: { aiOutput: payload },
+    // Concurrency guard: serialise concurrent saves on the same project with
+    // a row-level lock. Two near-simultaneous saves (e.g. a double-click, or
+    // a regenerate racing a manual save) used to interleave — both read the
+    // old aiOutput, both write, and both fire snapshot + notify. The
+    // SELECT … FOR UPDATE makes the second save block until the first commits.
+    const project = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "Projects" WHERE id = $1 AND "isDeleted" = false FOR UPDATE`,
+        projectId,
+      )
+      const proj = await tx.project.findFirst({
+        where: { id: projectId, isDeleted: false },
+        select: { id: true, name: true, aiOutput: true },
+      })
+      if (!proj) {
+        throw new BadRequestException('Projet introuvable')
+      }
+      await tx.project.update({
+        where: { id: projectId },
+        data: { aiOutput: payload },
+      })
+      return proj
     })
     this.logger.log(`Saved cahier for project ${projectId} (${payload.length} bytes)`)
 
@@ -745,8 +756,8 @@ RÈGLES :
     approverCount: number
     rejectionCount: number
   }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { aiOutput: true },
     })
 
@@ -797,8 +808,8 @@ RÈGLES :
 
   /** Retrieve the previously saved cahier JSON — or null if none. */
   async getPersistedCahier(projectId: string): Promise<{ aiContent: unknown; savedAt: string | null }> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { aiOutput: true },
     })
     if (!project?.aiOutput) return { aiContent: null, savedAt: null }
@@ -819,8 +830,8 @@ RÈGLES :
     section?: string,
   ): Promise<void> {
     // Reject self-approval — the project's PM cannot approve their own cahier.
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { projectManagerId: true },
     })
     if (project?.projectManagerId === userId) {
@@ -855,8 +866,8 @@ RÈGLES :
     status: 'approved' | 'rejected',
     comment: string,
   ): Promise<void> {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
       select: { name: true, projectManagerId: true },
     })
     if (!project?.projectManagerId) return

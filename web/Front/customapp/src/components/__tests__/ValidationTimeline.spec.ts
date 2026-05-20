@@ -4,24 +4,21 @@ import { createPinia, setActivePinia } from 'pinia'
 import ValidationTimeline from '@/components/pm/ValidationTimeline.vue'
 import type { ProjectValidation } from '@/types/pm.types'
 
-// Mock axios (ValidationTimeline transitively imports @/lib/api which calls axios.create)
-vi.mock('axios', () => {
-  const instance = {
+// Mock @/lib/api directly — bypasses axios entirely. Cleaner than mocking
+// the axios module because api.ts mutates `axios.defaults` at module load,
+// and replicating the defaults shape on a vi.mock is fragile.
+vi.mock('@/lib/api', () => {
+  const apiMock = {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
-    interceptors: {
-      request: { use: vi.fn() },
-      response: { use: vi.fn() },
-    },
   }
-  const mock = {
-    ...instance,
-    create: vi.fn(() => instance),
+  return {
+    default: apiMock,
+    extractErrorMessage: (e: unknown) => (e instanceof Error ? e.message : 'unknown'),
   }
-  return { default: mock, ...mock }
 })
 
 // Mock the useApp store so it doesn't need a real Pinia setup with real JWT
@@ -60,8 +57,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('renders the correct number of timeline entries', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [
         makeValidation({ id: 'v1' }),
         makeValidation({ id: 'v2', isApproved: false }),
@@ -76,8 +73,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows green dot for isApproved=true', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ isApproved: true })],
     })
 
@@ -90,8 +87,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows "Approuvé ✓" NeoTag for isApproved=true', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ isApproved: true })],
     })
 
@@ -104,8 +101,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows red dot for isApproved=false', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ isApproved: false })],
     })
 
@@ -118,8 +115,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows "Rejeté ✗" NeoTag for isApproved=false', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ isApproved: false })],
     })
 
@@ -132,8 +129,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows empty state when validations array is empty', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({ data: [] })
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({ data: [] })
 
     const wrapper = mount(ValidationTimeline, { props: { projectId: 'p1' } })
     await flushPromises()
@@ -144,8 +141,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('shows comment in italic when comment is present', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ comment: 'Besoin de révision' })],
     })
 
@@ -158,8 +155,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('does not render comment element when comment is null', async () => {
-    const axiosMock = await import('axios')
-    vi.mocked(axiosMock.default.get).mockResolvedValueOnce({
+    const apiMock = await import('@/lib/api')
+    vi.mocked(apiMock.default.get).mockResolvedValueOnce({
       data: [makeValidation({ comment: null })],
     })
 
@@ -170,8 +167,8 @@ describe('ValidationTimeline', () => {
   })
 
   it('calls API with correct projectId', async () => {
-    const axiosMock = await import('axios')
-    const getSpy = vi.mocked(axiosMock.default.get).mockResolvedValueOnce({ data: [] })
+    const apiMock = await import('@/lib/api')
+    const getSpy = vi.mocked(apiMock.default.get).mockResolvedValueOnce({ data: [] })
 
     mount(ValidationTimeline, { props: { projectId: 'project-abc' } })
     await flushPromises()

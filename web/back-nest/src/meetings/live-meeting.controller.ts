@@ -36,8 +36,10 @@ export class LiveMeetingController {
   )
   async transcribeChunk(
     @UploadedFile() audio: Express.Multer.File,
-  ): Promise<{ text: string; language: string | null }> {
+  ): Promise<{ text: string; language: string | null; status: 'ok' | 'transient_failure' | 'service_unavailable' }> {
     if (!audio?.buffer?.length) throw new BadRequestException('Chunk audio requis.');
+    // Forwards { text, language, status } — the live UI uses `status` to show
+    // "chunk dropped, retrying" instead of silently losing words.
     return this.service.transcribeChunk(audio.buffer, audio.mimetype || 'audio/webm');
   }
 

@@ -44,6 +44,14 @@ export class EmbeddingIndexerService {
     if (items.length === 0) return { indexed: 0, failed: 0 }
     if (!this.embeddings.isConfigured()) return { indexed: 0, failed: items.length }
 
+    // Multi-tenancy: the UPDATE statements are scoped by projectId so a
+    // buggy caller can never overwrite another tenant's vectors. Every
+    // existing call site already passes opts.projectId; require it.
+    const projectId = opts.projectId
+    if (!projectId) {
+      throw new Error('indexAndStore requires opts.projectId for tenant scoping')
+    }
+
     // Filter out empty texts upfront — the embed endpoint would pad with
     // a zero vector, but we'd rather not waste the SQL roundtrip.
     const filtered = items.filter((it) => typeof it.text === 'string' && it.text.trim().length > 0)
@@ -52,7 +60,7 @@ export class EmbeddingIndexerService {
     const result = await this.embeddings.embed(
       filtered.map((it) => it.text),
       'passage',
-      { projectId: opts.projectId },
+      { projectId },
     )
     if (result.isFailure || !result.value) {
       this.logger.warn(`indexAndStore ${target}: embed failed — ${result.error ?? 'unknown'}`)
@@ -66,7 +74,8 @@ export class EmbeddingIndexerService {
       const vec = result.value[i]
       if (!vec) { failed += 1; continue }
       try {
-        await this.prisma.$executeRawUnsafe(updateSql, `[${vec.join(',')}]`, filtered[i].id)
+        // $1 vector literal, $2 row id, $3 projectId (tenant guard).
+        await this.prisma.$executeRawUnsafe(updateSql, `[${vec.join(',')}]`, filtered[i].id, projectId)
         indexed += 1
       } catch (e) {
         failed += 1
@@ -81,12 +90,21 @@ export class EmbeddingIndexerService {
 
   private updateSqlFor(target: IndexTarget): string {
     switch (target) {
+      // Segments have no projectId column — scope via the parent transcript.
       case 'segment':
-        return `UPDATE "TranscriptSegments" SET embedding = $1::vector WHERE id = $2`
+        return `UPDATE "TranscriptSegments" SET embedding = $1::vector
+                 WHERE id = $2
+                   AND EXISTS (
+                     SELECT 1 FROM "MeetingTranscripts" m
+                      WHERE m.id = "TranscriptSegments"."transcriptId"
+                        AND m."projectId" = $3
+                   )`
       case 'field-value':
-        return `UPDATE "ProjectFieldValues" SET embedding = $1::vector WHERE id = $2`
+        return `UPDATE "ProjectFieldValues" SET embedding = $1::vector
+                 WHERE id = $2 AND "projectId" = $3`
       case 'summary':
-        return `UPDATE "MeetingTranscripts" SET "summaryEmbedding" = $1::vector WHERE id = $2`
+        return `UPDATE "MeetingTranscripts" SET "summaryEmbedding" = $1::vector
+                 WHERE id = $2 AND "projectId" = $3`
     }
   }
 }

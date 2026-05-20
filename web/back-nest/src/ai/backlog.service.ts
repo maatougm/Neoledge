@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadGatewayException, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadGatewayException, HttpException, HttpStatus, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -114,6 +114,26 @@ export class BacklogService {
   async accept(projectId: string, authorId: string, backlog: ProposedBacklog): Promise<{ created: number }> {
     const safe = sanitizeBacklog(backlog);
     if (safe.epics.length === 0) return { created: 0 };
+
+    // Concurrency guard. A PM double-clicking "Accept" used to generate two
+    // parallel transactions, each creating the full Epic + Task tree. Any
+    // AI-generated WorkPackage created on this project in the last 60s means
+    // an accept just landed — reject the duplicate with 409. The
+    // `aiGeneratedFrom` tag is set on every accept-created row (see
+    // `toWpCreate`), so this catches both backlog-accept and any other
+    // AI write path that uses the same tag.
+    const recentAcceptCount = await this.prisma.workPackage.count({
+      where: {
+        projectId,
+        aiGeneratedFrom: AI_GENERATED_TAG,
+        createdAt: { gte: new Date(Date.now() - 60_000) },
+      },
+    });
+    if (recentAcceptCount > 0) {
+      throw new ConflictException(
+        'Backlog déjà accepté récemment. Veuillez patienter avant de réessayer.',
+      );
+    }
 
     // Pre-generate parent IDs client-side so we can batch tasks under each epic
     // with a single createMany — was previously 1 insert per epic + 1 insert

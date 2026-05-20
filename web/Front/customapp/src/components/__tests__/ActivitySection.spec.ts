@@ -223,7 +223,7 @@ describe('ActivitySection', () => {
   // ── Auto-refresh ───────────────────────────────────────────────────────────
 
   describe('auto-refresh', () => {
-    it('calls the API again after 60 seconds', async () => {
+    it('calls the API again after the refresh interval (15 s)', async () => {
       mockSuccessfulFetch()
       const wrapper = mount(ActivitySection, {
         global: { plugins: [createPinia()] },
@@ -232,12 +232,12 @@ describe('ActivitySection', () => {
 
       expect(mockedAxios.get).toHaveBeenCalledTimes(2) // initial load: activity + stats
 
-      // Queue next responses before advancing timers
+      // The component uses a 15 s REFRESH_INTERVAL_MS — bump one tick.
       mockSuccessfulFetch()
-      vi.advanceTimersByTime(60_000)
+      vi.advanceTimersByTime(15_000)
       await flushPromises()
 
-      expect(mockedAxios.get).toHaveBeenCalledTimes(4) // second load
+      expect(mockedAxios.get).toHaveBeenCalledTimes(4) // second load: +activity, +stats
       wrapper.unmount()
     })
 

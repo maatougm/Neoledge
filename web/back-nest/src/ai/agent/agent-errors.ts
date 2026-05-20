@@ -13,13 +13,10 @@ export class AgentEmitMissedError extends Error {
   }
 }
 
-/** A tool handler threw or the provider returned an unrecoverable status. */
-export class AgentToolFailureError extends Error {
-  constructor(public readonly toolName: string, public readonly cause: unknown) {
-    super(`Tool "${toolName}" failed: ${cause instanceof Error ? cause.message : String(cause)}`)
-    this.name = 'AgentToolFailureError'
-  }
-}
+// AgentToolFailureError removed in cleanup — the agent runtime surfaces
+// tool errors to the model via a JSON `{error}` reply (see openai-compatible-
+// tool-loop.ts), it doesn't throw. Restore from git if a thrown-error path
+// is added in the future.
 
 /** Wall-clock cap exceeded across the whole loop (vs per-call AbortSignal). */
 export class AgentLoopTimeoutError extends Error {

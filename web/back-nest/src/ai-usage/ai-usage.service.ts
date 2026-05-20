@@ -2,7 +2,7 @@ import { Injectable, Logger, ForbiddenException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 
-export type AiFeature =
+type AiFeature =
   | 'cahier'
   | 'checklist'
   | 'backlog'

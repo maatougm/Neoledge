@@ -61,6 +61,11 @@ export class ChecklistsService {
     });
 
     if (items.length === 0) {
+      // Guard: only seed + recurse when this phase HAS defaults — otherwise
+      // seedDefaults is a no-op and we'd recurse forever (real bug surfaced
+      // by the unit test suite).
+      const defaults = PHASE_DEFAULTS[phase] ?? [];
+      if (defaults.length === 0) return Result.ok([]);
       await this.seedDefaults(projectId, phase);
       return this.getForProjectPhase(projectId, phase);
     }

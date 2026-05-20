@@ -25,15 +25,6 @@ import { AiUsageService } from '../../ai-usage/ai-usage.service.js'
 
 export type EmbeddingInputType = 'passage' | 'query'
 
-export interface EmbeddingsServiceConfig {
-  /** Where the FastAPI lives. Defaults to `http://transcription:8000` (docker-internal). */
-  baseUrl?: string
-  /** Shared secret. Required. */
-  secret?: string
-  /** Per-call timeout, ms. Default 30s — embedding 64 short texts on CPU is ~2s. */
-  timeoutMs?: number
-}
-
 interface EmbedResponseBody {
   embeddings: number[][]
   model: string

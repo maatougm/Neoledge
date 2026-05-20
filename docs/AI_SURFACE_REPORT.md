@@ -1,5 +1,13 @@
 # AI Surface Report — NeoLeadge
 
+> ⚠️ **SUPERSEDED (2026-05-12).** This report is kept for history only. The
+> authoritative, up-to-date AI reference is **[`AI_MODULE_GUIDE.md`](./AI_MODULE_GUIDE.md)**
+> (post Phase 1-5: planner-worker default, section streaming, pgvector retrieval,
+> live-meeting capture). Some details below are stale — most notably the meeting
+> flow: meetings are now captured **live** in the browser (`getDisplayMedia` →
+> `MediaRecorder` → `/meetings/live/transcribe-chunk` → `saveLiveTranscript`),
+> **not** uploaded as an audio file. Trust the guide where the two disagree.
+>
 > Deep inventory of every AI agent, prompt, tool, provider call, and HTTP
 > endpoint that touches an LLM or a transcription engine in the NeoLeadge
 > backend.
