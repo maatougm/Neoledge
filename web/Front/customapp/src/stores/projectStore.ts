@@ -41,10 +41,11 @@ import type {
  * Returns 100 when there are no required fields.
  */
 export function computeProgress(project: ProjectDetail): number {
-  const requiredFields = project.fields.filter((f) => f.isRequired)
+  const requiredFields = (project.fields ?? []).filter((f) => f.isRequired)
   if (requiredFields.length === 0) return 100
+  const fieldValues = project.fieldValues ?? []
   const filled = requiredFields.filter((f) => {
-    const val = project.fieldValues.find((v) => v.projectFieldId === f.id)
+    const val = fieldValues.find((v) => v.projectFieldId === f.id)
     return val?.value !== null && val?.value !== undefined && val.value.trim() !== ''
   })
   return Math.round((filled.length / requiredFields.length) * 100)
