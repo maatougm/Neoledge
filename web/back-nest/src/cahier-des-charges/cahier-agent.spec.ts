@@ -121,7 +121,7 @@ describe('runCahierPlannerWorker', () => {
       .mockResolvedValue({ items: [] })
     glossaryHandler = jest
       .spyOn(readGlossaryTool, 'handler')
-      .mockResolvedValue({ terms: [] })
+      .mockResolvedValue({ term: '', definition: null })
   })
 
   afterEach(() => {

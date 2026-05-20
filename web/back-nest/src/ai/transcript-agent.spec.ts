@@ -382,7 +382,7 @@ describe('runTranscriptAgent', () => {
 
   it('propagates errors from runner.run unchanged', async () => {
     const failingRunner: MockRunner = {
-      run: jest.fn(async () => {
+      run: jest.fn(async (_args: RunnerRunArgs) => {
         throw new Error('agent loop crashed')
       }),
     }

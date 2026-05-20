@@ -397,8 +397,9 @@ describe('TimeTrackingService', () => {
       mockPrisma.timeEntry.findMany.mockResolvedValue([e]);
       const r = await service.getWeeklyGrid('user-1', '2026-05-11');
       expect(r.isSuccess).toBe(true);
-      expect(r.value?.entries).toEqual([e]);
-      expect(r.value?.start).toBe('2026-05-11');
+      const grid = r.value as { entries: unknown[]; start: string; timezone: string };
+      expect(grid?.entries).toEqual([e]);
+      expect(grid?.start).toBe('2026-05-11');
       const call = mockPrisma.timeEntry.findMany.mock.calls[0][0] as { where: { userId: string; spentOn: { gte: Date; lte: Date } } };
       expect(call.where.userId).toBe('user-1');
       expect(call.where.spentOn.gte).toBeInstanceOf(Date);
@@ -411,13 +412,13 @@ describe('TimeTrackingService', () => {
     it('defaults the timezone to Europe/Paris when not supplied', async () => {
       mockPrisma.timeEntry.findMany.mockResolvedValue([]);
       const r = await service.getWeeklyGrid('user-1', '2026-05-11');
-      expect(r.value?.timezone).toBe('Europe/Paris');
+      expect((r.value as { timezone: string })?.timezone).toBe('Europe/Paris');
     });
 
     it('uses a supplied timezone in the result envelope', async () => {
       mockPrisma.timeEntry.findMany.mockResolvedValue([]);
       const r = await service.getWeeklyGrid('user-1', '2026-05-11', 'America/New_York');
-      expect(r.value?.timezone).toBe('America/New_York');
+      expect((r.value as { timezone: string })?.timezone).toBe('America/New_York');
     });
 
     it('returns failure when Prisma throws', async () => {
@@ -438,14 +439,15 @@ describe('TimeTrackingService', () => {
       mockPrisma.timeEntry.findMany.mockResolvedValue([e1, e2, e3]);
       const r = await service.getSummary('proj-1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value?.total).toBe(9);
-      const alice = r.value?.byUser.find((u) => u.userId === 'u1');
-      const bob = r.value?.byUser.find((u) => u.userId === 'u2');
+      const summary = r.value as { total: number; byUser: { userId: string; name: string; hours: number }[]; byActivity: { activity: string; hours: number }[] };
+      expect(summary?.total).toBe(9);
+      const alice = summary?.byUser.find((u) => u.userId === 'u1');
+      const bob = summary?.byUser.find((u) => u.userId === 'u2');
       expect(alice?.hours).toBe(5);
       expect(alice?.name).toBe('Alice A');
       expect(bob?.hours).toBe(4);
-      const dev = r.value?.byActivity.find((a) => a.activity === 'development');
-      const meet = r.value?.byActivity.find((a) => a.activity === 'meeting');
+      const dev = summary?.byActivity.find((a) => a.activity === 'development');
+      const meet = summary?.byActivity.find((a) => a.activity === 'meeting');
       expect(dev?.hours).toBe(7);
       expect(meet?.hours).toBe(2);
     });
@@ -455,14 +457,14 @@ describe('TimeTrackingService', () => {
       const big   = makeEntry({ id: 'b', userId: 'u2', hours: 9, user: { id: 'u2', firstName: 'B', lastName: 'B' } });
       mockPrisma.timeEntry.findMany.mockResolvedValue([small, big]);
       const r = await service.getSummary('proj-1');
-      expect(r.value?.byUser.map((u) => u.userId)).toEqual(['u2', 'u1']);
+      expect((r.value as { byUser: { userId: string }[] })?.byUser.map((u) => u.userId)).toEqual(['u2', 'u1']);
     });
 
     it('falls back to "Unknown" when the relation is missing', async () => {
       const orphan = makeEntry({ id: 'a', userId: 'u-ghost', hours: 1, user: undefined });
       mockPrisma.timeEntry.findMany.mockResolvedValue([orphan]);
       const r = await service.getSummary('proj-1');
-      expect(r.value?.byUser[0].name).toBe('Unknown');
+      expect((r.value as { byUser: { name: string }[] })?.byUser[0].name).toBe('Unknown');
     });
 
     it('returns failure when Prisma throws', async () => {

@@ -48,7 +48,7 @@ describe('AttachmentsService', () => {
       mockPrisma.projectAttachment.findMany.mockResolvedValue([makeRow()]);
       const r = await service.getProjectAttachments('p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value[0]).toEqual(expect.objectContaining({
+      expect(r.value![0]).toEqual(expect.objectContaining({
         id: 'a1', fileName: 'doc.pdf', uploadedByUserName: 'A B', fileSize: 1024,
         downloadUrl: '/api/projects/p1/attachments/a1/download',
       }));
@@ -199,7 +199,7 @@ describe('AttachmentsService', () => {
     it('formats KB / MB / GB', async () => {
       mockPrisma.projectAttachment.aggregate.mockResolvedValue({ _sum: { fileSize: BigInt(1024 * 1024 * 2) } });
       const r = await service.getTotalStorage();
-      expect(r.value.formatted).toMatch(/MB/);
+      expect(r.value!.formatted).toMatch(/MB/);
     });
   });
 });

@@ -241,10 +241,10 @@ describe('AuthService', () => {
     });
 
     it('collapses the message to "Authentication failed" in production', async () => {
-      mockConfig.get.mockImplementation((key: string) => {
+      mockConfig.get.mockImplementation(((key: string) => {
         if (key === 'NODE_ENV') return 'production';
         return undefined;
-      });
+      }) as Parameters<typeof mockConfig.get.mockImplementation>[0]);
       mockPrisma.appUser.findUnique.mockResolvedValueOnce(null);
 
       await expect(service.login('ghost@example.com', 'pw')).rejects.toMatchObject({
@@ -595,7 +595,7 @@ describe('AuthService', () => {
       expect(ms).toBeLessThan(65 * 60_000);
 
       expect(mockMail.send).toHaveBeenCalled();
-      const [toEmail, subject, html] = mockMail.send.mock.calls[0] as [string, string, string];
+      const [toEmail, subject, html] = mockMail.send.mock.calls[0] as unknown as [string, string, string];
       expect(toEmail).toBe(user.email);
       expect(subject).toMatch(/Réinitialisation/);
       // The reset link in the email carries the RAW token, not the hash.

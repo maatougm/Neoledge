@@ -175,7 +175,7 @@ describe('TemplatesService', () => {
 
       const r = await service.applyToProject('t1', 'p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.skipped).toEqual(['Existing']);
+      expect((r.value as { skipped: string[] }).skipped).toEqual(['Existing']);
       expect(mockPrisma.projectField.create).toHaveBeenCalledTimes(1);
       expect(mockPrisma.projectFieldValue.create).toHaveBeenCalledTimes(1);
     });
@@ -201,7 +201,7 @@ describe('TemplatesService', () => {
       mockPrisma.projectField.findMany.mockResolvedValue([]);
       const r = await service.applyToProject('t1', 'p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.skipped).toEqual([]);
+      expect((r.value as { skipped: string[] }).skipped).toEqual([]);
       expect(mockPrisma.projectField.create).not.toHaveBeenCalled();
     });
   });

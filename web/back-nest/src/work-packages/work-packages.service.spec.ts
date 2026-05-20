@@ -80,7 +80,8 @@ const mkPrisma = () => {
   };
 };
 // Shared back-reference so $transaction's tx callback hits the same mocked methods.
-let prismaRef: ReturnType<typeof mkPrisma>;
+// Cast (not annotated) to break the TS2502 circular self-reference.
+let prismaRef = {} as ReturnType<typeof mkPrisma>;
 
 describe('WorkPackagesService', () => {
   let prisma: ReturnType<typeof mkPrisma>;

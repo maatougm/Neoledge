@@ -57,8 +57,8 @@ describe('ProjectMembersService', () => {
       ]);
       const r = await service.findAll('p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.projectManagerId).toBe('pm1');
-      expect(r.value.members).toHaveLength(1);
+      expect(r.value!.projectManagerId).toBe('pm1');
+      expect(r.value!.members).toHaveLength(1);
     });
 
     it('handles projectManagerId null', async () => {
@@ -66,7 +66,7 @@ describe('ProjectMembersService', () => {
       mockPrisma.projectMember.findMany.mockResolvedValue([]);
       const r = await service.findAll('p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.projectManagerId).toBeNull();
+      expect(r.value!.projectManagerId).toBeNull();
     });
   });
 
@@ -126,7 +126,7 @@ describe('ProjectMembersService', () => {
 
       const r = await service.add('p1', 'u1', 'Dev');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.id).toBe('mem-1');
+      expect(r.value!.id).toBe('mem-1');
       // Allow the fire-and-forget promise to resolve before assertion.
       await new Promise((resolve) => setImmediate(resolve));
       expect(mockNotifications.notifyEnhanced).toHaveBeenCalled();
@@ -215,7 +215,7 @@ describe('ProjectMembersService', () => {
       const r = await service.remove('m1');
       expect(r.isFailure).toBe(true);
       expect(r.error).toMatch(/^BLOCKERS:/);
-      const json = JSON.parse(r.error.replace('BLOCKERS:', ''));
+      const json = JSON.parse(r.error!.replace('BLOCKERS:', ''));
       expect(json).toEqual({ workPackages: 3, timeEntries: 2, watchers: 0, attendees: 0 });
     });
 

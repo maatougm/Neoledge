@@ -334,7 +334,7 @@ describe('runAssignmentAgent', () => {
       makeStubHistoryTool(),
     ])
     const runner: MockRunner = {
-      run: jest.fn(async () => ({
+      run: jest.fn(async (_args: RunnerRunArgs) => ({
         output: { items: undefined as unknown as AssignmentSuggestionForWp[] },
         iterations: 1,
         toolCallsLog: [],
@@ -362,7 +362,7 @@ describe('runAssignmentAgent', () => {
       makeStubHistoryTool(),
     ])
     const runner: MockRunner = {
-      run: jest.fn(async () => {
+      run: jest.fn(async (_args: RunnerRunArgs) => {
         throw new Error('agent emit missed')
       }),
     }

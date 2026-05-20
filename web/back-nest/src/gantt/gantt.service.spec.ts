@@ -44,12 +44,13 @@ describe('GanttService', () => {
       mockPrisma.milestone.findMany.mockResolvedValue([{ id: 'm1' }]);
       const r = await service.getGanttPayload('p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value.dependencies).toEqual([
+      const payload = r.value as { dependencies: unknown[]; workPackages: unknown[]; milestones: unknown[] };
+      expect(payload.dependencies).toEqual([
         { fromWpId: 'a', toWpId: 'b', type: 'FS' },
         { fromWpId: 'a', toWpId: 'c', type: 'FF' },
       ]);
-      expect(r.value.workPackages).toHaveLength(2);
-      expect(r.value.milestones).toHaveLength(1);
+      expect(payload.workPackages).toHaveLength(2);
+      expect(payload.milestones).toHaveLength(1);
     });
 
     it('handles prisma failure', async () => {
@@ -254,7 +255,7 @@ describe('GanttService', () => {
       ]);
       const r = await service.listBaselines('p1');
       expect(r.isSuccess).toBe(true);
-      expect(r.value[0]).toEqual(expect.objectContaining({ snapshotName: 'S1', wpCount: 5 }));
+      expect((r.value as unknown[])[0]).toEqual(expect.objectContaining({ snapshotName: 'S1', wpCount: 5 }));
     });
 
     it('handles failure', async () => {
@@ -288,14 +289,14 @@ describe('GanttService', () => {
       ]);
       const r = await service.compareBaseline('p1', 'S1');
       expect(r.isSuccess).toBe(true);
-      const drift = r.value;
-      const w1 = drift.find((d: any) => d.workPackageId === 'wp1');
-      expect(w1.delta).toBe(7);
-      expect(w1.percentDoneDelta).toBe(50);
-      expect(w1.estimatedHoursDelta).toBe(2);
-      const w2 = drift.find((d: any) => d.workPackageId === 'wp2');
-      expect(w2.deleted).toBe(true);
-      expect(w2.title).toBe('(deleted)');
+      const drift = r.value as Array<Record<string, unknown>>;
+      const w1 = drift.find((d) => d['workPackageId'] === 'wp1')!;
+      expect(w1['delta']).toBe(7);
+      expect(w1['percentDoneDelta']).toBe(50);
+      expect(w1['estimatedHoursDelta']).toBe(2);
+      const w2 = drift.find((d) => d['workPackageId'] === 'wp2')!;
+      expect(w2['deleted']).toBe(true);
+      expect(w2['title']).toBe('(deleted)');
     });
 
     it('handles failure', async () => {
