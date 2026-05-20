@@ -287,6 +287,33 @@ export class PmController {
     return users;
   }
 
+  /**
+   * Set / clear the manual progress override (0-100, or null = auto from
+   * closed work packages). PM/Admin only.
+   */
+  @Patch('projects/:id/progress')
+  @ProjectAccess('id')
+  async setProgress(
+    @Param('id') projectId: string,
+    @Body() body: { manualProgressPct?: number | null },
+  ) {
+    const raw = body?.manualProgressPct;
+    let value: number | null = null;
+    if (raw !== null && raw !== undefined) {
+      const n = Math.round(Number(raw));
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        throw new BadRequestException('manualProgressPct doit être un entier entre 0 et 100, ou null.');
+      }
+      value = n;
+    }
+    const updated = await this.prisma.project.updateMany({
+      where: { id: projectId, isDeleted: false },
+      data: { manualProgressPct: value },
+    });
+    if (updated.count === 0) throw new NotFoundException('Projet non trouvé.');
+    return { manualProgressPct: value };
+  }
+
   /** Current team responsibility assignments for a project. */
   @Get('projects/:id/responsibilities')
   @ProjectAccess('id')

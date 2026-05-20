@@ -18,14 +18,46 @@
       <!-- Progress banner -->
       <div class="po__progress">
         <div class="po__progress-head">
-          <span class="po__progress-label">Progression globale</span>
-          <span class="po__progress-value">{{ overallProgress }}%</span>
+          <span class="po__progress-label">
+            Progression globale
+            <span class="po__progress-mode">{{ isManualProgress ? '(manuel)' : '(auto)' }}</span>
+          </span>
+          <span class="po__progress-controls">
+            <span class="po__progress-value">{{ overallProgress }}%</span>
+            <button
+              v-if="canManage && !editingProgress"
+              class="po__progress-edit"
+              title="Définir la progression manuellement"
+              @click="startEditProgress"
+            >
+              <i class="pi pi-pencil" />
+            </button>
+          </span>
         </div>
+
+        <!-- Edit mode: slider + number + save / auto / cancel -->
+        <div v-if="editingProgress" class="po__progress-editor">
+          <input
+            v-model.number="progressDraft"
+            type="range" min="0" max="100" step="1"
+            class="po__progress-range"
+          />
+          <input
+            v-model.number="progressDraft"
+            type="number" min="0" max="100"
+            class="po__progress-num"
+          />
+          <NeoButton label="Enregistrer" size="small" :loading="savingProgress" @click="saveProgress(progressDraft)" />
+          <NeoButton label="Auto" size="small" outlined :disabled="savingProgress" title="Revenir au calcul automatique" @click="saveProgress(null)" />
+          <NeoButton label="Annuler" size="small" severity="secondary" outlined :disabled="savingProgress" @click="cancelEditProgress" />
+        </div>
+
         <div class="po__progress-bar">
           <div class="po__progress-fill" :style="{ width: `${overallProgress}%` }" />
         </div>
         <div class="po__progress-meta">
-          <span>{{ wpClosed }} / {{ wpTotal }} work packages clôturés</span>
+          <span v-if="isManualProgress">Progression définie manuellement · {{ wpClosed }} / {{ wpTotal }} WP clôturés</span>
+          <span v-else>{{ wpClosed }} / {{ wpTotal }} work packages clôturés</span>
           <span v-if="daysToEnd !== null" :class="{ 'po__progress-danger': daysToEnd < 0 }">
             {{ daysToEndLabel }}
           </span>
@@ -168,6 +200,8 @@
             </ul>
           </div>
 
+          <ProjectResponsibilitiesCard v-if="canManage" :project-id="id" />
+
           <div v-if="presenceList.length > 0" class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-users" /> En ligne maintenant</h2>
@@ -200,6 +234,7 @@ import { NeoButton } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import ProjectResponsibilitiesCard from '@/components/pm/ProjectResponsibilitiesCard.vue'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
@@ -233,10 +268,16 @@ const activeSprint    = ref<Sprint | null>(null)
 const presenceList = collab.presenceList
 
 const isPinned    = computed<boolean>(() => uiStore.isProjectPinned(props.id))
+// Only PM/Admin manage team responsibilities (validation + deployment leads).
+const canManage   = computed<boolean>(() => authStore.userRole === 'Admin' || authStore.userRole === 'ProjectManager')
 
+const manualProgressPct = ref<number | null>(null)
 const wpTotal       = computed<number>(() => wps.value.length)
 const wpClosed      = computed<number>(() => wps.value.filter((w) => isTerminal(w.status)).length)
-const overallProgress = computed<number>(() => wpTotal.value ? Math.round((wpClosed.value / wpTotal.value) * 100) : 0)
+const autoProgress  = computed<number>(() => wpTotal.value ? Math.round((wpClosed.value / wpTotal.value) * 100) : 0)
+// Manual override wins when set; otherwise auto from closed work packages.
+const overallProgress = computed<number>(() => manualProgressPct.value ?? autoProgress.value)
+const isManualProgress = computed<boolean>(() => manualProgressPct.value !== null)
 const wpOverdue     = computed<number>(() => wps.value.filter((w) =>
   w.dueDate && new Date(w.dueDate).getTime() < Date.now() && !isTerminal(w.status),
 ).length)
@@ -290,6 +331,34 @@ const activeSprintName = computed<string>(() => activeSprint.value?.name ?? '')
 function go(module: string): void { void router.push(`/app/pm/projects/${props.id}/${module}`) }
 function openWp(wpId: string): void { void router.push(`/app/pm/projects/${props.id}/workpackages?wpId=${wpId}`) }
 
+// ── Manual progress override (PM/Admin) ──────────────────────────────────────
+const editingProgress = ref<boolean>(false)
+const progressDraft   = ref<number>(0)
+const savingProgress  = ref<boolean>(false)
+
+function startEditProgress(): void {
+  progressDraft.value = overallProgress.value
+  editingProgress.value = true
+}
+function cancelEditProgress(): void { editingProgress.value = false }
+
+async function saveProgress(value: number | null): Promise<void> {
+  savingProgress.value = true
+  try {
+    const clamped = value === null ? null : Math.max(0, Math.min(100, Math.round(value)))
+    const { data } = await api.patch<{ manualProgressPct: number | null }>(
+      `/pm/projects/${props.id}/progress`,
+      { manualProgressPct: clamped },
+    )
+    manualProgressPct.value = data.manualProgressPct
+    editingProgress.value = false
+  } catch {
+    /* api interceptor toasts 5xx; 4xx surfaces via the disabled guard */
+  } finally {
+    savingProgress.value = false
+  }
+}
+
 function prioClass(p: string): 'urgent' | 'high' | 'normal' | 'low' {
   const v = (p || '').toLowerCase()
   if (v === 'urgent' || v === 'critical') return 'urgent'
@@ -333,7 +402,7 @@ function initials(name: string): string {
 async function loadAll(): Promise<void> {
   loading.value = true
   try {
-    interface Project { name: string; status: string; endDate: string | null }
+    interface Project { name: string; status: string; endDate: string | null; manualProgressPct?: number | null }
     const [projRes, wpsRes] = await Promise.all([
       api.get<Project>(`/pm/projects/${props.id}`),
       api.get<{ items: WorkPackage[] }>(`/pm/projects/${props.id}/work-packages?limit=200`),
@@ -341,6 +410,7 @@ async function loadAll(): Promise<void> {
     projectName.value    = projRes.data.name
     projectStatus.value  = projRes.data.status
     projectEndDate.value = projRes.data.endDate
+    manualProgressPct.value = projRes.data.manualProgressPct ?? null
     wps.value            = Array.isArray(wpsRes.data?.items) ? wpsRes.data.items : []
 
     // Best-effort fetches — tolerate missing endpoints + varying response shapes.
@@ -390,6 +460,13 @@ onUnmounted(() => {
 .po__progress-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--nl-sp-2); }
 .po__progress-label { font-size: var(--nl-fs-sm); color: var(--nl-text-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 .po__progress-value { font-size: var(--nl-fs-2xl); font-weight: 700; color: var(--nl-text-1); line-height: 1; }
+.po__progress-mode { font-size: 0.7rem; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--nl-text-3); margin-left: 0.4rem; }
+.po__progress-controls { display: inline-flex; align-items: center; gap: 0.5rem; }
+.po__progress-edit { border: none; background: transparent; cursor: pointer; color: var(--nl-text-3); padding: 0.25rem; border-radius: 4px; }
+.po__progress-edit:hover { background: var(--nl-surface-2, #f3f4f6); color: var(--nl-accent, #1e9e8f); }
+.po__progress-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.po__progress-range { flex: 1; min-width: 120px; accent-color: var(--nl-accent, #1e9e8f); }
+.po__progress-num { width: 64px; padding: 0.3rem 0.4rem; border: 1px solid var(--nl-border, #e5e7eb); border-radius: 6px; }
 .po__progress-bar { height: 6px; background: var(--nl-surface-2); border-radius: var(--nl-radius-pill); overflow: hidden; }
 .po__progress-fill { height: 100%; background: linear-gradient(90deg, var(--nl-accent), color-mix(in srgb, var(--nl-accent) 80%, var(--nl-success))); border-radius: inherit; transition: width 0.3s; }
 .po__progress-meta { display: flex; justify-content: space-between; margin-top: var(--nl-sp-2); font-size: var(--nl-fs-sm); color: var(--nl-text-3); }
