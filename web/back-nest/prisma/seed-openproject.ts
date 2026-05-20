@@ -1,8 +1,8 @@
 /**
  * @file prisma/seed-openproject.ts
- * @desc Seeds coherent demo data across the new OpenProject-parity tables:
- *       Work Packages, Sprints, Milestones, Budget, Time, Wiki,
- *       Meeting extras. Idempotent — safe to re-run.
+ * @desc Seeds coherent demo data across the OpenProject-parity tables:
+ *       Work Packages, Sprints, Milestones, Time entries, Meeting extras.
+ *       (Budget + Wiki seeds were removed with those modules.) Idempotent.
  *
  * Usage: cd web/back-nest && npx tsx prisma/seed-openproject.ts
  */

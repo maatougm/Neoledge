@@ -1,6 +1,6 @@
 # NeoLeadge — Deployment Manager
 
-Full-stack project management platform for deployment projects. Manage projects, work packages, sprints, Gantt timelines, budgets, time tracking, wiki documentation, meetings with AI transcription, and real-time collaboration.
+Full-stack project management platform for deployment projects. Manage projects, work packages, sprints, Gantt timelines, time tracking, AI-driven cahier des charges, live meetings with AI transcription, and real-time collaboration.
 
 **Live:** https://neoleadge.pythagore-init.com
 
@@ -11,13 +11,13 @@ Full-stack project management platform for deployment projects. Manage projects,
 | Backend | NestJS 11 (TypeScript) + Prisma 7 + PostgreSQL |
 | Frontend | Vue 3 + Vite + Pinia + TypeScript + NeoLibrary (PrimeVue 4) |
 | Real-time | Socket.IO — notifications + collaboration namespaces |
-| Auth | JWT + role-based access control (6 roles) |
+| Auth | JWT + role-based access control (4 roles) |
 | Transcription | Python FastAPI + faster-whisper + SpeechBrain (optional) |
 | Infrastructure | Docker Compose + Caddy reverse proxy + Let's Encrypt |
 
 ## Quick Start (local development)
 
-**Prerequisites:** Node 22+, XAMPP MySQL on port 3306, database `NeoLeadgeDeployment`.
+**Prerequisites:** Node 22+, PostgreSQL 16 with the `pgvector` extension (local install or Docker), database `neoleadge`.
 
 ```bash
 # Backend
@@ -54,25 +54,23 @@ neoleadge/
         work-packages/      Issues/tasks with hierarchy, deps, watchers
         agile/              Boards, columns, sprints, burndown
         gantt/              Gantt timeline + milestones + baselines
-        budgeting/          Project budgets + line items
-        time-tracking/      Time entries + hourly rates
-        wiki/               Per-project wiki with revisions
-        portfolio/          Portfolio grouping + versions
+        time-tracking/      Time entries
+        cahier-des-charges/ AI-generated cahier (SSE streaming) + spec review
         team-planner/       Capacity, assignments, conflicts
-        meetings/           Audio transcription + agenda + outcomes
-        ai/                 OpenAI / Gemini transcript analysis
+        meetings/           Live meeting capture + transcription + agenda + outcomes
+        ai/                 AI: transcript analysis, backlog, assignment, embeddings
         analytics/          Dashboard metrics (cached 15min)
         automation/         Workflow rule engine
         collaboration/      WebSocket real-time collab
         notifications/      In-app notifications + socket push
-        search/             Global search (projects, WPs, wiki, users)
+        search/             Global search (projects, WPs, users)
         health/             /health endpoint
-        prisma/             Global DB client (MariaDB + Postgres)
+        prisma/             Global Prisma client (@prisma/adapter-pg)
       prisma/
-        schema.prisma           MariaDB schema (local dev)
-        schema.postgres.prisma  PostgreSQL schema (production)
+        schema.prisma           PostgreSQL schema (single source of truth)
+        migrations/             Tracked Prisma migrations (migrate deploy)
         seed.ts                 Core demo data (users, projects, fields)
-        seed-openproject.ts     WPs, sprints, milestones, time, budget, wiki
+        seed-openproject.ts     WPs, sprints, milestones, time, meeting extras
         seed-notifications.ts   Demo notifications
       Dockerfile              Multi-stage prod build
     Front/customapp/        Vue 3 SPA
@@ -103,7 +101,6 @@ neoleadge/
 - User management (create, edit, deactivate, password reset)
 - Templates for project field presets
 - System status + audit log
-- Portfolio management (group projects, roadmap view)
 - Team planner (capacity heatmap, assignment conflicts)
 
 ### Project Manager
@@ -113,20 +110,20 @@ neoleadge/
 - Kanban Board — drag-drop cards between columns, real-time sync across users
 - Backlog — unassigned WPs + sprint drag-drop assignment
 - Sprint Board — sprint selector, metadata, burndown chart (ideal vs remaining)
-- Wiki — page tree, markdown editing, search, revision history + restore
-- Budget — summary cards, line items, burn report
+- Cahier des Charges — AI-generated spec (SSE streaming) + spec-team review/approval
+- Backlog Generator — AI-proposed epics + tasks, drag-drop assignment to members
 - Time Tracking — log entries, weekly grid, project summary by user/activity
 - Members — project team roster
 - Activity — project timeline feed
-- Meetings — audio upload, AI transcription (faster-whisper), speaker diarization, AI analysis (action items + decisions), agenda + attendees + outcomes
+- Meetings — live capture (browser audio), real-time AI transcription (faster-whisper), speaker diarization, AI analysis (action items + decisions), agenda + attendees + outcomes
 - Automation — rule builder (trigger events, conditions, actions), execution logs
 - My Tasks — cross-project assigned work packages
 - Team Planner — capacity + assignment view
 
-### Team Members (Spec/Realiz/Deploy/Viewer)
-- Project list (read-only or role-scoped)
+### Team Members (Member / SpecificationTeam)
+- Project list (role-scoped)
 - Project detail with questionnaire
-- Validation submission
+- SpecificationTeam: cahier review queue + "Mes validations" history
 
 ### Public
 - Login with quick-access demo buttons + TOTP 2FA support
@@ -137,10 +134,8 @@ neoleadge/
 |------|--------|
 | Admin | Full access to all modules + system management |
 | ProjectManager | Own projects + all project modules + team planner |
-| SpecificationTeam | Assigned projects (read) + specification validation |
-| RealizationTeam | Assigned projects (read) + realization validation |
-| DeploymentTeam | Assigned projects (read) + deployment validation |
-| Viewer | Read-only project access |
+| SpecificationTeam | Assigned projects + cahier des charges review/validation |
+| Member | Assigned projects + task execution (work packages, board, sprints) |
 
 ## Real-time Features
 
@@ -170,8 +165,8 @@ See `deploy/neoleadge/README.md` for the full deploy + update + rollback runbook
 - `GET /pm/projects/:id/gantt` — Gantt payload
 - `GET/POST /pm/projects/:id/boards` — Kanban boards
 - `PATCH /pm/projects/:id/boards/:id/cards/:wpId/move` — card drag-drop
-- `GET/POST /pm/projects/:id/wiki/pages` — wiki CRUD
-- `GET/PUT /pm/projects/:id/budget` — budget management
+- `GET /pm/projects/:id/cahier-des-charges/preview-stream` — AI cahier (SSE)
+- `GET /spec/pending-reviews` — spec-team cahier review queue
 - `GET/POST /api/time-entries` — time tracking
 - `GET /api/analytics/*` — dashboard metrics
 - `GET /health` — server health check
@@ -193,26 +188,27 @@ Full API documentation available at `/api` (Swagger UI) when the backend is runn
 | `smoke-public.mjs` | Login, lockout flows |
 | `smoke-every-button.mjs` | 48 clickable elements |
 | `smoke-collab.mjs` | Two-browser real-time card move |
-| Jest (backend) | 66 specs |
+| Jest (backend) | 1600+ specs (mocked Prisma) |
+| Vitest (frontend) | 860+ specs |
 
 ## Database
 
-- **Local dev:** MySQL via XAMPP, port 3306, `NeoLeadgeDeployment`
-- **Production:** PostgreSQL 16 (Docker), `neoleadge`
-- **ORM:** Prisma 7 with adapter pattern — auto-detects MariaDB or Postgres from `DATABASE_URL`
-- **Schema:** 44 tables covering users, projects, work packages, sprints, boards, milestones, budgets, time entries, wiki, portfolios, notifications, audit logs, and more
+- **Local dev & production:** PostgreSQL 16 + `pgvector` (HNSW) for semantic retrieval
+- **ORM:** Prisma 7 via `@prisma/adapter-pg`. Schema changes use tracked migrations (`prisma migrate dev` to create, `prisma migrate deploy` to apply) — never `prisma db push`
+- **Schema:** 41 models covering users, projects, work packages, sprints, boards, milestones, time entries, meetings + transcripts, cahier feedback, notifications, audit logs, and embeddings
 
 ## Environment Variables
 
 ```env
-DATABASE_URL=mysql://root:@127.0.0.1:3306/NeoLeadgeDeployment  # or postgresql://...
-JWT_SECRET=your-secret
-JWT_EXPIRES_IN=7d
+DATABASE_URL=postgresql://neoleadge:<password>@localhost:5432/neoleadge
+JWT_SECRET=your-secret-at-least-32-chars
+JWT_EXPIRES_IN=8h
 AI_ENABLED=false
-AI_PROVIDER=openai
+AI_PROVIDER=zai            # zai (glm-4.5-air) primary; openai fallback
+AI_FALLBACK_API_KEY=       # Z.AI key
 OPENAI_API_KEY=
-GEMINI_API_KEY=
 TRANSCRIPTION_URL=http://localhost:8000
+TRANSCRIPTION_SECRET=
 ```
 
 ## License

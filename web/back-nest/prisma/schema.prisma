@@ -937,8 +937,6 @@ model WorkPackageAttachment {
 }
 
 
-// ─── Sprint 2: RACI + Handover ────────────────────────────────────────────────
-
 // ─── Cahier des Charges Feedback (AI learning from rejected documents) ───────
 
 model CahierFeedback {
