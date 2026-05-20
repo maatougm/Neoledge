@@ -57,15 +57,20 @@ async function main() {
     },
   });
 
-  // ── 1. WIPE ────────────────────────────────────────────────────────────────
+  // ── 1. WIPE (projects + non-admin users only) ──────────────────────────────
   // Projects first (cascades WPs, fields, members, cahier, meetings, comments,
   // activities, validations, boards, sprints, versions, milestones, time).
   const delProjects = await prisma.project.deleteMany({});
-  // Clear cross-user history so non-admin users have no integrity-critical refs.
-  await prisma.notification.deleteMany({});
-  await prisma.auditLog.deleteMany({});
+  // AuditLog.userId is NoAction, so detach (not delete) audit rows for the users
+  // we're about to remove — this preserves audit history while freeing the FK.
+  // Notifications cascade on user delete, so no explicit notification wipe.
+  const nonAdmin = await prisma.appUser.findMany({ where: { role: { not: 'Admin' } }, select: { id: true } });
+  const nonAdminIds = nonAdmin.map((u) => u.id);
+  if (nonAdminIds.length > 0) {
+    await prisma.auditLog.updateMany({ where: { userId: { in: nonAdminIds } }, data: { userId: null } });
+  }
   const delUsers = await prisma.appUser.deleteMany({ where: { role: { not: 'Admin' } } });
-  console.log(`   wiped: ${delProjects.count} projects, ${delUsers.count} non-admin users\n`);
+  console.log(`   wiped: ${delProjects.count} projects, ${delUsers.count} non-admin users (audit history kept)\n`);
 
   const admin = await prisma.appUser.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
 
