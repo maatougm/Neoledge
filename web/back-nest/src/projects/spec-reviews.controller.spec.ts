@@ -173,4 +173,81 @@ describe('SpecReviewsController', () => {
     const rows = await controller.listPendingReviews(reqAs('u1'));
     expect(rows.map((r) => r.projectId)).toEqual(['newer', 'older']);
   });
+
+  describe('listMyReviews', () => {
+    function feedbackRow(over: {
+      projectId: string;
+      status: string;
+      comment?: string | null;
+      createdAt: Date;
+      savedAt?: string | null;
+      name?: string;
+    }) {
+      return {
+        projectId: over.projectId,
+        status: over.status,
+        comment: over.comment ?? 'ok',
+        createdAt: over.createdAt,
+        project: {
+          name: over.name ?? over.projectId,
+          clientName: 'C',
+          status: 'Active',
+          aiOutput:
+            over.savedAt === null
+              ? null
+              : JSON.stringify({ savedAt: over.savedAt ?? '2026-01-01T00:00:00Z' }),
+        },
+      };
+    }
+
+    it('returns [] when no userId on the request', async () => {
+      expect(await controller.listMyReviews(reqAs(undefined))).toEqual([]);
+    });
+
+    it('returns the latest verdict per project — including approved ones', async () => {
+      mockPrisma.cahierFeedback.findMany.mockResolvedValue([
+        feedbackRow({ projectId: 'p1', status: 'approved', createdAt: new Date('2026-02-01') }),
+      ]);
+      const rows = await controller.listMyReviews(reqAs('u1'));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        projectId: 'p1',
+        verdict: 'approved',
+        isCurrent: true,
+      });
+    });
+
+    it('collapses multiple feedback rows to the newest per project', async () => {
+      // findMany is ordered desc, so the first row per project is the latest.
+      mockPrisma.cahierFeedback.findMany.mockResolvedValue([
+        feedbackRow({ projectId: 'p1', status: 'approved', createdAt: new Date('2026-02-10') }),
+        feedbackRow({ projectId: 'p1', status: 'rejected', createdAt: new Date('2026-01-05') }),
+      ]);
+      const rows = await controller.listMyReviews(reqAs('u1'));
+      expect(rows).toHaveLength(1);
+      expect(rows[0].verdict).toBe('approved');
+    });
+
+    it('flags isCurrent=false when the cahier was re-saved after the verdict', async () => {
+      mockPrisma.cahierFeedback.findMany.mockResolvedValue([
+        feedbackRow({
+          projectId: 'p1',
+          status: 'approved',
+          createdAt: new Date('2026-01-01'),
+          savedAt: '2026-03-01T00:00:00Z',
+        }),
+      ]);
+      const rows = await controller.listMyReviews(reqAs('u1'));
+      expect(rows[0].isCurrent).toBe(false);
+    });
+
+    it('treats a null/malformed cahier as current (isCurrent=true)', async () => {
+      mockPrisma.cahierFeedback.findMany.mockResolvedValue([
+        feedbackRow({ projectId: 'p1', status: 'rejected', createdAt: new Date('2026-01-01'), savedAt: null }),
+      ]);
+      const rows = await controller.listMyReviews(reqAs('u1'));
+      expect(rows[0].isCurrent).toBe(true);
+      expect(rows[0].verdict).toBe('rejected');
+    });
+  });
 });

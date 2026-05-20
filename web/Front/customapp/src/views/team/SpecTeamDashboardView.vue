@@ -103,6 +103,7 @@
         <section class="nl-card">
           <header class="std__card-head">
             <h2><i class="pi pi-history" /> Mes derniers verdicts</h2>
+            <RouterLink class="std__link" to="/app/team/validations">Voir tout</RouterLink>
           </header>
           <div v-if="loadingActivity && recentActivity.length === 0" class="std__empty std__empty--mini">
             <p>Chargement…</p>
@@ -298,32 +299,37 @@ async function loadProjects(): Promise<void> {
   }
 }
 
+interface MyReviewRow {
+  projectId: string
+  projectName: string
+  verdict: 'approved' | 'rejected'
+  reviewedAt: string
+}
+
 async function loadActivity(): Promise<void> {
   loadingActivity.value = true
-  // Best-effort: derive recent activity from pending list (rows with
-  // myLastFeedbackAt set carry the verdict). If the dedicated endpoint
-  // exists later, swap to that.
+  // Real review history (includes approved cahiers, which the pending queue
+  // hides). Drives "Mes derniers verdicts" and the "Validés cette semaine" stat.
   try {
-    const rows = pending.value
-      .filter((r) => r.myLastFeedbackAt)
-      .map<ActivityRow>((r) => ({
-        projectId: r.projectId,
-        projectName: r.projectName,
-        // The pending list only contains cahierStatus that's still actionable
-        // (not 'approved'). myLastFeedbackAt with 'rejected' status means I
-        // rejected the previous cahier and the PM hasn't regenerated yet.
-        status: r.cahierStatus === 'rejected' ? 'rejected' : 'approved',
-        createdAt: r.myLastFeedbackAt as string,
-      }))
+    const { data } = await api.get<MyReviewRow[]>('/spec/my-reviews')
+    const list = Array.isArray(data) ? data : []
+    const rows = list.map<ActivityRow>((r) => ({
+      projectId: r.projectId,
+      projectName: r.projectName,
+      status: r.verdict,
+      createdAt: r.reviewedAt,
+    }))
     rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     recentActivity.value = rows
+  } catch {
+    recentActivity.value = []
   } finally {
     loadingActivity.value = false
   }
 }
 
 onMounted(async () => {
-  await loadPending()
+  void loadPending()
   void loadActivity()
   void loadProjects()
   void notifStore.fetchNotifications().catch(() => undefined)
