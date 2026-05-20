@@ -150,6 +150,13 @@ const router = createRouter({
               name: 'admin-audit',
               component: () => import('@/views/AuditLogView.vue'),
             },
+            {
+              // Unified log page: Activité + Audit as tabs. The standalone
+              // /activity and /audit routes above are kept for deep links.
+              path: 'journal',
+              name: 'admin-journal',
+              component: () => import('@/views/AdminJournalView.vue'),
+            },
           ],
         },
 
