@@ -143,8 +143,11 @@ jobs:
       - name: Frontend serve (background)
         working-directory: web/Front/customapp
         run: |
-          npx --yes serve -l 5174 dist &
-          for i in {1..20}; do
+          # vite preview serves the built app at the configured base
+          # (/Sample/Front/) with SPA fallback — `serve dist` can't do the
+          # subpath, which is what the smoke scripts hardcode as BASE.
+          npm run preview -- --port 5174 --strictPort &
+          for i in {1..30}; do
             if curl -sf http://localhost:5174/Sample/Front/ > /dev/null; then exit 0; fi
             sleep 1
           done
