@@ -86,20 +86,21 @@ jobs:
     needs: [backend, frontend]
 
     services:
-      mariadb:
-        image: mariadb:10.11
+      postgres:
+        image: pgvector/pgvector:pg16
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: NeoLeadgeDeployment
-        ports: ['3306:3306']
+          POSTGRES_USER: neoleadge
+          POSTGRES_PASSWORD: neoleadge
+          POSTGRES_DB: neoleadge
+        ports: ['5432:5432']
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-cmd="pg_isready -U neoleadge"
           --health-interval=10s --health-timeout=5s --health-retries=10
 
     env:
-      DATABASE_URL: mysql://root:root@127.0.0.1:3306/NeoLeadgeDeployment
-      JWT_SECRET: ci-secret
-      JWT_EXPIRES_IN: 7d
+      DATABASE_URL: postgresql://neoleadge:neoleadge@127.0.0.1:5432/neoleadge?schema=public
+      JWT_SECRET: ci-secret-at-least-32-chars-long-padding-aaa
+      JWT_EXPIRES_IN: 8h
 
     steps:
       - uses: actions/checkout@v4
@@ -112,8 +113,9 @@ jobs:
         working-directory: web/back-nest
         run: |
           npm ci
-          npx prisma db push --skip-generate
           npx prisma generate
+          npx prisma migrate deploy
+          npx tsx prisma/seed.ts || true
           npx tsx prisma/seed-openproject.ts || true
 
       - name: Backend start (background)
