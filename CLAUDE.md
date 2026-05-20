@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Admin creates project + assigns PM
   → PM picks team via ProjectMember (with custom labels)
   → PM fills questionnaire (ProjectField + ProjectFieldValue)
-  → PM uploads meetings (transcribed + AI-analysed)
+  → PM runs live meetings (browser audio capture → real-time transcription → AI-analysed)
   → AI generates Cahier des Charges (saved as JSON in Project.aiOutput)
   → SpecificationTeam approves/rejects (CahierFeedback)
   → PM generates AI backlog (Epics + Tasks)
@@ -144,7 +144,7 @@ CORS_ORIGINS=http://localhost:5173,https://neoleadge.pythagore-init.com
 
 The `src/ai/` module has two distinct features that share providers:
 
-1. **Meeting transcript analysis** — `AiService.analyzeTranscript(transcriptId)` is fire-and-forget after meeting upload. Sets `aiStatus = 'processing'` (concurrency guard), builds the prompt from `TranscriptSegment` rows, calls the provider (OpenAI / Gemini), persists `MeetingActionItem` + `MeetingDecision` rows in a transaction, sets `aiStatus = 'completed'`. Frontend polls `/ai-results` every 5s until terminal state.
+1. **Meeting transcript analysis** — meetings are captured **live** (browser `getDisplayMedia`/`MediaRecorder` → chunked `/meetings/live/transcribe-chunk` → `saveLiveTranscript`), not uploaded as audio files. `AiService.analyzeTranscript(transcriptId)` is fire-and-forget, triggered on demand via `triggerAiAnalysis` (`@Post(':id/ai-analyze')`). Sets `aiStatus = 'processing'` (concurrency guard), builds the prompt from `TranscriptSegment` rows, calls the provider (Z.AI `glm-4.5-air` primary, OpenAI fallback), persists `MeetingActionItem` + `MeetingDecision` rows in a transaction, sets `aiStatus = 'completed'`. Frontend polls `/ai-results` every 5s until terminal state. (A legacy `@Post('upload')` audio-file endpoint still exists but is not the product path.)
 
 2. **AI Backlog generator** — `BacklogService.preview(projectId)` reads questionnaire answers (only fields with `isBacklogDriver = true`), the saved cahier (`Project.aiOutput`), and recent meeting summaries; returns a sanitized `{ epics: [{ title, priority, estimatedHours, children: [task...] }] }` JSON without writing to DB. PM edits in the UI; `accept()` writes `WorkPackage` rows in a transaction with `aiGeneratedFrom` set for traceability. Has an in-memory 30s cooldown per project to prevent burning API calls.
 
