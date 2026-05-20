@@ -5,7 +5,17 @@ import { setActivePinia, createPinia } from 'pinia'
 import { NEO_LIBRARY_STUBS } from '../__test-helpers__/stubs'
 
 vi.mock('@/lib/api', () => ({
-  default: { get: vi.fn().mockResolvedValue({ data: {} }), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: {
+    get: vi.fn().mockResolvedValue({
+      data: {
+        serverStatus: 'up', uptimeSeconds: 3600, memoryUsedMb: 120, nodeVersion: 'v22.0.0',
+        databaseStatus: 'Connecté', transcriptionStatus: 'Connecté',
+        userTotal: 0, userActive: 0, projectTotal: 0, projectByStatus: {},
+        security: { lockedAccounts: 0, accountsUnderAttack: 0, logins24h: 0, failedLoginsCurrent: 0, recentEvents: [] },
+      },
+    }),
+    post: vi.fn(), patch: vi.fn(), delete: vi.fn(),
+  },
 }))
 vi.mock('@neolibrary/components', async () => ({ ...NEO_LIBRARY_STUBS }))
 

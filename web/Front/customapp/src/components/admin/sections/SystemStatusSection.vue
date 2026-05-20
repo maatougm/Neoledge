@@ -20,13 +20,28 @@
     </div>
 
     <template v-else-if="status">
-      <!-- KPI cards -->
+      <!-- Health cards -->
       <div class="kpi-grid">
         <div class="kpi-card kpi-card--green">
+          <i class="pi pi-server kpi-icon" style="color:#10b981" />
+          <div class="kpi-body">
+            <p class="kpi-label">Serveur</p>
+            <p class="kpi-value">En ligne</p>
+            <p class="kpi-hint">depuis {{ formatUptime(status.uptimeSeconds) }} · {{ status.memoryUsedMb }} Mo · {{ status.nodeVersion }}</p>
+          </div>
+        </div>
+        <div class="kpi-card" :class="status.databaseStatus === 'Connecté' ? 'kpi-card--green' : 'kpi-card--red'">
           <i class="pi pi-database kpi-icon" />
           <div class="kpi-body">
             <p class="kpi-label">Base de données</p>
             <p class="kpi-value">{{ status.databaseStatus }}</p>
+          </div>
+        </div>
+        <div class="kpi-card" :class="depClass(status.transcriptionStatus)">
+          <i class="pi pi-microphone kpi-icon" />
+          <div class="kpi-body">
+            <p class="kpi-label">Service transcription</p>
+            <p class="kpi-value">{{ status.transcriptionStatus }}</p>
           </div>
         </div>
         <div class="kpi-card">
@@ -41,6 +56,44 @@
           <div class="kpi-body">
             <p class="kpi-label">Projets au total</p>
             <p class="kpi-value">{{ status.projectTotal }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security / attack surface -->
+      <div class="security-grid">
+        <div class="kpi-card" :class="status.security.lockedAccounts > 0 ? 'kpi-card--red' : ''">
+          <i class="pi pi-lock kpi-icon" :style="status.security.lockedAccounts > 0 ? 'color:#dc2626' : ''" />
+          <div class="kpi-body">
+            <p class="kpi-label">Comptes verrouillés</p>
+            <p class="kpi-value">{{ status.security.lockedAccounts }}</p>
+          </div>
+        </div>
+        <div class="kpi-card" :class="status.security.accountsUnderAttack > 0 ? 'kpi-card--amber' : ''">
+          <i class="pi pi-shield kpi-icon" :style="status.security.accountsUnderAttack > 0 ? 'color:#d97706' : ''" />
+          <div class="kpi-body">
+            <p class="kpi-label">Comptes sous attaque</p>
+            <p class="kpi-value">{{ status.security.accountsUnderAttack }}</p>
+            <p class="kpi-hint">{{ status.security.failedLoginsCurrent }} tentative(s) échouée(s) en cours</p>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <i class="pi pi-sign-in kpi-icon" />
+          <div class="kpi-body">
+            <p class="kpi-label">Connexions (24 h)</p>
+            <p class="kpi-value">{{ status.security.logins24h }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent security events -->
+      <div class="status-breakdown" v-if="status.security.recentEvents.length">
+        <h3 class="breakdown-title">Évènements de sécurité récents</h3>
+        <div class="event-list">
+          <div v-for="(e, i) in status.security.recentEvents" :key="i" class="event-row">
+            <NeoTag :value="actionLabel(e.action)" :severity="actionSeverity(e.action)" />
+            <span class="event-user">{{ e.userEmail ?? '—' }}</span>
+            <span class="event-time">{{ formatTime(e.createdAt) }}</span>
           </div>
         </div>
       </div>
@@ -79,16 +132,70 @@ import api from '@/lib/api'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus } from '@/types/project.types'
 
+interface SecurityEvent {
+  action: string
+  userEmail: string | null
+  createdAt: string
+}
+
 interface SystemStatus {
+  serverStatus: 'up'
+  uptimeSeconds: number
+  memoryUsedMb: number
+  nodeVersion: string
   databaseStatus: string
+  transcriptionStatus: string
   userTotal: number
   userActive: number
   projectTotal: number
   projectByStatus: Record<string, number>
+  security: {
+    lockedAccounts: number
+    accountsUnderAttack: number
+    logins24h: number
+    failedLoginsCurrent: number
+    recentEvents: SecurityEvent[]
+  }
 }
 
 const status  = ref<SystemStatus | null>(null)
 const loading = ref(false)
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0) return `${d}j ${h}h`
+  if (h > 0) return `${h}h ${m}min`
+  return `${m}min`
+}
+
+function depClass(s: string): string {
+  if (s === 'Connecté') return 'kpi-card--green'
+  if (s === 'Désactivé') return ''
+  return 'kpi-card--amber'
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  LOGIN: 'Connexion', LOGOUT: 'Déconnexion', RESET_PASSWORD: 'Réinit. mot de passe',
+  TOTP_ENABLED: 'A2F activée', TOTP_DISABLED: 'A2F désactivée',
+}
+const actionLabel = (a: string): string => ACTION_LABELS[a] ?? a
+const actionSeverity = (a: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' => {
+  if (a === 'LOGIN') return 'success'
+  if (a === 'RESET_PASSWORD' || a === 'TOTP_DISABLED') return 'warn'
+  if (a === 'LOGOUT') return 'secondary'
+  return 'info'
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  const diffMin = Math.round((Date.now() - d.getTime()) / 60000)
+  if (diffMin < 1) return "à l'instant"
+  if (diffMin < 60) return `il y a ${diffMin} min`
+  if (diffMin < 1440) return `il y a ${Math.round(diffMin / 60)} h`
+  return d.toLocaleDateString('fr-FR')
+}
 
 const load = async () => {
   loading.value = true
@@ -147,6 +254,28 @@ onMounted(load)
 }
 
 .kpi-card--green { border-left: 4px solid #10b981; }
+.kpi-card--red   { border-left: 4px solid #dc2626; }
+.kpi-card--amber { border-left: 4px solid #d97706; }
+
+.kpi-hint { font-size: 0.72rem; color: var(--nl-text-3); margin: 0.25rem 0 0; }
+
+.security-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.event-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--nl-border);
+}
+.event-row:last-child { border-bottom: none; }
+.event-user { flex: 1; font-size: 0.85rem; color: var(--nl-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-time { font-size: 0.75rem; color: var(--nl-text-3); white-space: nowrap; }
 
 .kpi-icon {
   font-size: 1.75rem;
