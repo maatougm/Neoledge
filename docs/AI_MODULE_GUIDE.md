@@ -244,7 +244,11 @@ The CLAUDE.md rule "DTOs are classes" applies to `@Body()` request payloads. Too
 
 **Entry:** `AiService.analyzeTranscript(transcriptId)` in `src/ai/ai.service.ts`.
 
-**Trigger:** fire-and-forget after `MeetingsService.uploadTranscript` finishes the STT job. Sets `MeetingTranscript.aiStatus = 'processing'` (concurrency guard via `updateMany` with `aiStatus: { not: 'processing' }`).
+**How a meeting gets captured (current product flow — live only).** The PM runs a **live meeting**: `LiveMeetingPanel.vue` captures the shared-tab audio (`getDisplayMedia`) or the microphone, slices it with `MediaRecorder`, and streams chunks to `POST /pm/projects/:projectId/meetings/live/transcribe-chunk`. Each chunk is transcribed on the fly by the FastAPI `/transcribe` endpoint (faster-whisper — AssemblyAI is only used on the legacy full-file path) and, when `LIVE_MEETING_COPILOT` is on, also feeds the live copilot. When the PM stops, `POST .../meetings/live/save` → `LiveMeetingService.saveLiveTranscript` persists **one** `MeetingTranscript` + a single blob `TranscriptSegment`, then fire-and-forget embeds that segment for semantic retrieval. There is no audio-file upload step in the product — the PM never picks a pre-recorded file.
+
+**Trigger:** analysis is **not** auto-run on save. It is started on demand via `POST .../meetings/:id/ai-analyze` → `MeetingsService.triggerAiAnalysis` → `AiService.analyzeTranscript(transcriptId)` (fire-and-forget). It sets `MeetingTranscript.aiStatus = 'processing'` (concurrency guard via `updateMany` with `aiStatus: { not: 'processing' }`); the frontend polls `/ai-results` every 5 s until a terminal state.
+
+> **Legacy upload path (not the product flow).** A `@Post('upload')` endpoint backed by `MeetingsService.transcribe` (pre-recorded audio file → FastAPI STT → `transcriptSegment.createMany` → auto-fires `analyzeTranscript` when `AI_ENABLED`) still exists in the backend, but the frontend no longer surfaces it. Treat it as a legacy/admin entry point, not the path users take.
 
 **Two paths, picked at runtime:**
 1. **Agent mode** (`AI_AGENT_MODE` includes `'transcript'` or `'all'`)
@@ -393,8 +397,9 @@ After every path produces a cahier:
 
 **Lifecycle:**
 - `BacklogService.preview(projectId)` — generates without writing to DB. PM reviews + edits in the UI.
-- 30 s in-memory cooldown per `(projectId, userId)` prevents accidental burn from double-clicks.
+- **30 s in-memory cooldown per project** (`PREVIEW_COOLDOWN_MS`, keyed by `projectId` in a `Map`) — a second preview inside the window 429s with `Patientez Ns…`. Prevents accidental burn from double-clicks.
 - `BacklogService.accept(projectId, backlog, userId)` — persists `WorkPackage` rows in a transaction. Each row carries `aiGeneratedFrom: 'backlog-preview-<timestamp>'` for traceability.
+- **60 s accept-side concurrency guard** — before persisting, `accept` counts `WorkPackage` rows on the project with an `aiGeneratedFrom` marker created in the last 60 s; if any exist it throws `ConflictException` (a backlog was just accepted, so this is a double-submit). The in-memory preview cooldown doesn't survive a restart; this DB-backed check does.
 
 **Anti-hallucination rule** (in the system prompt): if a functional area is mentioned without details, emit a minimal "Investigation: <topic>" epic with a "Définir <topic> avec le client" task instead of inventing tasks.
 
@@ -450,7 +455,7 @@ A **real-time** agent that listens to a live meeting transcript and maintains:
 - Per-item **status**: `not_covered` → `partial` → `covered` (with an evidence snippet).
 - **Suggestion cards** — questions the PM should ask to fill gaps, with urgency.
 
-**Trigger model:** the gateway calls `service.fireSuggest(sessionId, transcriptAppend)` every N characters of new transcript. The service decides whether to actually fire the agent based on:
+**Trigger model:** the client streams transcript via `POST …/copilot/append` → `appendTranscript(liveSessionId, chunk)`, which buffers the text and returns `{ shouldFire: boolean }`. When `shouldFire` is true the client calls `POST …/copilot/fire` → `fire(liveSessionId, force?)`, which actually runs the agent; results are then pushed over the `/copilot` Socket.IO namespace. `appendTranscript` computes `shouldFire` from:
 - Min character delta since last fire.
 - Max frequency (cooldown).
 - Whether any not-covered topics still exist.
@@ -540,8 +545,8 @@ Every write path that touches an indexable row fires the indexer **after** the s
 
 | Source path | Hook | Notes |
 |---|---|---|
-| `meetings.service.uploadTranscript` → `transcriptSegment.createMany` | `indexSegmentsAsync(transcriptId)` | reads back the just-inserted rows then embeds |
-| `live-meeting.service.saveLiveTranscript` | `indexAndStore('segment', [...])` | single blob; verified live during Phase 4 eval |
+| `live-meeting.service.saveLiveTranscript` | `indexAndStore('segment', [...])` | **primary path** — single blob from a live meeting; verified live during Phase 4 eval |
+| `meetings.service.transcribe` (legacy upload) → `transcriptSegment.createMany` | `indexSegmentsAsync(transcriptId)` | reads back the just-inserted rows then embeds; only the legacy `@Post('upload')` endpoint hits this |
 | `ai.service.analyzeTranscript` (after analysis tx) | `indexAndStore('summary', [{id, text: result.summary}])` | embeds `aiSummary` |
 | `projects.service.saveFieldValues` | `indexFieldValuesAsync(projectId, written)` | reads back the upserted rows with their field labels, embeds `"<label>: <value>"` |
 | `collaboration.service.saveField` (live editing) | `scheduleEmbed(...)` with 1500 ms debounce | coalesces keystrokes |
@@ -752,13 +757,27 @@ npx vitest run src/lib/cahier-stream  # this suite only
 | `POST` | `/pm/projects/:projectId/ai/generate-backlog` | Preview (no DB write) |
 | `POST` | `/pm/projects/:projectId/ai/accept-backlog` | Persist `WorkPackage` rows |
 
-### Live meeting copilot
+### Meeting capture + transcript analysis
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/pm/projects/:projectId/meetings/live/start` | Open session |
-| `POST` | `/pm/projects/:projectId/meetings/live/append` | Append transcript chunk |
-| `POST` | `/pm/projects/:projectId/meetings/live/save` | Persist as `MeetingTranscript` |
+| `POST` | `/pm/projects/:projectId/meetings/live/transcribe-chunk` | **Live STT** — transcribe one audio chunk in real time (`live-meeting.controller.ts`) |
+| `POST` | `/pm/projects/:projectId/meetings/live/save` | Persist the assembled live transcript as a `MeetingTranscript` (`saveLiveTranscript`) |
+| `POST` | `/pm/projects/:projectId/meetings/:id/ai-analyze` | Trigger `analyzeTranscript` (fire-and-forget) — what the UI calls after a meeting |
+| `GET` | `/pm/projects/:projectId/meetings/:id/ai-results` | Poll AI analysis status + results (5 s poll) |
+| `POST` | `/pm/projects/:projectId/meetings/upload` | **Legacy** — pre-recorded audio-file upload → STT. Not surfaced in the UI. |
+
+### Live meeting copilot (`…/meetings/live/copilot`)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/pm/projects/:projectId/meetings/live/copilot/_drivers` | Driver fields the copilot tracks |
+| `POST` | `/pm/projects/:projectId/meetings/live/copilot/session` | Open a copilot session |
+| `POST` | `/pm/projects/:projectId/meetings/live/copilot/append` | Append a transcript chunk to the copilot |
+| `POST` | `/pm/projects/:projectId/meetings/live/copilot/fire` | Force a suggestion pass |
+| `POST` | `/pm/projects/:projectId/meetings/live/copilot/items/:itemId/ask` | Mark a suggestion as asked |
+| `POST` | `/pm/projects/:projectId/meetings/live/copilot/items/:itemId/dismiss` | Dismiss a suggestion |
+| `DELETE` | `/pm/projects/:projectId/meetings/live/copilot/session` | Close the session |
 | WS | `/copilot` (Socket.IO) | Real-time checklist + suggestion events |
 
 ### AI usage
@@ -918,8 +937,8 @@ live-copilot.gateway.ts            Socket.IO `/copilot` namespace
 live-copilot.controller.ts         REST shim for start/append/save
 live-copilot.prompt.ts             buildLiveCopilotPrompt — context-aware system prompt
 live-copilot.types.ts              ChecklistItem, SuggestionUrgency, LiveSessionState, …
-live-meeting.service.ts            saveLiveTranscript (with embedding hook)
-meetings.service.ts                uploadTranscript + STT + AI analysis trigger
+live-meeting.service.ts            saveLiveTranscript (primary path) + embedding hook
+meetings.service.ts                transcribe (legacy upload) + triggerAiAnalysis + analysis trigger
 assemblyai.provider.ts             AssemblyAI Universal-2 wrapper
 ```
 

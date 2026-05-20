@@ -51,6 +51,10 @@
         />
       </div>
 
+      <p v-if="suggesting" style="margin-top: 0.5rem; color: var(--nl-text-3); font-size: 0.85rem;">
+        <i class="pi pi-spin pi-spinner" /> L'IA analyse les tâches et l'équipe pour proposer des affectations… (jusqu'à ~30 s)
+      </p>
+
       <!-- Filters -->
       <div class="at__filters">
         <label class="at__check">

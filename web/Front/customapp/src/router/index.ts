@@ -357,7 +357,7 @@ const router = createRouter({
             {
               path: 'validations',
               name: 'team-validations',
-              component: () => import('@/views/TeamMemberView.vue'),
+              component: () => import('@/views/SpecMyValidationsView.vue'),
               meta: { allowedRoles: ['SpecificationTeam', 'Admin'] as UserRole[] },
               beforeEnter: (_to, _from, next) => {
                 const auth = useAuthStore()

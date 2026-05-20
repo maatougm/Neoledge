@@ -13,9 +13,3 @@
  */
 
 export const TERMINAL_WP_STATUSES = ['Resolved', 'Closed'] as const;
-export type TerminalWpStatus = (typeof TERMINAL_WP_STATUSES)[number];
-
-export function isTerminal(status: string | null | undefined): boolean {
-  if (!status) return false;
-  return (TERMINAL_WP_STATUSES as readonly string[]).includes(status);
-}

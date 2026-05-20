@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js'
 import { Result } from '../common/result.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 
-export interface MemberRow {
+interface MemberRow {
   id: string
   userId: string
   label: string

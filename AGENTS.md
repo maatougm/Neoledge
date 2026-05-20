@@ -54,15 +54,26 @@ npm run lint
 npx vue-tsc --noEmit      # type-check only
 ```
 
-### Tests (Playwright E2E in `scripts/`)
+### Tests
 
 ```bash
-node scripts/e2e-multi-role-bug-hunt.mjs    # full multi-role workflow test against the live test server
-node scripts/e2e-pm-deep-verify.mjs         # interactive component test (members modal, drag-drop, ...)
-node scripts/e2e-pm-tabs-screenshot.mjs     # PM tab visibility check
+# Backend unit (jest, mocked Prisma — no DB needed)
+cd web/back-nest && npx jest
+
+# Frontend unit (vitest)
+cd web/Front/customapp && npx vitest run
+
+# E2E (Playwright — golden flows)
+cd web/Front/customapp && npm run test:e2e   # needs: npx playwright install chromium
+
+# AI quality evals (live test server)
+node scripts/eval-cahier.mjs       # 5-fixture cahier suite
+node scripts/eval-retrieval.mjs    # 30-query pgvector recall suite
 ```
 
-The scripts use the Playwright already installed under `web/Front/customapp/node_modules/playwright`. They target the live test server `https://neoleadge.pythagore-init.com` and capture screenshots to `scripts/e2e-*-shots/`.
+The legacy one-off `scripts/e2e-*.mjs` / `probe-*.mjs` exploration scripts and
+their `*-shots/` screenshot dirs were removed — the Playwright suite at
+`web/Front/customapp/e2e/` replaces them.
 
 ### Deploy to test server
 

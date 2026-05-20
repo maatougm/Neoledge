@@ -27,8 +27,8 @@
 
       <div v-if="store.loading" class="bg__loading">
         <i class="pi pi-spin pi-spinner bg__spin" />
-        <p>Génération en cours, veuillez patienter (~30 s)…</p>
-        <p class="bg__hint">L'IA analyse questionnaire + cahier des charges + résumés de réunions.</p>
+        <p>Génération en cours, veuillez patienter (jusqu'à 1 à 2 min)…</p>
+        <p class="bg__hint">L'IA analyse questionnaire + cahier des charges + résumés de réunions. La génération complète d'un backlog peut prendre une à deux minutes.</p>
       </div>
 
       <div v-else-if="!store.proposed" class="bg__empty">

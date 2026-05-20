@@ -10,7 +10,7 @@ export interface ProposedEpic {
   children: ProposedTask[];
 }
 
-export interface ProposedTask {
+interface ProposedTask {
   title: string;
   description: string;
   type: 'Task' | 'Bug' | 'Feature';

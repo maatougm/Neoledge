@@ -3,6 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js';
 
+/** Outcome of one live-meeting chunk transcription. `status` lets the live UI
+ *  distinguish a real transcript from a dropped chunk so words don't silently
+ *  vanish on a transient backend error. */
+export type ChunkStatus = 'ok' | 'transient_failure' | 'service_unavailable';
+export interface ChunkTranscriptionResult {
+  text: string;
+  language: string | null;
+  status: ChunkStatus;
+}
+
 @Injectable()
 export class LiveMeetingService {
   private readonly logger = new Logger(LiveMeetingService.name);
@@ -19,7 +29,7 @@ export class LiveMeetingService {
    * Falls back to a plain empty string on service error so the live UI
    * keeps running rather than showing a hard error for every chunk.
    */
-  async transcribeChunk(buffer: Buffer, mimeType: string): Promise<{ text: string; language: string | null }> {
+  async transcribeChunk(buffer: Buffer, mimeType: string): Promise<ChunkTranscriptionResult> {
     if (!buffer?.length) throw new BadRequestException('Chunk audio vide.');
     if (buffer.length > 25 * 1024 * 1024) {
       throw new BadRequestException('Chunk trop volumineux (> 25 Mo).');
@@ -46,7 +56,12 @@ export class LiveMeetingService {
       if (!response.ok) {
         const body = await response.text().catch(() => '');
         this.logger.error(`Transcription chunk error ${response.status}: ${body.slice(0, 200)}`);
-        return { text: '', language: null };
+        // Distinguish "service down" (503 — probably loading the model) from
+        // a generic transient failure so the live UI can show the right hint.
+        // Returning the status (instead of silently empty) lets the frontend
+        // surface "chunk dropped — retrying" instead of swallowing words.
+        const status: ChunkStatus = response.status === 503 ? 'service_unavailable' : 'transient_failure';
+        return { text: '', language: null, status };
       }
       const data = (await response.json()) as {
         segments?: Array<{ text?: string; language?: string }>
@@ -66,10 +81,12 @@ export class LiveMeetingService {
       }
       // Fallback: if no segment-level language, take the first from detected_languages.
       if (!dominant && data.detected_languages?.length) dominant = data.detected_languages[0];
-      return { text, language: dominant };
+      return { text, language: dominant, status: 'ok' };
     } catch (e) {
+      // Network error / timeout / abort — transient. Surface it so the caller
+      // can retry rather than dropping the chunk's words silently.
       this.logger.warn(`Transcription chunk failed: ${e instanceof Error ? e.message : String(e)}`);
-      return { text: '', language: null };
+      return { text: '', language: null, status: 'transient_failure' };
     }
   }
 

@@ -6,7 +6,7 @@
 2. **RBAC strict** — chaque endpoint `/admin/*`, `/pm/*`, `/team/*` doit porter `@UseGuards(JwtAuthGuard, RolesGuard) + @Roles(...)`. Pas d'exception.
 3. **Result pattern** — tous les services renvoient `Result.ok()` / `Result.fail()`. Jamais `throw` métier.
 4. **DTO = class + class-validator** — jamais `interface`, jamais `import type` pour les DTO.
-5. **Pas de `prisma db push`** sur DB existante — SQL brut via `mysql.exe`.
+5. **Pas de `prisma db push`** — migrations trackées via `prisma migrate dev` (création) puis `prisma migrate deploy` (application) sur PostgreSQL.
 6. **Pas de commit sans** : `code-reviewer` + `qa` OK.
 7. **Feature flag ou rollback SQL** documenté pour tout changement destructif.
 

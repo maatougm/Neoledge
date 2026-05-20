@@ -320,3 +320,55 @@ describe('CahierDesChargesService.streamCahierContent', () => {
     expect(last.aiContent.architectureTechnique).toEqual([])
   })
 })
+
+describe('CahierDesChargesService.savePersistedCahier — concurrency guard', () => {
+  // Enriched prisma mock with the transaction + row-lock surface the save
+  // path now uses. $transaction invokes the callback with the same mock as tx.
+  function makeSavePrisma() {
+    const project = {
+      findFirst: jest.fn().mockResolvedValue({ id: 'proj-1', name: 'Proj', aiOutput: null }),
+      update: jest.fn().mockResolvedValue({}),
+    }
+    const prisma = {
+      project,
+      projectActivity: { create: jest.fn().mockResolvedValue({}) },
+      projectMember: { findMany: jest.fn().mockResolvedValue([]) },
+      cahierVersion: { create: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) },
+      $queryRawUnsafe: jest.fn().mockResolvedValue([{ id: 'proj-1' }]),
+      $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prismaPlaceholder)),
+    }
+    // Self-reference so the tx callback hits the same spies.
+    const prismaPlaceholder = prisma
+    return prisma
+  }
+
+  it('acquires a SELECT … FOR UPDATE row lock inside a transaction', async () => {
+    const zai = { isConfigured: () => true, chatWithUsage: jest.fn() as unknown as MockChatWithUsage }
+    const prisma = makeSavePrisma()
+    const service = await buildService(zai, prisma as never)
+
+    await service.savePersistedCahier('proj-1', { contexte: 'X' }, 'user-1')
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1)
+    // The lock query runs before the update.
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('FOR UPDATE'),
+      'proj-1',
+    )
+    expect(prisma.project.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'proj-1' } }),
+    )
+  })
+
+  it('rejects (no update) when the project is soft-deleted / missing', async () => {
+    const zai = { isConfigured: () => true, chatWithUsage: jest.fn() as unknown as MockChatWithUsage }
+    const prisma = makeSavePrisma()
+    prisma.project.findFirst.mockResolvedValueOnce(null)
+    const service = await buildService(zai, prisma as never)
+
+    await expect(service.savePersistedCahier('gone', { contexte: 'X' }, 'u1')).rejects.toThrow(
+      /introuvable/,
+    )
+    expect(prisma.project.update).not.toHaveBeenCalled()
+  })
+})

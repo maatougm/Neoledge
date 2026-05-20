@@ -1,0 +1,23 @@
+% Standalone build of chapitre 7 (for preview/PDF export).
+% The chapter itself is meant to be \input into the main thesis; this wrapper
+% supplies a minimal report-class document so it compiles on its own.
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{float}        % [H] float placement
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+
+% No bibliography in the standalone build — suppress \cite so it compiles
+% cleanly. (In the real thesis these resolve against references.bib.)
+\renewcommand{\cite}[1]{}
+
+\graphicspath{{images/}}
+\setcounter{chapter}{6} % so \chapter renders as "Chapitre 7"
+
+\begin{document}
+\input{chapitre7-phase-cloture.tex}
+\end{document}

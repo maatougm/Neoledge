@@ -88,9 +88,13 @@ async function backfillSegments(
   logger: Logger,
   opts: CliOptions,
 ): Promise<BatchResult> {
-  const projectFilter = opts.projectId
-    ? `AND m."projectId" = '${opts.projectId.replace(/'/g, "''")}'`
-    : ''
+  // Parameterised: pass project filter + batch size as positional args so
+  // pg's protocol does the quoting. The earlier version used manual
+  // single-quote doubling, which is a CWE-94 risk if `--project-id` ever
+  // came from an untrusted source (e.g. compromised CI). Use NULL as the
+  // sentinel "no project filter" so the SQL stays static.
+  const projectId = opts.projectId ?? null
+  const batchSize = Math.max(1, Math.min(1024, Math.floor(opts.batchSize)))
 
   let totalEmbedded = 0
   let totalFailed = 0
@@ -105,8 +109,10 @@ async function backfillSegments(
         WHERE s.embedding IS NULL
           AND s.text IS NOT NULL
           AND length(s.text) > 0
-          ${projectFilter}
-        LIMIT ${opts.batchSize}`,
+          AND ($1::text IS NULL OR m."projectId" = $1::text)
+        LIMIT $2::int`,
+      projectId,
+      batchSize,
     )
     if (rows.length === 0) break
 
@@ -164,7 +170,9 @@ async function backfillSegments(
   const remaining = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "TranscriptSegments" s
       JOIN "MeetingTranscripts" m ON m.id = s."transcriptId"
-     WHERE s.embedding IS NULL ${projectFilter}`,
+     WHERE s.embedding IS NULL
+       AND ($1::text IS NULL OR m."projectId" = $1::text)`,
+    projectId,
   )
   return { embedded: totalEmbedded, failed: totalFailed, remaining: Number(remaining[0]?.count ?? 0) }
 }
@@ -175,9 +183,8 @@ async function backfillFieldValues(
   logger: Logger,
   opts: CliOptions,
 ): Promise<BatchResult> {
-  const projectFilter = opts.projectId
-    ? `AND pfv."projectId" = '${opts.projectId.replace(/'/g, "''")}'`
-    : ''
+  const projectId = opts.projectId ?? null
+  const batchSize = Math.max(1, Math.min(1024, Math.floor(opts.batchSize)))
 
   let totalEmbedded = 0
   let totalFailed = 0
@@ -189,8 +196,10 @@ async function backfillFieldValues(
         WHERE pfv.embedding IS NULL
           AND pfv.value IS NOT NULL
           AND length(pfv.value) > 0
-          ${projectFilter}
-        LIMIT ${opts.batchSize}`,
+          AND ($1::text IS NULL OR pfv."projectId" = $1::text)
+        LIMIT $2::int`,
+      projectId,
+      batchSize,
     )
     if (rows.length === 0) break
 
@@ -233,7 +242,9 @@ async function backfillFieldValues(
 
   const remaining = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "ProjectFieldValues" pfv
-     WHERE pfv.embedding IS NULL AND pfv.value IS NOT NULL AND length(pfv.value) > 0 ${projectFilter}`,
+     WHERE pfv.embedding IS NULL AND pfv.value IS NOT NULL AND length(pfv.value) > 0
+       AND ($1::text IS NULL OR pfv."projectId" = $1::text)`,
+    projectId,
   )
   return { embedded: totalEmbedded, failed: totalFailed, remaining: Number(remaining[0]?.count ?? 0) }
 }
@@ -244,9 +255,8 @@ async function backfillSummaries(
   logger: Logger,
   opts: CliOptions,
 ): Promise<BatchResult> {
-  const projectFilter = opts.projectId
-    ? `AND m."projectId" = '${opts.projectId.replace(/'/g, "''")}'`
-    : ''
+  const projectId = opts.projectId ?? null
+  const batchSize = Math.max(1, Math.min(1024, Math.floor(opts.batchSize)))
 
   let totalEmbedded = 0
   let totalFailed = 0
@@ -257,8 +267,10 @@ async function backfillSummaries(
         WHERE m."summaryEmbedding" IS NULL
           AND m."aiSummary" IS NOT NULL
           AND length(m."aiSummary") > 0
-          ${projectFilter}
-        LIMIT ${opts.batchSize}`,
+          AND ($1::text IS NULL OR m."projectId" = $1::text)
+        LIMIT $2::int`,
+      projectId,
+      batchSize,
     )
     if (rows.length === 0) break
 
@@ -298,7 +310,9 @@ async function backfillSummaries(
 
   const remaining = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "MeetingTranscripts" m
-     WHERE m."summaryEmbedding" IS NULL AND m."aiSummary" IS NOT NULL AND length(m."aiSummary") > 0 ${projectFilter}`,
+     WHERE m."summaryEmbedding" IS NULL AND m."aiSummary" IS NOT NULL AND length(m."aiSummary") > 0
+       AND ($1::text IS NULL OR m."projectId" = $1::text)`,
+    projectId,
   )
   return { embedded: totalEmbedded, failed: totalFailed, remaining: Number(remaining[0]?.count ?? 0) }
 }

@@ -9,4 +9,4 @@ export const VALID_ROLES = [
   'Member',
 ] as const
 
-export type UserRole = (typeof VALID_ROLES)[number]
+type UserRole = (typeof VALID_ROLES)[number]

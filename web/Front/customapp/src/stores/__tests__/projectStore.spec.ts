@@ -132,7 +132,11 @@ describe('useProjectStore', () => {
       const store = await getStore()
       const result = await store.fetchById('p1')
 
-      expect(api.get).toHaveBeenCalledWith('/admin/project/p1')
+      // fetchById switched from /admin/project/:id to /pm/projects/:id
+      // because the legacy admin route uses ParseUUIDPipe which rejects
+      // patterned demo UUIDs; the PM route auto-passes the guard for
+      // Admin role.
+      expect(api.get).toHaveBeenCalledWith('/pm/projects/p1')
       expect(store.currentProject).toEqual(mockDetail)
       expect(result).toEqual(mockDetail)
     })
@@ -224,7 +228,11 @@ describe('useProjectStore', () => {
       vi.mocked(api.post).mockResolvedValueOnce({ data: undefined } as never)
       await store.updateStatus('p1', 'Kickoff')
 
-      expect(store.currentProject?.status).toBe('InProgress')
+      // The test was originally written when 'InProgress' was the canonical
+      // active status; the project's phase model now uses 'Kickoff' (the
+      // 8-RACI phase model — see commit f1edc25). Both currentProject and
+      // the list row reflect the new value.
+      expect(store.currentProject?.status).toBe('Kickoff')
     })
   })
 
@@ -313,7 +321,7 @@ describe('useProjectStore', () => {
   })
 
   describe('activeProjects getter', () => {
-    it('excludes Draft and Completed', async () => {
+    it('excludes Draft / Cloture / Archived', async () => {
       vi.mocked(api.get).mockResolvedValueOnce(
         envelope([mockSummary, mockSummaryActive, mockSummaryCompleted]) as never,
       )
@@ -321,8 +329,11 @@ describe('useProjectStore', () => {
       const store = await getStore()
       await store.fetchAll()
 
+      // mockSummary is Draft (filtered), mockSummaryActive is Kickoff
+      // (kept), mockSummaryCompleted is Cloture (filtered). The getter
+      // excludes Draft / Cloture / Archived.
       expect(store.activeProjects).toHaveLength(1)
-      expect(store.activeProjects[0].status).toBe('InProgress')
+      expect(store.activeProjects[0].status).toBe('Kickoff')
     })
   })
 })
