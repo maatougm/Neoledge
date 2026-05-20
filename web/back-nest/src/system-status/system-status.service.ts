@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ErrorTracker, type TrackedError } from '../common/error-tracker.js';
 
 export interface SecurityEventDto {
   action: string;
@@ -30,6 +31,12 @@ export interface SystemStatusDto {
     logins24h: number;
     failedLoginsCurrent: number; // sum of pending failed attempts across accounts
     recentEvents: SecurityEventDto[];
+  };
+  // Server errors (5xx) captured since boot — in-process, resets on restart.
+  errors: {
+    totalSinceBoot: number;
+    recentCount: number;
+    recent: TrackedError[];
   };
 }
 
@@ -112,6 +119,7 @@ export class SystemStatusService {
           createdAt: e.createdAt.toISOString(),
         })),
       },
+      errors: ErrorTracker.snapshot(),
     };
   }
 

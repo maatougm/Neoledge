@@ -12,6 +12,7 @@ vi.mock('@/lib/api', () => ({
         databaseStatus: 'Connecté', transcriptionStatus: 'Connecté',
         userTotal: 0, userActive: 0, projectTotal: 0, projectByStatus: {},
         security: { lockedAccounts: 0, accountsUnderAttack: 0, logins24h: 0, failedLoginsCurrent: 0, recentEvents: [] },
+        errors: { totalSinceBoot: 0, recentCount: 0, recent: [] },
       },
     }),
     post: vi.fn(), patch: vi.fn(), delete: vi.fn(),

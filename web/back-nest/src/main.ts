@@ -17,6 +17,7 @@ import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
+import { ErrorTracker } from './common/error-tracker.js';
 
 @Catch()
 class AllExceptionsFilter implements ExceptionFilter {
@@ -50,6 +51,17 @@ class AllExceptionsFilter implements ExceptionFilter {
       }`,
       stack,
     );
+
+    // Record 5xx (server-side) errors for the admin system dashboard.
+    if (status >= 500) {
+      ErrorTracker.record({
+        status,
+        method: request.method,
+        path: request.url,
+        name,
+        message: typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage),
+      });
+    }
 
     if (this.isProduction) {
       // Sanitised response — never leak stack, error name, or Prisma codes.

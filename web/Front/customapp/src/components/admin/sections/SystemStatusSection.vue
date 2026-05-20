@@ -84,6 +84,26 @@
             <p class="kpi-value">{{ status.security.logins24h }}</p>
           </div>
         </div>
+        <div class="kpi-card" :class="status.errors.totalSinceBoot > 0 ? 'kpi-card--red' : 'kpi-card--green'">
+          <i class="pi pi-exclamation-triangle kpi-icon" :style="status.errors.totalSinceBoot > 0 ? 'color:#dc2626' : 'color:#10b981'" />
+          <div class="kpi-body">
+            <p class="kpi-label">Erreurs serveur</p>
+            <p class="kpi-value">{{ status.errors.totalSinceBoot }}</p>
+            <p class="kpi-hint">depuis le démarrage</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent server errors -->
+      <div class="status-breakdown" v-if="status.errors.recent.length">
+        <h3 class="breakdown-title">Erreurs serveur récentes</h3>
+        <div class="event-list">
+          <div v-for="(e, i) in status.errors.recent" :key="i" class="event-row">
+            <NeoTag :value="String(e.status)" severity="danger" />
+            <span class="event-user">{{ e.method }} {{ e.path }} — {{ e.message }}</span>
+            <span class="event-time">{{ formatTime(e.at) }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- Recent security events -->
@@ -155,6 +175,11 @@ interface SystemStatus {
     logins24h: number
     failedLoginsCurrent: number
     recentEvents: SecurityEvent[]
+  }
+  errors: {
+    totalSinceBoot: number
+    recentCount: number
+    recent: Array<{ status: number; method: string; path: string; name: string; message: string; at: string }>
   }
 }
 
