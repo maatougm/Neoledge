@@ -3,10 +3,33 @@ import { BacklogController } from './backlog.controller.js'
 describe('BacklogController', () => {
   let controller: BacklogController
   let service: { preview: jest.Mock; accept: jest.Mock }
+  let jobs: { start: jest.Mock; get: jest.Mock }
 
   beforeEach(() => {
     service = { preview: jest.fn(), accept: jest.fn() }
-    controller = new BacklogController(service as unknown as never)
+    jobs = { start: jest.fn(), get: jest.fn() }
+    controller = new BacklogController(service as unknown as never, jobs as unknown as never)
+  })
+
+  describe('generateAsync', () => {
+    it('starts a background job and returns its id', () => {
+      jobs.start.mockReturnValue('job-1')
+      const out = controller.generateAsync('proj-1')
+      expect(jobs.start).toHaveBeenCalledTimes(1)
+      expect(out).toEqual({ jobId: 'job-1' })
+    })
+  })
+
+  describe('jobStatus', () => {
+    it('returns the job snapshot when present', () => {
+      jobs.get.mockReturnValue({ status: 'done', result: { epics: [] } })
+      expect(controller.jobStatus('job-1')).toEqual({ status: 'done', result: { epics: [] } })
+    })
+
+    it('throws NotFound when the job is missing/expired', () => {
+      jobs.get.mockReturnValue(null)
+      expect(() => controller.jobStatus('nope')).toThrow()
+    })
   })
 
   describe('preview', () => {

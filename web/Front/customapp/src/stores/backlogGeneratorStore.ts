@@ -45,14 +45,33 @@ export const useBacklogGeneratorStore = defineStore('backlogGenerator', () => {
     error.value = null
     accepted.value = false
     try {
-      const { data } = await api.post<ProposedBacklog>(
-        `/pm/projects/${projectId}/ai/generate-backlog`,
+      // Backlog generation takes ~1-2 min. Run it as a background job and poll,
+      // instead of a single long blocking request that times out / feels hung.
+      const { data: started } = await api.post<{ jobId: string }>(
+        `/pm/projects/${projectId}/ai/generate-backlog-async`,
       )
+      const jobId = started.jobId
+      const deadline = Date.now() + 180_000
+      let result: ProposedBacklog | null = null
+      while (Date.now() < deadline) {
+        const { data: job } = await api.get<{ status: string; result?: ProposedBacklog; error?: string }>(
+          `/pm/projects/${projectId}/ai/backlog-jobs/${jobId}`,
+        )
+        if (job.status === 'done') {
+          result = job.result ?? { epics: [] }
+          break
+        }
+        if (job.status === 'error') {
+          throw new Error(job.error || 'Échec de la génération du backlog.')
+        }
+        await new Promise((r) => setTimeout(r, 2500))
+      }
+      if (!result) throw new Error('La génération a expiré. Veuillez réessayer.')
       // Inject a stable client-side `_uid` on every epic and task so v-for keys
       // remain valid across edits / removes (otherwise array-index keys cause Vue
       // to rebind inputs to the wrong card after a delete in the middle).
       proposed.value = {
-        epics: (data.epics ?? []).map((e) => ({
+        epics: (result.epics ?? []).map((e) => ({
           ...e,
           _uid: crypto.randomUUID(),
           children: (e.children ?? []).map((t) => ({ ...t, _uid: crypto.randomUUID() })),

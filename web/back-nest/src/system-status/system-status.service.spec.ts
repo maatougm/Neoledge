@@ -1,22 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { SystemStatusService } from './system-status.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const mockPrisma = {
   $queryRaw: jest.fn(),
-  appUser: { count: jest.fn() },
+  appUser: { count: jest.fn(), aggregate: jest.fn() },
   project: { count: jest.fn(), groupBy: jest.fn() },
+  auditLog: { count: jest.fn(), findMany: jest.fn() },
 };
+
+// No TRANSCRIPTION_URL → checkTranscription short-circuits to 'Désactivé' (no fetch).
+const mockConfig = { get: jest.fn(() => undefined) };
+
+/** Set sane defaults for the security/error queries so each test only sets what it asserts. */
+function defaultSecurityMocks(): void {
+  // appUser.count order: total, active, locked, attacked
+  mockPrisma.appUser.aggregate.mockResolvedValue({ _sum: { failedLoginAttempts: 0 } });
+  mockPrisma.auditLog.count.mockResolvedValue(0);
+  mockPrisma.auditLog.findMany.mockResolvedValue([]);
+}
 
 describe('SystemStatusService', () => {
   let service: SystemStatusService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    defaultSecurityMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SystemStatusService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
     service = module.get<SystemStatusService>(SystemStatusService);
@@ -27,7 +42,9 @@ describe('SystemStatusService', () => {
       mockPrisma.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
       mockPrisma.appUser.count
         .mockResolvedValueOnce(50) // total
-        .mockResolvedValueOnce(42); // active
+        .mockResolvedValueOnce(42) // active
+        .mockResolvedValueOnce(0) // locked
+        .mockResolvedValueOnce(0); // attacked
       mockPrisma.project.count.mockResolvedValueOnce(10);
       mockPrisma.project.groupBy.mockResolvedValue([
         { status: 'Active', _count: { _all: 6 } },
@@ -37,14 +54,19 @@ describe('SystemStatusService', () => {
 
       const result = await service.getStatus();
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
+        serverStatus: 'up',
         databaseStatus: 'Connecté',
+        transcriptionStatus: 'Désactivé',
         userTotal: 50,
         userActive: 42,
         projectTotal: 10,
         projectByStatus: { Active: 6, Completed: 3, Draft: 1 },
       });
-      expect(mockPrisma.appUser.count).toHaveBeenCalledTimes(2);
+      expect(result.security).toMatchObject({ lockedAccounts: 0, accountsUnderAttack: 0, logins24h: 0 });
+      expect(result.errors).toMatchObject({ recent: [] });
+      expect(typeof result.uptimeSeconds).toBe('number');
+      expect(mockPrisma.appUser.count).toHaveBeenCalledTimes(4);
       expect(mockPrisma.project.count).toHaveBeenCalledWith({ where: { isDeleted: false } });
     });
 
@@ -61,7 +83,7 @@ describe('SystemStatusService', () => {
 
     it('returns an empty projectByStatus object when there are no projects', async () => {
       mockPrisma.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
-      mockPrisma.appUser.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      mockPrisma.appUser.count.mockResolvedValue(0);
       mockPrisma.project.count.mockResolvedValueOnce(0);
       mockPrisma.project.groupBy.mockResolvedValue([]);
 
@@ -73,7 +95,7 @@ describe('SystemStatusService', () => {
 
     it('groupBy is scoped to non-deleted projects', async () => {
       mockPrisma.$queryRaw.mockResolvedValue([{}]);
-      mockPrisma.appUser.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+      mockPrisma.appUser.count.mockResolvedValue(1);
       mockPrisma.project.count.mockResolvedValueOnce(1);
       mockPrisma.project.groupBy.mockResolvedValue([{ status: 'Active', _count: { _all: 1 } }]);
 
