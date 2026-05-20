@@ -101,6 +101,10 @@ jobs:
       DATABASE_URL: postgresql://neoleadge:neoleadge@127.0.0.1:5432/neoleadge?schema=public
       JWT_SECRET: ci-secret-at-least-32-chars-long-padding-aaa
       JWT_EXPIRES_IN: 8h
+      # Required by app.module env validation. No transcription service runs in
+      # CI; these just satisfy startup (smoke scripts don't exercise STT).
+      TRANSCRIPTION_URL: http://localhost:8000
+      TRANSCRIPTION_SECRET: ci-transcription-secret
 
     steps:
       - uses: actions/checkout@v4
