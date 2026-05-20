@@ -730,31 +730,31 @@ describe('WorkPackagesService', () => {
       expect(r.error).toContain('introuvables ou inactifs');
     });
 
-    it('rejects when an assignee has a non-assignable role (e.g., other-project PM)', async () => {
-      prisma.appUser.findMany.mockResolvedValueOnce([{ id: 'u-other-pm', role: 'ProjectManager' }]);
-      const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'u-other-pm' }], 'pm-1');
+    it('rejects a non-Member assignee (PM)', async () => {
+      prisma.appUser.findMany.mockResolvedValueOnce([{ id: 'pm-1', role: 'ProjectManager' }]);
+      const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'pm-1' }], 'pm-1');
       expect(r.isFailure).toBe(true);
       expect(r.error).toContain('assignables');
     });
 
-    it('accepts the project own PM as an assignee', async () => {
-      prisma.appUser.findMany.mockResolvedValueOnce([{ id: 'pm-1', role: 'ProjectManager' }]);
-      prisma.workPackage.updateMany.mockResolvedValueOnce({ count: 1 });
-      const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'pm-1' }], 'pm-1');
-      expect(r.isSuccess).toBe(true);
+    it('rejects a SpecificationTeam assignee (validation, not execution)', async () => {
+      prisma.appUser.findMany.mockResolvedValueOnce([{ id: 'u-spec', role: 'SpecificationTeam' }]);
+      const r = await svc.bulkAssign('p1', [{ wpId: 'wp-1', assigneeId: 'u-spec' }], 'pm-1');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toContain('assignables');
     });
 
-    it('accepts Member + SpecificationTeam assignees', async () => {
+    it('accepts Member assignees', async () => {
       prisma.appUser.findMany.mockResolvedValueOnce([
         { id: 'u-mem', role: 'Member' },
-        { id: 'u-spec', role: 'SpecificationTeam' },
+        { id: 'u-mem2', role: 'Member' },
       ]);
       prisma.workPackage.updateMany.mockResolvedValue({ count: 1 });
       const r = await svc.bulkAssign(
         'p1',
         [
           { wpId: 'wp-1', assigneeId: 'u-mem' },
-          { wpId: 'wp-2', assigneeId: 'u-spec' },
+          { wpId: 'wp-2', assigneeId: 'u-mem2' },
         ],
         'pm-1',
       );

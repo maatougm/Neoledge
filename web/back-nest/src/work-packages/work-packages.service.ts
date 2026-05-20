@@ -754,27 +754,17 @@ export class WorkPackagesService {
       sprintName = sprint.name;
     }
 
-    // Validate every non-null assignee is an active user whose role allows
-    // assignment on this project. Per-project team selection was removed,
-    // so the eligible union is:
-    //   - The project's own PM (so they can self-assign).
-    //   - Every active Member / SpecificationTeam user.
-    //   - Admins and PMs of OTHER projects are NOT allowed (they have no
-    //     place on this project's task board; the UI dropdown matches).
+    // Validate every non-null assignee is an active user with the Member role.
+    // Tasks are executed by the Member team only — the PM owns the project and
+    // SpecificationTeam does cahier validation, so neither is assignable here.
     //
     // This is the single source of truth — the UI's /assignable-users
-    // endpoint and the AI's read_project_members tool both return the
-    // exact same union. If you tighten this, tighten those too.
+    // endpoint and the AI's read_project_members tool return the exact same
+    // set. If you change this, change those two too.
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
-      const projectRow = await this.prisma.project.findFirst({
-        where: { id: projectId, isDeleted: false },
-        select: { projectManagerId: true },
-      });
-      const projectPmId = projectRow?.projectManagerId ?? null;
-
       const users = await this.prisma.appUser.findMany({
         where: { id: { in: uniqueAssignees }, isActive: true },
         select: { id: true, role: true },
@@ -782,10 +772,7 @@ export class WorkPackagesService {
       if (users.length !== uniqueAssignees.length) {
         return Result.fail('Certains utilisateurs sont introuvables ou inactifs.');
       }
-      const ASSIGNABLE_ROLES = new Set(['Member', 'SpecificationTeam']);
-      const outsiders = users
-        .filter((u) => !ASSIGNABLE_ROLES.has(u.role) && u.id !== projectPmId)
-        .map((u) => u.id);
+      const outsiders = users.filter((u) => u.role !== 'Member').map((u) => u.id);
       if (outsiders.length > 0) {
         return Result.fail(
           `Certains utilisateurs ne sont pas assignables sur ce projet : ${outsiders.length} ID(s).`,

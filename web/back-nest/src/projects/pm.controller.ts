@@ -262,39 +262,27 @@ export class PmController {
   /**
    * Users who can be assigned a WorkPackage on this project.
    *
-   * Per-project team selection was deliberately removed — the PM should be
-   * able to assign any Member or SpecificationTeam user without first adding
-   * them to `ProjectMember`. The legitimate set is therefore:
-   *   - The project's own PM (so they can assign themselves a task).
-   *   - Every active user with role in {Member, SpecificationTeam}.
+   * Tasks are executed by the Member team only — the PM owns the project and
+   * SpecificationTeam does cahier validation, so neither is assignable here.
+   * The eligible set is therefore: every active user with role `Member`.
    *
-   * Admins and PMs from OTHER projects are deliberately excluded — they
-   * have no place on this project's task board and showing them up there
-   * was the source of "Certains utilisateurs ne sont pas membres du projet"
-   * errors when the PM picked one. The matching write-path validation in
-   * `WorkPackagesService.bulkAssign` enforces the same union.
+   * This is mirrored by the write-path validation in
+   * `WorkPackagesService.bulkAssign` and the AI's `read_project_members`
+   * tool — all three MUST return the same set.
    */
   @Get('projects/:id/assignable-users')
   @ProjectAccess('id')
   async getAssignableUsers(@Param('id') projectId: string) {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
-      select: { projectManagerId: true },
+      select: { id: true },
     });
     if (!project) return [];
 
     const users = await this.prisma.appUser.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { role: { in: ['Member', 'SpecificationTeam'] } },
-          // The project's own PM — even if their role on the platform is
-          // ProjectManager (which we otherwise exclude to keep other PMs out).
-          ...(project.projectManagerId ? [{ id: project.projectManagerId }] : []),
-        ],
-      },
+      where: { isActive: true, role: 'Member' },
       select: { id: true, firstName: true, lastName: true, role: true },
-      orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
+      orderBy: [{ firstName: 'asc' }],
     });
     return users;
   }
