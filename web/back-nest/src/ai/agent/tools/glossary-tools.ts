@@ -31,7 +31,7 @@ const GLOSSARY: Record<string, string> = {
   'feedback':           'Retour de la SpecificationTeam sur un cahier des charges (table CahierFeedback). Statut : approved / rejected. Re-sauvegarder le cahier réinitialise la file de validation.',
 }
 
-export const readGlossaryTool: ToolDefinition<{ term: string }, { term: string; definition: string | null }> = {
+export const readGlossaryTool: ToolDefinition<{ term?: string }, { term: string; definition: string | null }> = {
   name: 'read_glossary',
   description: "Look up a NeoLedge / Elise / project-management term in the curated glossary. Use this BEFORE inventing a definition for any term you're not 100% sure about.",
   parameters: obj(
@@ -39,8 +39,16 @@ export const readGlossaryTool: ToolDefinition<{ term: string }, { term: string; 
     { required: ['term'] },
   ),
   handler: async ({ term }) => {
-    const key = term.trim().toLowerCase()
+    const key = (term ?? '').trim().toLowerCase()
+    // Planner-worker reads the glossary as background context (no specific
+    // term). Return the whole glossary instead of crashing on `undefined`.
+    if (key === '') {
+      const all = Object.entries(GLOSSARY)
+        .map(([t, d]) => `${t}: ${d}`)
+        .join('\n')
+      return { term: '', definition: all }
+    }
     const definition = GLOSSARY[key] ?? GLOSSARY[key.replace(/\s+/g, '.')] ?? null
-    return { term, definition }
+    return { term: term ?? '', definition }
   },
 }
