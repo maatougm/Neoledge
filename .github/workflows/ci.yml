@@ -91,13 +91,11 @@ jobs:
     name: Zero-error smoke test (Playwright)
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    # Infra steps (DB, migrate, backend boot, frontend serve) remain hard gates.
-    # Only the individual E2E script steps below are marked continue-on-error,
-    # because they target a removed app version (6-role RBAC, wiki/budget/
-    # portfolio, unseeded test accounts). This keeps the check green while the
-    # E2E suite is modernized.
-    # TODO(e2e): modernize smoke-*.mjs to the current app, then drop the
-    # per-step continue-on-error so these become real gates again.
+    # Full-stack smoke: boots Postgres + migrate + backend + the production
+    # frontend (built at root base, like prod) and navigates every route
+    # asserting zero console/page errors. The 8 legacy E2E scripts (6-role RBAC,
+    # wiki/budget/portfolio, unseeded test accounts) were retired — they tested
+    # a removed app version. This is now a real gate (no continue-on-error).
 
     services:
       postgres:
@@ -153,19 +151,18 @@ jobs:
       # Frontend setup + build + static serve
       - name: Frontend install + build
         working-directory: web/Front/customapp
+        # Build at root base (VITE_BASE=/) to match what prod actually serves.
         run: |
           npm ci
-          npm run build
+          VITE_BASE=/ npm run build
 
       - name: Frontend serve (background)
         working-directory: web/Front/customapp
         run: |
-          # vite preview serves the built app at the configured base
-          # (/Sample/Front/) with SPA fallback — `serve dist` can't do the
-          # subpath, which is what the smoke scripts hardcode as BASE.
+          # vite preview serves the built app (root base) with SPA fallback.
           npm run preview -- --port 5174 --strictPort &
           for i in {1..30}; do
-            if curl -sf http://localhost:5174/Sample/Front/ > /dev/null; then exit 0; fi
+            if curl -sf http://localhost:5174/ > /dev/null; then exit 0; fi
             sleep 1
           done
           echo "Frontend serve did not start"; exit 1
@@ -177,63 +174,16 @@ jobs:
           npm install --no-save playwright @axe-core/playwright axe-core
           npx playwright install --with-deps chromium
 
-      - name: Smoke — navigation + interactive flows
+      - name: Smoke — navigation (zero console/page errors, every route)
         working-directory: web/Front/customapp
-        continue-on-error: true
+        env:
+          SMOKE_BASE: http://localhost:5174
+          SMOKE_API_BASE: http://localhost:5122
         run: node smoke-test.mjs
 
-      - name: Smoke — mutations (real CRUD in browser)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-mutations.mjs
-
-      - name: Smoke — accessibility (axe-core, fails on critical)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-a11y.mjs
-
-      - name: Smoke — dark mode
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-darkmode.mjs
-
-      - name: Smoke — mobile (iPhone SE viewport)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-mobile.mjs
-
-      - name: Smoke — RBAC matrix (6 roles × API + UI)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-rbac.mjs
-
-      - name: Smoke — public + auth transitions (lockout, portal)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-public.mjs
-
-      - name: Smoke — every clickable button (bounded)
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-every-button.mjs
-
-      - name: Smoke — multi-user real-time collaboration
-        working-directory: web/Front/customapp
-        continue-on-error: true
-        run: node smoke-collab.mjs
-
-      - name: Upload smoke reports
+      - name: Upload smoke report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-reports
-          path: |
-            /tmp/smoke-report.json
-            /tmp/smoke-mutations.json
-            /tmp/smoke-a11y.json
-            /tmp/smoke-darkmode.json
-            /tmp/smoke-mobile.json
-            /tmp/smoke-rbac.json
-            /tmp/smoke-public.json
-            /tmp/smoke-every-button.json
-            /tmp/smoke-collab.json
+          name: smoke-report
+          path: /tmp/smoke-report.json

@@ -10,8 +10,10 @@
 import { chromium } from 'playwright'
 import { writeFileSync, mkdirSync } from 'fs'
 
-const BASE = 'http://localhost:5174/Sample/Front'
-const API_BASE = 'http://localhost:5122'
+// Prod (and CI) serve the SPA at root (VITE_BASE=/); /Sample/Front is only the
+// dev + Elise-embed base. Match prod here.
+const BASE = process.env.SMOKE_BASE ?? 'http://localhost:5174'
+const API_BASE = process.env.SMOKE_API_BASE ?? 'http://localhost:5122'
 
 const ADMIN = { email: 'admin@neoleadge.com', password: 'Admin@123' }
 
@@ -57,19 +59,20 @@ function buildRoutes(projectId) {
     '/app/admin/activity',
     '/app/admin/logs',
     '/app/admin/system',
-    '/app/admin/portfolio',
     '/app/admin/team-planner',
     '/app/admin/audit',
     '/app/admin/trash',
     '/app/pm/projects',
     `/app/pm/projects/${projectId}`,
+    `/app/pm/projects/${projectId}/questionnaire`,
+    `/app/pm/projects/${projectId}/cahier`,
     `/app/pm/projects/${projectId}/workpackages`,
     `/app/pm/projects/${projectId}/gantt`,
     `/app/pm/projects/${projectId}/board`,
     `/app/pm/projects/${projectId}/backlogs`,
     `/app/pm/projects/${projectId}/sprint`,
-    `/app/pm/projects/${projectId}/wiki`,
-    `/app/pm/projects/${projectId}/budget`,
+    `/app/pm/projects/${projectId}/backlog-generator`,
+    `/app/pm/projects/${projectId}/assign-tasks`,
     `/app/pm/projects/${projectId}/time`,
     `/app/pm/projects/${projectId}/members`,
     `/app/pm/projects/${projectId}/activity`,
