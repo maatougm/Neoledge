@@ -111,29 +111,7 @@ async function run() {
     if (cols === 0) throw new Error('No kanban columns rendered')
   })
 
-  // ── Test 4: Create wiki page ────────────────────────────────────────
-  await test('Create wiki page', async () => {
-    await page.goto(`${BASE}/app/pm/projects/${projectId}/wiki`, { waitUntil: 'networkidle' })
-    await page.waitForTimeout(500)
-    await page.getByRole('button', { name: /Nouvelle page/i }).click()
-    await page.waitForTimeout(300)
-    const title = page.locator('input[type="text"]').first()
-    await title.fill(`Smoke Wiki ${Date.now()}`)
-    await page.getByRole('button', { name: /Créer/i }).click()
-    await page.waitForTimeout(800)
-  })
-
-  // ── Test 5: Add budget line item ────────────────────────────────────
-  await test('Add budget line item', async () => {
-    await page.goto(`${BASE}/app/pm/projects/${projectId}/budget`, { waitUntil: 'networkidle' })
-    await page.waitForTimeout(500)
-    await page.getByRole('button', { name: /Ajouter ligne/i }).click()
-    await page.waitForTimeout(300)
-    const desc = page.locator('input[type="text"]').first()
-    await desc.fill(`Smoke line ${Date.now()}`)
-    await page.getByRole('button', { name: /^Ajouter$/ }).click()
-    await page.waitForTimeout(800)
-  })
+  // (Wiki + Budget CRUD tests removed — those modules were retired.)
 
   // ── Test 6: Log time entry ─────────────────────────────────────────
   await test('Log time entry', async () => {

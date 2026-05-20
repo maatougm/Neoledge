@@ -105,6 +105,9 @@ jobs:
       # CI; these just satisfy startup (smoke scripts don't exercise STT).
       TRANSCRIPTION_URL: http://localhost:8000
       TRANSCRIPTION_SECRET: ci-transcription-secret
+      # The smoke frontend is served by vite preview on :5174; allow it (and
+      # the dev origin) through CORS so in-browser API calls aren't blocked.
+      CORS_ORIGINS: http://localhost:5174,http://localhost:5173
 
     steps:
       - uses: actions/checkout@v4
