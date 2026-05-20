@@ -10,7 +10,7 @@
  * via the single-shot path on AiProviderFactory for callers that want it.
  */
 
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../../prisma/prisma.service.js'
 import { AiUsageService } from '../../ai-usage/ai-usage.service.js'
@@ -32,7 +32,7 @@ const DEFAULT_PER_CALL_TIMEOUT_MS = 120_000
 const BUDGET_RECHECK_AT_ITER = 4
 
 @Injectable()
-export class AgentRunnerService {
+export class AgentRunnerService implements OnModuleInit {
   private readonly logger = new Logger(AgentRunnerService.name)
 
   constructor(
@@ -40,6 +40,29 @@ export class AgentRunnerService {
     private readonly aiUsage: AiUsageService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Log the resolved AI configuration once at startup. Catches the
+   * misconfiguration class (wrong/typo'd model, missing key, agent mode off)
+   * at boot instead of as a generic "indisponible" on the first user request.
+   */
+  onModuleInit(): void {
+    const enabled = this.config.get<string>('AI_ENABLED') ?? 'false'
+    const agentMode = this.config.get<string>('AI_AGENT_MODE') ?? 'off'
+    const provider = this.resolveProvider()
+    try {
+      const cfg = this.providerConfig(provider)
+      this.logger.log(
+        `AI config — enabled=${enabled} agentMode=${agentMode} provider=${provider} ` +
+          `model=${cfg.model} baseUrl=${cfg.baseUrl} apiKey=${cfg.apiKey ? 'set' : 'MISSING'}`,
+      )
+    } catch (e) {
+      this.logger.warn(
+        `AI config — enabled=${enabled} agentMode=${agentMode} provider=${provider}: ` +
+          `provider NOT usable — ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+  }
 
   /**
    * Run an agent loop synchronously. Throws on failure — callers that want

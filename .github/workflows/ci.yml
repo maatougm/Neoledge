@@ -43,6 +43,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Type-check (incl. tests)
+        # `npm run build` (nest build) uses tsconfig.build.json which EXCLUDES
+        # *.spec.ts, and jest uses esbuild (no type-checking). This step
+        # type-checks the whole tree — tests included — so spec type errors
+        # can't silently rot. (Frontend already does this via vue-tsc in build.)
+        run: npx tsc --noEmit
+
       - name: Lint
         run: npm run lint --if-present
         continue-on-error: true

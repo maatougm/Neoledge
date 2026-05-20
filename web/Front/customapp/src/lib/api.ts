@@ -31,6 +31,14 @@ const api = axios.create({ withXSRFToken: false })
 api.defaults.withXSRFToken = false
 api.defaults.xsrfCookieName = ''
 api.defaults.xsrfHeaderName = ''
+// Default request timeout. Without one, a stuck backend hangs the UI forever.
+// AI endpoints (cahier/backlog/assignment) legitimately take 20-90s, so they
+// get a longer cap below — but never unbounded.
+api.defaults.timeout = 30_000
+
+// Long-running AI generation endpoints — allow up to 3 min before aborting.
+const AI_SLOW_ENDPOINT_RE =
+  /(cahier-des-charges\/(preview|generate)|ai\/(generate|accept)-backlog|suggest-assignments|\/ai-analyze)/
 
 // ─── Request interceptor ──────────────────────────────────────────────────────
 
@@ -47,6 +55,11 @@ api.interceptors.request.use(
     // Prefix relative URLs with the configured API base URL
     if (config.url && !config.url.startsWith('http')) {
       config.url = configStore.apiUrl + config.url
+    }
+
+    // Slow AI generation endpoints get a longer timeout than the default.
+    if (config.url && AI_SLOW_ENDPOINT_RE.test(config.url)) {
+      config.timeout = 180_000
     }
 
     return config
