@@ -104,6 +104,10 @@ export class AssemblyAiProvider {
         audio_url: uploadUrl,
         speaker_labels: true,
         language_detection: true,
+        // Required by the current AssemblyAI API — a non-empty model list.
+        // "universal-2" is the stable multilingual model; "universal-3-pro"
+        // is newer/more accurate but pricier.
+        speech_models: ['universal-2'],
         // Bump the boost weight for project-domain jargon if/when we add a
         // word_boost list — keep the wire shape ready.
         // word_boost: ['NeoLeadge', 'cahier des charges', ...],
