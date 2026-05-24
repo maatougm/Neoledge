@@ -11,6 +11,7 @@ import { BadGatewayException, BadRequestException, NotFoundException } from '@ne
 import { LiveMeetingService } from './live-meeting.service'
 import { PrismaService } from '../prisma/prisma.service'
 import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service'
+import { AssemblyAiProvider } from './assemblyai.provider'
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,11 @@ const mockConfig = {
   get: jest.fn(),
 }
 
+const mockAssemblyAi = {
+  isConfigured: jest.fn(),
+  transcribeWithDiarization: jest.fn(),
+}
+
 const originalFetch = global.fetch
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -55,6 +61,9 @@ describe('LiveMeetingService', () => {
   beforeEach(async () => {
     jest.clearAllMocks()
     mockIndexer.indexAndStore.mockResolvedValue({ indexed: 1, failed: 0 })
+    // Default: AssemblyAI unconfigured so existing tests exercise the whisper path.
+    mockAssemblyAi.isConfigured.mockReturnValue(false)
+    mockAssemblyAi.transcribeWithDiarization.mockReset()
     mockConfig.get.mockImplementation((key: string) => {
       if (key === 'TRANSCRIPTION_URL') return 'http://transcription:8000'
       if (key === 'TRANSCRIPTION_SECRET') return 'shared-secret'
@@ -67,6 +76,7 @@ describe('LiveMeetingService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ConfigService, useValue: mockConfig },
         { provide: EmbeddingIndexerService, useValue: mockIndexer },
+        { provide: AssemblyAiProvider, useValue: mockAssemblyAi },
       ],
     }).compile()
 
@@ -191,6 +201,53 @@ describe('LiveMeetingService', () => {
       const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
       expect(out.text).toBe('hello')
       expect(out.language).toBeNull()
+    })
+  })
+
+  // ── transcribeChunk via AssemblyAI (primary when configured) ──────────────
+
+  describe('transcribeChunk via AssemblyAI', () => {
+    it('uses AssemblyAI when configured and joins segment text (no whisper call)', async () => {
+      mockAssemblyAi.isConfigured.mockReturnValue(true)
+      mockAssemblyAi.transcribeWithDiarization.mockResolvedValue({
+        segments: [{ text: 'bonjour' }, { text: 'le monde' }],
+        duration_seconds: 5,
+        detected_languages: ['fr'],
+      })
+      const fetchSpy = jest.fn()
+      global.fetch = fetchSpy as unknown as typeof fetch
+
+      const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
+
+      expect(out).toEqual({ text: 'bonjour le monde', language: 'fr', status: 'ok' })
+      expect(mockAssemblyAi.transcribeWithDiarization).toHaveBeenCalledTimes(1)
+      expect(fetchSpy).not.toHaveBeenCalled() // whisper not hit on AssemblyAI success
+    })
+
+    it('falls back to the whisper service when AssemblyAI throws', async () => {
+      mockAssemblyAi.isConfigured.mockReturnValue(true)
+      mockAssemblyAi.transcribeWithDiarization.mockRejectedValue(new Error('AssemblyAI down'))
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse(200, { segments: [{ text: 'repli whisper', language: 'fr' }] }),
+      ) as unknown as typeof fetch
+
+      const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
+
+      expect(out.status).toBe('ok')
+      expect(out.text).toBe('repli whisper')
+      expect(mockAssemblyAi.transcribeWithDiarization).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips AssemblyAI entirely when not configured', async () => {
+      mockAssemblyAi.isConfigured.mockReturnValue(false)
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse(200, { segments: [{ text: 'whisper', language: 'fr' }] }),
+      ) as unknown as typeof fetch
+
+      const out = await service.transcribeChunk(Buffer.from('audio'), 'audio/webm')
+
+      expect(out.text).toBe('whisper')
+      expect(mockAssemblyAi.transcribeWithDiarization).not.toHaveBeenCalled()
     })
   })
 

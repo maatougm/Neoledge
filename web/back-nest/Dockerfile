@@ -22,6 +22,8 @@ ENV NODE_ENV=production
 # audio path, or any future native dep) lands as `node` instead of root —
 # defence in depth that matches the Python transcription container.
 RUN addgroup -S node-app && adduser -S -G node-app node-app
+# su-exec lets the entrypoint drop from root to node-app after a one-time chown.
+RUN apk add --no-cache su-exec
 
 COPY --from=build --chown=node-app:node-app /app/node_modules ./node_modules
 COPY --from=build --chown=node-app:node-app /app/dist ./dist
@@ -30,10 +32,12 @@ COPY --from=build --chown=node-app:node-app /app/package.json ./package.json
 COPY --from=build --chown=node-app:node-app /app/prisma.config.ts ./prisma.config.ts
 RUN mkdir -p uploads logs && chown -R node-app:node-app uploads logs
 
-USER node-app
-
 EXPOSE 3000
-# Apply pending migrations (non-destructive) on boot, then start the server.
-# Use `prisma migrate deploy` instead of `db push --accept-data-loss` to
-# preserve data and only apply versioned migrations.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+# The container starts as root ONLY to fix ownership of the mounted uploads/logs
+# volumes (Docker named volumes mount as root and override the image's chown,
+# which broke meeting-audio mkdir with EACCES), then immediately drops to the
+# non-root node-app user via su-exec for the actual server process. So the
+# app still runs unprivileged — only the boot-time chown runs as root.
+# Migrations run as node-app (DB creds, no fs needs). `migrate deploy` is
+# non-destructive (versioned migrations only).
+CMD ["sh", "-c", "chown -R node-app:node-app /app/uploads /app/logs 2>/dev/null || true; exec su-exec node-app sh -c 'npx prisma migrate deploy && node dist/src/main.js'"]

@@ -2,6 +2,7 @@ import { Injectable, Logger, BadGatewayException, NotFoundException, BadRequestE
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EmbeddingIndexerService } from '../ai/embeddings/embedding-indexer.service.js';
+import { AssemblyAiProvider } from './assemblyai.provider.js';
 
 /** Outcome of one live-meeting chunk transcription. `status` lets the live UI
  *  distinguish a real transcript from a dropped chunk so words don't silently
@@ -21,13 +22,16 @@ export class LiveMeetingService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly embeddingIndexer: EmbeddingIndexerService,
+    private readonly assemblyAi: AssemblyAiProvider,
   ) {}
 
   /**
-   * Transcribe a short audio chunk via the local Python Whisper service.
-   * Used by the online meeting mode (getDisplayMedia tab capture).
-   * Falls back to a plain empty string on service error so the live UI
-   * keeps running rather than showing a hard error for every chunk.
+   * Transcribe a short audio chunk for the online meeting mode (getDisplayMedia
+   * tab capture). Primary engine is AssemblyAI (cloud) when ASSEMBLYAI_API_KEY
+   * is set — it's fast and accurate enough to keep up with real-time chunks.
+   * The local faster-whisper service runs large-v3 on CPU and can't keep pace
+   * with 20s chunks (they time out / 5xx and words get dropped), so it serves
+   * as the fallback when AssemblyAI is unconfigured or errors out.
    */
   async transcribeChunk(buffer: Buffer, mimeType: string): Promise<ChunkTranscriptionResult> {
     if (!buffer?.length) throw new BadRequestException('Chunk audio vide.');
@@ -35,6 +39,28 @@ export class LiveMeetingService {
       throw new BadRequestException('Chunk trop volumineux (> 25 Mo).');
     }
 
+    if (this.assemblyAi.isConfigured()) {
+      try {
+        const res = await this.assemblyAi.transcribeWithDiarization(buffer);
+        const text = res.segments.map((s) => s.text).join(' ').trim();
+        const language = res.detected_languages[0] ?? null;
+        return { text, language, status: 'ok' };
+      } catch (e) {
+        // AssemblyAI failed (bad key, decode error, timeout) — degrade to the
+        // local whisper service rather than dropping the chunk.
+        this.logger.warn(
+          `AssemblyAI live chunk failed, falling back to whisper: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    return this.transcribeChunkViaWhisper(buffer, mimeType);
+  }
+
+  /** Local faster-whisper fallback via the Python FastAPI service. Falls back
+   *  to a plain empty string on service error so the live UI keeps running
+   *  rather than showing a hard error for every chunk. */
+  private async transcribeChunkViaWhisper(buffer: Buffer, mimeType: string): Promise<ChunkTranscriptionResult> {
     const serviceUrl = this.config.get<string>('TRANSCRIPTION_URL');
     if (!serviceUrl) throw new BadGatewayException('TRANSCRIPTION_URL non configuré.');
 
