@@ -269,6 +269,36 @@ let audioContext: AudioContext | null = null
 // we can upload the merged blob at end of session for replay later.
 let archiveChunks: Blob[] = []
 let archiveMimeType = 'audio/webm'
+// webm init header (EBML + Segment/Tracks, i.e. everything before the first
+// Cluster) captured from the first MediaRecorder chunk. MediaRecorder timeslice
+// emits this header ONLY on chunk 0; later chunks are bare Clusters that aren't
+// decodable standalone (AssemblyAI/whisper reject them). We prepend this header
+// to each later chunk so every transcription upload is a valid standalone webm.
+let webmHeader: Uint8Array | null = null
+
+/** Byte offset of the first webm Cluster (element id 0x1F43B675), or -1. */
+function firstClusterOffset(bytes: Uint8Array): number {
+  for (let i = 0; i + 3 < bytes.length; i++) {
+    if (bytes[i] === 0x1f && bytes[i + 1] === 0x43 && bytes[i + 2] === 0xb6 && bytes[i + 3] === 0x75) {
+      return i
+    }
+  }
+  return -1
+}
+
+/** Make a standalone, decodable webm Blob from a (possibly headerless) chunk. */
+async function toStandaloneWebm(chunk: Blob): Promise<Blob> {
+  const bytes = new Uint8Array(await chunk.arrayBuffer())
+  if (webmHeader === null) {
+    // First qualifying chunk carries the header — cache it, send as-is.
+    const cut = firstClusterOffset(bytes)
+    if (cut > 0) webmHeader = bytes.slice(0, cut)
+    return chunk
+  }
+  // Already starts with the header (e.g. a full standalone chunk)? Send as-is.
+  if (firstClusterOffset(bytes) === 0 || bytes[0] === 0x1a) return chunk
+  return new Blob([webmHeader, bytes], { type: archiveMimeType })
+}
 
 const formattedDuration = computed<string>(() => {
   void tick.value
@@ -470,15 +500,19 @@ async function startTabCapture(): Promise<void> {
   if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = ''
   mediaRecorder = mimeType ? new MediaRecorder(mixedStream, { mimeType }) : new MediaRecorder(mixedStream)
   archiveChunks = []
+  webmHeader = null
   archiveMimeType = mimeType || 'audio/webm'
   mediaRecorder.ondataavailable = async (e) => {
     if (!e.data || e.data.size === 0) return
-    // Always archive the chunk so we can replay the full meeting later —
-    // even tiny slivers matter for continuity. Transcription still skips
-    // sub-5kB chunks because Whisper can't extract anything from them.
+    // Always archive the RAW chunk so the concatenated full-meeting replay
+    // stays valid (raw timeslice fragments concatenate into one webm).
     archiveChunks.push(e.data)
     if (e.data.size < 5000) return
-    await uploadChunk(e.data)
+    // For transcription, send a valid STANDALONE webm: chunk 0 already has the
+    // header; later chunks are bare Clusters, so prepend the cached header.
+    // Without this, AssemblyAI + whisper both reject the headerless chunks.
+    const standalone = await toStandaloneWebm(e.data)
+    await uploadChunk(standalone)
   }
   // 20-second chunks: balance between latency and Whisper call frequency
   mediaRecorder.start(20_000)
