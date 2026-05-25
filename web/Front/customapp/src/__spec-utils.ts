@@ -144,33 +144,7 @@ export const stubs: Record<string, Component> = {
   Teleport: { props: { to: { default: 'body' } }, template: '<div><slot /></div>' },
 }
 
-export const allStubs = stubs
-
 /** Initialise Pinia. Call inside beforeEach. */
 export function initPinia(): void {
   setActivePinia(createPinia())
 }
-
-/** Drive the auth store via the JWT helper module (the store's userRole/userId
- *  are computeds off the JWT). Tests must `vi.mock('@/lib/jwt', ...)` first
- *  using `makeJwtMock()` below. */
-export interface JwtState {
-  role: string | null
-  id: string | null
-  fullName: string
-  initials: string
-  expired: boolean
-}
-
-export function makeJwtMock(state: JwtState) {
-  return {
-    getUserRole: () => state.role,
-    getUserFullName: () => state.fullName,
-    getUserInitials: () => state.initials,
-    getUserId: () => state.id,
-    isTokenExpired: () => state.expired,
-  }
-}
-
-export const toastAdd = neoToastAdd
-export const confirmRequire = neoConfirmRequire

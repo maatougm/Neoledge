@@ -47,7 +47,7 @@ function passthroughStub(tagName: string, emits: string[] = []) {
   })
 }
 
-export const neoStubs: Record<string, unknown> = {
+const neoStubs: Record<string, unknown> = {
   // Buttons / form controls
   NeoButton:    passthroughStub('NeoButton', ['click']),
   NeoInput:     passthroughStub('NeoInput', ['update:modelValue']),
@@ -117,6 +117,4 @@ export function mountOptions(extra: MountExtraOptions = {}): Record<string, unkn
   }
 }
 
-// Re-export Vitest's `vi` so callers don't need to import it twice.
 import { vi } from 'vitest'
-export { vi }

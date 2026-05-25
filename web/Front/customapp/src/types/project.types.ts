@@ -159,22 +159,6 @@ export const ACTIVITY_ACTION_LABELS: Record<string, string> = {
   ValidationSubmitted: 'Validation soumise',
 }
 
-// ─── Field Labels ──────────────────────────────────────────────────────────────
-
-export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
-  Text: 'Texte',
-  Number: 'Nombre',
-  Date: 'Date',
-  Select: 'Liste',
-  Checkbox: 'Case à cocher',
-}
-
-export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {
-  Static: 'Statique',
-  Dynamic: 'Dynamique',
-  Custom: 'Personnalisé',
-}
-
 // ─── Trash ────────────────────────────────────────────────────────────────────
 
 export interface DeletedProjectSummary {

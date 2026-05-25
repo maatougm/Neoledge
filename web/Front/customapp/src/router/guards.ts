@@ -3,30 +3,6 @@
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 
-// ─── Auth Guard ───────────────────────────────────────────────────────────────
-
-/**
- * Global authentication guard.
- *
- * Redirects unauthenticated visitors to `/login` (saving the intended route
- * as a query param so LoginView can redirect back after login).
- */
-export function authGuard(
-  to: RouteLocationNormalized,
-  _from: RouteLocationNormalized,
-  next: NavigationGuardNext,
-): void {
-  const auth = useAuthStore()
-
-  if (!auth.isAuthenticated) {
-    const redirect = to.fullPath !== '/' ? to.fullPath : undefined
-    next({ name: 'login', query: redirect ? { redirect } : undefined })
-    return
-  }
-
-  next()
-}
-
 // ─── Role Guard ───────────────────────────────────────────────────────────────
 
 /**
