@@ -15,8 +15,8 @@
       <div class="brand-inner">
         <!-- Logo -->
         <div class="brand-logo">
-          <div class="brand-mark" aria-label="NeoLeadge">NL</div>
-          <span class="brand-wordmark">NeoLeadge</span>
+          <img :src="logoUrl" alt="NeoLeadge" class="brand-logo-img" />
+          <span class="brand-wordmark">Neo Project</span>
         </div>
 
         <!-- Tagline -->
@@ -197,6 +197,7 @@ import { useRouter } from 'vue-router'
 import { NeoInputText, NeoPassword, NeoButton, NeoMessage } from '@neolibrary/components'
 import { useAuthStore } from '@/stores/authStore'
 import { applyAutofill } from '@/lib/autofillFix'
+import logoUrl from '@/assets/neoledge-logo.png'
 
 const router   = useRouter()
 const authStore = useAuthStore()
@@ -357,19 +358,10 @@ function cancelTotp(): void {
   gap: 0.75rem;
 }
 
-.brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--nl-accent) 25%, #fff 10%);
-  border: 1px solid color-mix(in srgb, var(--nl-accent) 40%, transparent);
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: 0.5px;
+.brand-logo-img {
+  height: 40px;
+  width: auto;
+  display: block;
   flex-shrink: 0;
 }
 

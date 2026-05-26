@@ -164,13 +164,13 @@
   font-family: var(--nl-font);
   min-height: 100vh;
   /* Ambient Multi-Stop Gradient Mesh */
-  background: radial-gradient(circle at 15% 50%, rgba(15, 98, 254, 0.04), transparent 25%),
-              radial-gradient(circle at 85% 30%, rgba(15, 98, 254, 0.03), transparent 25%);
+  background: radial-gradient(circle at 15% 50%, rgba(240, 200, 0, 0.05), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(240, 200, 0, 0.04), transparent 25%);
 }
 
 .dark #app {
-  background: radial-gradient(circle at 15% 50%, rgba(15, 98, 254, 0.08), transparent 25%),
-              radial-gradient(circle at 85% 30%, rgba(15, 98, 254, 0.05), transparent 25%);
+  background: radial-gradient(circle at 15% 50%, rgba(240, 200, 0, 0.10), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(240, 200, 0, 0.06), transparent 25%);
 }
 
 a {
@@ -322,3 +322,30 @@ a:hover {
 body, .app-root, main, aside, section, article, header, footer, nav, div {
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
 }
+
+/* ── Brand rebrand: NeoLibrary primary teal (#0a6e89 family) → NeoLeadge yellow ──
+   NeoLibrary bakes its teal into Tailwind arbitrary classes inside the .tgz, so
+   we can't change it at the source. Override here: teal-filled controls become
+   the yellow accent with DARK text (yellow needs dark foreground to stay legible),
+   and teal text on white becomes a readable dark gold. Substring class selectors
+   ([class*="bg-[#0a6e89]"]) match the baked classes without CSS-escaping issues. */
+[class*="bg-[#0a6e89]"],
+[class*="bg-[#0A6E89]"] {
+  background-color: var(--nl-accent) !important;
+  border-color: var(--nl-accent) !important;
+  color: var(--nl-on-accent) !important;
+}
+[class*="bg-[#0a6e89]"]:hover,
+[class*="bg-[#0A6E89]"]:hover,
+[class*="bg-[#085566]"]:hover,
+[class*="bg-[#074455]"]:active {
+  background-color: var(--nl-accent-hover) !important;
+  border-color: var(--nl-accent-hover) !important;
+}
+[class*="border-[#0a6e89]"],
+[class*="border-[#0A6E89]"] { border-color: var(--nl-accent) !important; }
+[class*="ring-[#0a6e89]"]:focus-visible,
+[class*="ring-[#0A6E89]"]:focus-visible { --tw-ring-color: var(--nl-accent) !important; }
+/* Teal TEXT on a light surface → dark gold (yellow text would be unreadable). */
+[class*="text-[#0a6e89]"],
+[class*="text-[#0A6E89]"] { color: #8A7400 !important; }

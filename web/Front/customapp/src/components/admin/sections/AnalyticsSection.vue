@@ -121,7 +121,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, BarController, Title, T
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
-const CHART_PRIMARY = '#0F62FE'
+const CHART_PRIMARY = '#F0C800'
 const CHART_DANGER  = '#DC2626'
 const CHART_SUCCESS = '#16A34A'
 const CHART_GRID    = 'rgba(0, 0, 0, 0.04)'

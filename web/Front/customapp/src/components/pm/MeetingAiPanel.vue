@@ -809,8 +809,8 @@ async function confirmConvert(): Promise<void> {
 }
 
 .decision-category-badge--decision {
-  background: #EFF4FF;
-  color: #0F62FE;
+  background: #FEFBEA;
+  color: #8A7400;
 }
 
 .decision-category-badge--risk {

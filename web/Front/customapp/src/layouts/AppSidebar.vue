@@ -8,9 +8,9 @@
   >
     <!-- Logo -->
     <div class="sidebar__logo">
-      <div class="sidebar__logo-pill"><span class="sidebar__logo-text-short">NL</span></div>
+      <div class="sidebar__logo-pill"><span class="sidebar__logo-text-short">NP</span></div>
       <transition name="fade-slide">
-        <span v-if="isExpanded" class="sidebar__logo-name">NeoLeadge</span>
+        <img v-if="isExpanded" :src="logoUrl" alt="NeoLeadge" class="sidebar__logo-img" />
       </transition>
     </div>
 
@@ -87,6 +87,7 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
 import { useUiStore } from '@/stores/uiStore'
+import logoUrl from '@/assets/neoledge-logo.png'
 import SidebarNavItem from './SidebarNavItem.vue'
 import type { NavSection } from '@/types/nav.types'
 import type { RecentProject } from '@/stores/uiStore'
@@ -141,11 +142,14 @@ const recentsToShow = computed<RecentProject[]>(() =>
   display: flex; align-items: center; justify-content: center;
 }
 .sidebar__logo-text-short {
-  font-size: 0.875rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+  font-size: 0.875rem; font-weight: 800; color: var(--nl-on-accent); letter-spacing: -0.02em;
 }
 .sidebar__logo-name {
   font-size: 0.9375rem; font-weight: 700;
   color: var(--nl-nav-text-active); white-space: nowrap; letter-spacing: -0.01em;
+}
+.sidebar__logo-img {
+  height: 26px; width: auto; display: block; object-fit: contain;
 }
 
 .sidebar__nav {

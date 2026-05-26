@@ -276,7 +276,7 @@ function parseLangs(raw: string): string[] {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(15, 98, 254, 0.08);
+  background: rgba(240, 200, 0, 0.12);
   flex-shrink: 0;
 }
 

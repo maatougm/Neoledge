@@ -622,7 +622,7 @@ async function runApplyTemplate(): Promise<void> {
 .field-item :deep(.p-inputtext:focus),
 .field-item :deep(.p-select:focus-within) {
   border-color: var(--nl-accent) !important;
-  box-shadow: 0 0 0 3px rgba(15, 98, 254, 0.12) !important;
+  box-shadow: 0 0 0 3px rgba(240, 200, 0, 0.22) !important;
 }
 
 /* Add field box */
