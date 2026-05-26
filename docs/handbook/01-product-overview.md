@@ -1,0 +1,106 @@
+# 1 — Product Overview
+
+## What problem does Neo Project solve?
+
+When an IT company deploys software for a client (e.g. installing a document-management system for a city hall or a hospital), there's a heavy paperwork-and-coordination process:
+
+1. Understand the client's needs (meetings, a questionnaire).
+2. Write a **formal specification document** — in French, the *"cahier des charges"* — that becomes the contract for what will be built.
+3. Get that document **validated** by a specification team.
+4. Break the work into a **backlog** (epics → tasks).
+5. **Assign** tasks to the right people.
+6. **Execute and track** the work (Kanban board, Gantt timeline, sprints, time tracking).
+
+Traditionally this is slow and manual. **Neo Project automates the slow parts with AI** — especially transcription, the cahier des charges, and the backlog — while keeping humans in control (a PM edits everything, a spec team approves).
+
+> **Domain note:** the product is **French-first** (the client base is French administrations and large organizations). That's why you'll see French words in the code and UI — *cahier des charges* (spec document), *réunion* (meeting), *jalon* (milestone), *clôture* (closure). The glossary (file 11) lists them all.
+
+---
+
+## Who uses it? (the 4 roles)
+
+The system has exactly **four user roles**. Knowing them is essential — almost every screen and permission depends on the role.
+
+| Role | French label | What they do |
+|------|--------------|--------------|
+| **Admin** | Administrateur | Creates projects, manages users, sees system status. Full access. |
+| **ProjectManager** (PM) | Chef de projet | Owns projects: runs meetings, fills the questionnaire, generates the cahier + backlog, assigns tasks. |
+| **SpecificationTeam** | Équipe spécification | Reviews and **approves/rejects** the cahier des charges. Cannot self-approve their own PM work. |
+| **Member** | Membre | Executes the work — the only role that tasks (work packages) can be assigned to. |
+
+> There used to be more roles (RealizationTeam, DeploymentTeam, Viewer). They were **removed** — the system is now exactly these four. If someone asks "what about the deployment team?", the answer is: deployment responsibility is now a per-project *assignment* (a "Responsable déploiement" field), not a separate global role.
+
+---
+
+## The end-to-end workflow (the core story)
+
+This is the single most important thing to be able to narrate. It's the product.
+
+```
+Admin creates a project and assigns a PM
+   │
+   ▼
+PM picks the team (adds Members + SpecificationTeam users to the project)
+   │
+   ▼
+PM fills a QUESTIONNAIRE  (structured fields about the client's needs;
+   │                       some fields are flagged "feeds the AI")
+   ▼
+PM runs LIVE MEETINGS  (browser captures the audio → real-time
+   │                     transcription → AI extracts a summary,
+   │                     action items, and decisions)
+   ▼
+AI generates the CAHIER DES CHARGES  (a 9-section spec document,
+   │                                   built from questionnaire + meetings)
+   ▼
+SpecificationTeam REVIEWS it  → Approve  or  Reject-with-comments
+   │   (reject feeds the comment back into the next AI generation)
+   ▼
+PM generates the AI BACKLOG  (Epics → Tasks, with estimates + priorities)
+   │
+   ▼
+PM ASSIGNS tasks to Members  (drag-drop; AI suggests the best assignee
+   │                          based on job title + past delivered work)
+   ▼
+Team EXECUTES  (Kanban board, Gantt chart, sprints, time tracking)
+```
+
+**Why this matters for the demo:** you can walk a single project through all of these screens. The seeded demo data already has projects at each phase.
+
+---
+
+## The project lifecycle (phases / status)
+
+A project moves through named **phases** (stored as its `status`). These are the canonical ones:
+
+`Draft → Kickoff → CadrageTechnique → Environnement → Parametrage → Integration → Recette → MEP → Cloture` (plus `Archived`).
+
+- **MEP** = *Mise En Production* = "go-live".
+- **Recette** = acceptance testing.
+- **Cadrage technique** = technical scoping.
+
+The seeded demo projects are spread across these phases so you can show the spectrum.
+
+---
+
+## What's deliberately NOT in the product
+
+Be ready for "does it do X?" — these were intentionally **removed** (don't claim they exist):
+- **Budgeting / hourly rates** — removed.
+- **Wiki** — removed.
+- **Handovers / RACI matrix** — removed.
+
+If asked why: the team focused the product on the AI-driven core flow (spec → backlog → execution) and cut modules that weren't central.
+
+---
+
+## Key product concepts (one-liners)
+
+- **Cahier des charges** — the AI-generated specification document. 9 fixed sections. The product's crown jewel.
+- **Questionnaire** — structured project fields the PM fills; fields marked `isBacklogDriver` feed the AI.
+- **Work Package (WP)** — a task/issue (the OpenProject term). Has type (Epic/Feature/Task/Bug), status, assignee, etc.
+- **Backlog** — the set of epics + tasks, generated by AI, then accepted into Work Packages.
+- **Live meeting copilot** — an optional real-time assistant during meetings that suggests what to ask next.
+- **Validation / CahierFeedback** — the spec team's approve/reject record.
+
+Next: **[02-architecture.md](./02-architecture.md)** — how the pieces fit together.
