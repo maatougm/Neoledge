@@ -89,8 +89,8 @@
   --nl-sp-8:    32px;
 
   /* Surface — row hover, subtle separators */
-  --nl-row-hover:  rgba(15, 98, 254, 0.04);
-  --nl-row-selected: rgba(15, 98, 254, 0.08);
+  --nl-row-hover:  rgba(240, 200, 0, 0.06);
+  --nl-row-selected: rgba(240, 200, 0, 0.12);
   --nl-separator: #EEEEF0;
 
   /* Priority + status tokens — explicit colors */
@@ -122,9 +122,9 @@
   --nl-text-1:        #FAFAFA;
   --nl-text-2:        #D4D4D8;
   --nl-text-3:        #71717A;
-  --nl-accent:        #4B8BFE;
-  --nl-accent-hover:  #3B7BEE;
-  --nl-accent-light:  rgba(15, 98, 254, 0.15);
+  --nl-accent:        #F5CE1A;
+  --nl-accent-hover:  #FFD935;
+  --nl-accent-light:  rgba(245, 206, 26, 0.16);
   --nl-danger:        #F87171;
   --nl-danger-light:  rgba(220, 38, 38, 0.15);
   --nl-warning:       #FCD34D;
@@ -138,8 +138,8 @@
   --nl-shadow-lg:     0 10px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
   --nl-glass-bg:      rgba(28, 28, 31, 0.8);
   --nl-glass-border:  rgba(255, 255, 255, 0.07);
-  --nl-row-hover:     rgba(75, 139, 254, 0.07);
-  --nl-row-selected:  rgba(75, 139, 254, 0.14);
+  --nl-row-hover:     rgba(245, 206, 26, 0.08);
+  --nl-row-selected:  rgba(245, 206, 26, 0.15);
   --nl-separator:     #26262A;
   --nl-kbd-bg:        #26262A;
   --nl-kbd-border:    #3F3F46;
