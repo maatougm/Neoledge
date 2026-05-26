@@ -1,12 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-/* ── NeoLeadge Design System — Rocketlane blue + Linear precision ─────────── */
+/* ── Neo Project Design System — NeoLeadge brand yellow + Linear precision ─── */
 :root {
-  /* Primary accent — Rocketlane blue */
-  --nl-accent:        #0F62FE;
-  --nl-accent-hover:  #0043CE;
-  --nl-accent-light:  #EFF4FF;
-  --nl-accent-glow:   rgba(15, 98, 254, 0.15);
+  /* Primary accent — NeoLeadge brand yellow (#F0C800, sampled from the logo) */
+  --nl-accent:        #F0C800;
+  --nl-accent-hover:  #CCAA00;
+  --nl-accent-light:  #FEFBEA;
+  --nl-accent-glow:   rgba(240, 200, 0, 0.18);
+  /* Text/icons placed ON an accent-colored surface. Yellow is bright, so
+     accent surfaces need DARK foreground (white-on-yellow is unreadable). */
+  --nl-on-accent:     #0A0A0B;
 
   /* Backgrounds */
   --nl-bg:            #F7F7F8;
@@ -36,8 +39,8 @@
   --nl-nav-text:            rgba(161, 161, 170, 0.9);
   --nl-nav-text-active:     #FFFFFF;
   --nl-nav-item-hover-bg:   rgba(255, 255, 255, 0.07);
-  --nl-nav-item-active-bg:  rgba(15, 98, 254, 0.12);
-  --nl-nav-active-border:   #0F62FE;
+  --nl-nav-item-active-bg:  rgba(240, 200, 0, 0.16);
+  --nl-nav-active-border:   #F0C800;
   --nl-nav-separator:       rgba(255, 255, 255, 0.06);
 
   /* Topbar */
@@ -45,11 +48,11 @@
   --nl-topbar-bg:      rgba(255, 255, 255, 0.85);
   --nl-topbar-border:  #E5E5E5;
 
-  /* Shadows — blue-tinted like Rocketlane */
+  /* Shadows — subtle warm tint to match the yellow accent */
   --nl-shadow:        0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --nl-shadow-md:     0 4px 12px rgba(15, 98, 254, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
-  --nl-shadow-lg:     0 10px 30px rgba(15, 98, 254, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
-  --nl-shadow-glow:   0 0 20px rgba(15, 98, 254, 0.2);
+  --nl-shadow-md:     0 4px 12px rgba(180, 150, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --nl-shadow-lg:     0 10px 30px rgba(180, 150, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --nl-shadow-glow:   0 0 20px rgba(240, 200, 0, 0.28);
 
   /* Glass */
   --nl-glass-bg:      rgba(255, 255, 255, 0.75);

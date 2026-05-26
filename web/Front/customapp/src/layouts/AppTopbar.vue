@@ -4,7 +4,7 @@
     <!-- Left: breadcrumb -->
     <div class="topbar__left">
       <nav class="topbar__breadcrumb" aria-label="Fil d'Ariane">
-        <span class="topbar__breadcrumb-home">NeoLeadge</span>
+        <span class="topbar__breadcrumb-home">Neo Project</span>
         <i v-if="breadcrumbLabel" class="pi pi-chevron-right topbar__breadcrumb-sep" aria-hidden="true" />
         <span v-if="breadcrumbLabel" class="topbar__breadcrumb-current">{{ breadcrumbLabel }}</span>
       </nav>

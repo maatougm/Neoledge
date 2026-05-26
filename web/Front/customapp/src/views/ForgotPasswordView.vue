@@ -6,7 +6,7 @@
   <div class="fp-page">
     <div class="fp-card">
       <div class="fp-header">
-        <div class="fp-logo" aria-label="NeoLeadge">NL</div>
+        <div class="fp-logo" aria-label="Neo Project">NP</div>
         <h1 class="fp-title">Mot de passe oublié</h1>
         <p class="fp-subtitle">
           Saisissez votre adresse e-mail. Si un compte y est associé, vous recevrez un lien pour réinitialiser votre mot de passe.

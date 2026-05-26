@@ -8,13 +8,6 @@ import type { MemberTaskCard } from './memberDashboardStore'
 
 export type TaskTab = 'todo' | 'review' | 'done' | 'all'
 
-const TAB_TO_STATUS: Record<TaskTab, string | undefined> = {
-  todo:   undefined, // computed below — requires multi-status, see fetch
-  review: 'AwaitingReview',
-  done:   undefined, // multi-status
-  all:    undefined,
-}
-
 export interface MemberTasksFilters {
   tab: TaskTab
   projectId?: string
@@ -157,5 +150,3 @@ export const useMemberTasksStore = defineStore('memberTasks', () => {
   }
 })
 
-// Silence unused-export linter; kept for potential future use.
-export { TAB_TO_STATUS }

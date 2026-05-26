@@ -6,7 +6,7 @@
   <div class="rp-page">
     <div class="rp-card">
       <div class="rp-header">
-        <div class="rp-logo" aria-label="NeoLeadge">NL</div>
+        <div class="rp-logo" aria-label="Neo Project">NP</div>
         <h1 class="rp-title">Nouveau mot de passe</h1>
         <p class="rp-subtitle">Choisissez un mot de passe sécurisé d'au moins 8 caractères.</p>
       </div>

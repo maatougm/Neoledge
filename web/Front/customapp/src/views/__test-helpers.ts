@@ -98,14 +98,6 @@ export function makePinia(): Pinia {
 
 export type ApiMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
 
-export interface ApiMockHandlers {
-  get?: Record<string, () => unknown>
-  post?: Record<string, () => unknown>
-  put?: Record<string, () => unknown>
-  patch?: Record<string, () => unknown>
-  delete?: Record<string, () => unknown>
-}
-
 export function buildApiMock(): { default: Record<ApiMethod, ReturnType<typeof vi.fn>> } & { extractErrorMessage: ReturnType<typeof vi.fn> } {
   return {
     default: {

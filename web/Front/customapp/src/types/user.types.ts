@@ -27,11 +27,6 @@ const BUILT_IN_ROLE_LABELS: Record<KnownUserRole, string> = {
 /** @deprecated Use `getUserRoleLabel(role)` instead of indexing `USER_ROLE_LABELS` directly — custom roles are not in this map. */
 export const USER_ROLE_LABELS: Record<string, string | undefined> = BUILT_IN_ROLE_LABELS
 
-/** Returns a human-readable label for a role, falling back to the raw value for custom roles. */
-export function getUserRoleLabel(role: string): string {
-  return BUILT_IN_ROLE_LABELS[role as KnownUserRole] ?? role
-}
-
 export const USER_ROLE_OPTIONS = (Object.entries(BUILT_IN_ROLE_LABELS) as [KnownUserRole, string][]).map(
   ([value, label]) => ({ value, label }),
 )

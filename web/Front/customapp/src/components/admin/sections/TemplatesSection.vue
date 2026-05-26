@@ -58,7 +58,7 @@
     <!-- Create dialog -->
     <AppModal v-model:visible="showCreateDialog" header="Nouveau modèle" width="600px">
       <div class="create-form">
-        <NeoInputText v-model="form.name" label="Nom du modèle" placeholder="Ex : Modèle NeoLeadge standard" class="w-full" />
+        <NeoInputText v-model="form.name" label="Nom du modèle" placeholder="Ex : Modèle Neo Project standard" class="w-full" />
         <NeoInputText v-model="form.description" label="Description (optionnel)" placeholder="Description courte" class="w-full" />
 
         <div class="fields-block">

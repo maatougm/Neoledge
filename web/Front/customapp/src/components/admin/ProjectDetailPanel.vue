@@ -397,7 +397,7 @@ watch(() => props.projectId, () => { void load() })
 .back-btn:hover { color: var(--nl-accent); }
 .open-deep-btn {
   display: inline-flex; align-items: center; gap: 0.4rem;
-  background: var(--nl-accent); color: #fff;
+  background: var(--nl-accent); color: var(--nl-on-accent);
   font-size: 0.8125rem; font-weight: 600;
   padding: 0.5rem 0.875rem; border-radius: 8px;
   text-decoration: none;
@@ -482,7 +482,7 @@ watch(() => props.projectId, () => { void load() })
   padding: 0.5rem 0; border-bottom: 1px solid var(--nl-border);
 }
 .team-row:last-child { border-bottom: none; }
-.team-row--pm .team-avatar { background: var(--nl-accent); color: #fff; }
+.team-row--pm .team-avatar { background: var(--nl-accent); color: var(--nl-on-accent); }
 
 .team-avatar {
   width: 32px; height: 32px; border-radius: 50%;
