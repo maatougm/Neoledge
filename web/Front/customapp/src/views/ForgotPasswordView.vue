@@ -6,7 +6,7 @@
   <div class="fp-page">
     <div class="fp-card">
       <div class="fp-header">
-        <div class="fp-logo" aria-label="Neo Project">NP</div>
+        <img :src="markUrl" alt="NeoLeadge" class="fp-logo" />
         <h1 class="fp-title">Mot de passe oublié</h1>
         <p class="fp-subtitle">
           Saisissez votre adresse e-mail. Si un compte y est associé, vous recevrez un lien pour réinitialiser votre mot de passe.
@@ -60,6 +60,7 @@
 import { ref } from 'vue'
 import { NeoButton, NeoInputText, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
+import markUrl from '@/assets/neo-mark.png'
 import axios from 'axios'
 
 const email = ref<string>('')
@@ -113,13 +114,8 @@ async function handleSubmit(): Promise<void> {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: #0d9488;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: cover;
+  display: inline-block;
   margin-bottom: 1rem;
 }
 

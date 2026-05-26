@@ -6,7 +6,7 @@
   <div class="rp-page">
     <div class="rp-card">
       <div class="rp-header">
-        <div class="rp-logo" aria-label="Neo Project">NP</div>
+        <img :src="markUrl" alt="NeoLeadge" class="rp-logo" />
         <h1 class="rp-title">Nouveau mot de passe</h1>
         <p class="rp-subtitle">Choisissez un mot de passe sécurisé d'au moins 8 caractères.</p>
       </div>
@@ -85,6 +85,7 @@ import { NeoButton, NeoPassword, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
 import axios from 'axios'
 import { applyAutofill } from '@/lib/autofillFix'
+import markUrl from '@/assets/neo-mark.png'
 
 const route = useRoute()
 const token = route.query.token as string | undefined
@@ -156,13 +157,8 @@ async function handleSubmit(): Promise<void> {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: #0d9488;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: cover;
+  display: inline-block;
   margin-bottom: 1rem;
 }
 
