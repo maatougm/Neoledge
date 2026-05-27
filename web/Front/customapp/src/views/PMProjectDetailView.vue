@@ -30,7 +30,7 @@
               title="Définir la progression manuellement"
               @click="startEditProgress"
             >
-              <i class="pi pi-pencil" />
+              <i class="pi pi-pencil" /> Modifier
             </button>
           </span>
         </div>
@@ -153,8 +153,12 @@
           </div>
         </div>
 
-        <!-- Col 2 — milestones + activity -->
+        <!-- Col 2 — team responsibilities + milestones + activity -->
         <div class="po__col">
+          <!-- Team responsibilities first: PMs assign the validation (spec) lead
+               + deployment lead here, so it must be immediately visible. -->
+          <ProjectResponsibilitiesCard v-if="canManage" :project-id="id" />
+
           <div class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-flag" /> Prochain jalon</h2>
@@ -199,8 +203,6 @@
               </li>
             </ul>
           </div>
-
-          <ProjectResponsibilitiesCard v-if="canManage" :project-id="id" />
 
           <div v-if="presenceList.length > 0" class="nl-card">
             <div class="po__head">
@@ -462,8 +464,14 @@ onUnmounted(() => {
 .po__progress-value { font-size: var(--nl-fs-2xl); font-weight: 700; color: var(--nl-text-1); line-height: 1; }
 .po__progress-mode { font-size: 0.7rem; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--nl-text-3); margin-left: 0.4rem; }
 .po__progress-controls { display: inline-flex; align-items: center; gap: 0.5rem; }
-.po__progress-edit { border: none; background: transparent; cursor: pointer; color: var(--nl-text-3); padding: 0.25rem; border-radius: 4px; }
-.po__progress-edit:hover { background: var(--nl-surface-2, #f3f4f6); color: var(--nl-accent, #1e9e8f); }
+.po__progress-edit {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  border: 1px solid var(--nl-border); background: var(--nl-surface);
+  cursor: pointer; color: var(--nl-text-2);
+  padding: 0.25rem 0.65rem; border-radius: var(--nl-radius-pill);
+  font-size: var(--nl-fs-sm); font-weight: 500;
+}
+.po__progress-edit:hover { background: var(--nl-accent-light); color: var(--nl-accent); border-color: var(--nl-accent); }
 .po__progress-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .po__progress-range { flex: 1; min-width: 120px; accent-color: var(--nl-accent, #1e9e8f); }
 .po__progress-num { width: 64px; padding: 0.3rem 0.4rem; border: 1px solid var(--nl-border, #e5e7eb); border-radius: 6px; }

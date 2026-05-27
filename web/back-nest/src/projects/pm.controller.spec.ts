@@ -142,7 +142,7 @@ describe('PmController', () => {
       expect(await controller.getUsers(pm)).toEqual([]);
     });
 
-    it('filters out inactive + Admin + Viewer when forMembers=true', async () => {
+    it('filters out inactive + Admin + Viewer + ProjectManager when forMembers=true', async () => {
       mockUsers.getAll.mockResolvedValue(
         Result.ok({
           items: [
@@ -151,10 +151,13 @@ describe('PmController', () => {
             { id: 'u3', role: 'Admin', isActive: true },
             { id: 'u4', role: 'Viewer', isActive: true },
             { id: 'u5', role: 'SpecificationTeam', isActive: true },
+            { id: 'u6', role: 'ProjectManager', isActive: true },
           ],
         }),
       );
       const out = await controller.getUsers(pm, 'true');
+      // Member + SpecificationTeam stay (they form the project team); the rest are
+      // system roles that must never appear as addable project members.
       expect((out as Array<{ id: string }>).map((u) => u.id).sort()).toEqual(['u1', 'u5']);
     });
   });
