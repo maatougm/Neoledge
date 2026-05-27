@@ -237,8 +237,9 @@ const formatDate = (iso: string) =>
   width: 28px; height: 28px; border-radius: 50%; font-size: 10px; font-weight: 700; flex-shrink: 0;
 }
 
-.user-list__avatar--admin  { background: #DBEAFE; color: var(--nl-accent); }
+.user-list__avatar--admin  { background: var(--nl-info-light); color: var(--nl-accent); }
 .user-list__avatar--pm     { background: #EDE9FE; color: #7C3AED; }
+:global(.dark) .user-list__avatar--pm { background: rgba(124,58,237,0.20); color: #c4b5fd; }
 .user-list__avatar--team   { background: var(--nl-success-light); color: var(--nl-success); }
 .user-list__avatar--viewer { background: var(--nl-surface-2); color: var(--nl-text-3); }
 
@@ -252,8 +253,9 @@ const formatDate = (iso: string) =>
   font-size: 0.75rem; font-weight: 600; white-space: nowrap;
 }
 
-.user-list__role-badge--admin  { background: #DBEAFE; color: var(--nl-accent); }
+.user-list__role-badge--admin  { background: var(--nl-info-light); color: var(--nl-accent); }
 .user-list__role-badge--pm     { background: #EDE9FE; color: #7C3AED; }
+:global(.dark) .user-list__role-badge--pm { background: rgba(124,58,237,0.20); color: #c4b5fd; }
 .user-list__role-badge--team   { background: var(--nl-success-light); color: var(--nl-success); }
 .user-list__role-badge--viewer { background: var(--nl-surface-2); color: var(--nl-text-3); }
 

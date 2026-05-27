@@ -780,9 +780,9 @@ async function handleDownload() {
   align-items: center;
   gap: 8px;
   padding: 12px;
-  background: #ffeaea;
+  background: var(--nl-danger-light);
   border-radius: 6px;
-  color: #c0392b;
+  color: var(--nl-danger);
 }
 
 /* Success */
@@ -791,7 +791,7 @@ async function handleDownload() {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #eafaf1;
+  background: var(--nl-success-light);
   border-radius: 6px;
   margin-bottom: 16px;
 }
@@ -867,7 +867,7 @@ async function handleDownload() {
 .cahier-textarea:focus {
   outline: none;
   border-color: var(--nl-primary, #2e86c1);
-  box-shadow: 0 0 0 2px rgba(46, 134, 193, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nl-accent) 15%, transparent);
 }
 
 .cahier-feedback-buttons {
@@ -945,7 +945,7 @@ async function handleDownload() {
 .cahier-edit-textarea:focus {
   outline: none;
   border-color: var(--nl-accent, #1d4ed8);
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nl-accent) 15%, transparent);
 }
 .cahier-edit-input {
   width: 100%; box-sizing: border-box;
@@ -962,7 +962,7 @@ async function handleDownload() {
 .cahier-edit-input:focus {
   outline: none;
   border-color: var(--nl-accent, #1d4ed8);
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nl-accent) 15%, transparent);
 }
 .cahier-edit-row {
   position: relative;

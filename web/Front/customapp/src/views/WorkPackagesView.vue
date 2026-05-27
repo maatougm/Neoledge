@@ -463,8 +463,8 @@ onMounted(load)
   letter-spacing: 0.03em;
 }
 .wp-table__row { cursor: pointer; border-bottom: 1px solid var(--nl-border, #e5e7eb); }
-.wp-table__row:hover { background: rgba(30,158,143,0.04); }
-.wp-table__row--active { background: rgba(30,158,143,0.10); }
+.wp-table__row:hover { background: var(--nl-row-hover); }
+.wp-table__row--active { background: var(--nl-row-selected); }
 .wp-table__row td { padding: 0.75rem 0.75rem; vertical-align: middle; }
 .wp-table__title { font-weight: 500; color: var(--nl-text, #111827); }
 .wp-empty { text-align: center; color: var(--nl-text-muted, #6b7280); padding: 2rem !important; }

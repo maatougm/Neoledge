@@ -415,8 +415,8 @@ function onProceed(force: boolean): void {
   border-radius: 8px;
 }
 .preflight-loading { background: var(--nl-surface-alt, #fafbfc); color: var(--nl-text-muted, #666); }
-.preflight-error { background: #ffeaea; color: #c0392b; }
-.preflight-empty { background: #eafaf1; color: var(--nl-success, #27ae60); }
+.preflight-error { background: var(--nl-danger-light); color: var(--nl-danger); }
+.preflight-empty { background: var(--nl-success-light); color: var(--nl-success, #27ae60); }
 
 .preflight-body { display: flex; flex-direction: column; gap: 18px; }
 
@@ -429,9 +429,9 @@ function onProceed(force: boolean): void {
   border: 1px solid var(--nl-border, #e5e7eb);
   background: var(--nl-surface-alt, #fafbfc);
 }
-.preflight-score--good { background: #eafaf1; border-color: #b9e6cb; }
-.preflight-score--mid  { background: #fff7e6; border-color: #f3d9a4; }
-.preflight-score--bad  { background: #ffeaea; border-color: #f5b7b1; }
+.preflight-score--good { background: var(--nl-success-light); border-color: #b9e6cb; }
+.preflight-score--mid  { background: var(--nl-warning-light); border-color: #f3d9a4; }
+.preflight-score--bad  { background: var(--nl-danger-light); border-color: #f5b7b1; }
 
 .preflight-score__ring {
   display: flex;
@@ -446,7 +446,7 @@ function onProceed(force: boolean): void {
 }
 .preflight-score--good .preflight-score__ring { border-color: #27ae60; }
 .preflight-score--mid  .preflight-score__ring { border-color: #f39c12; }
-.preflight-score--bad  .preflight-score__ring { border-color: #c0392b; }
+.preflight-score--bad  .preflight-score__ring { border-color: var(--nl-danger); }
 
 .preflight-score__pct  { font-size: 1.05rem; font-weight: 700; line-height: 1; }
 .preflight-score__label { font-size: 0.7rem; color: var(--nl-text-muted, #666); margin-top: 2px; }
@@ -464,8 +464,8 @@ function onProceed(force: boolean): void {
   font-weight: 600;
   margin: 0;
 }
-.preflight-block__title--high { color: #c0392b; }
-.preflight-block__title--medium { color: #b8860b; }
+.preflight-block__title--high { color: var(--nl-danger); }
+.preflight-block__title--medium { color: var(--nl-warning); }
 
 .preflight-block__toggle {
   display: flex;
@@ -493,7 +493,7 @@ function onProceed(force: boolean): void {
   flex-direction: column;
   gap: 6px;
 }
-.preflight-item--high { border-left: 3px solid #c0392b; }
+.preflight-item--high { border-left: 3px solid var(--nl-danger); }
 .preflight-item--medium { border-left: 3px solid #f39c12; }
 .preflight-item--covered {
   border: none;

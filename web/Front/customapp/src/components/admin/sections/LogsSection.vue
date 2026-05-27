@@ -18,7 +18,7 @@
     </div>
 
     <div v-if="loading" class="loading-state">
-      <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #0d9488" />
+      <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: var(--nl-accent)" />
     </div>
 
     <div v-else-if="error" class="error-state">

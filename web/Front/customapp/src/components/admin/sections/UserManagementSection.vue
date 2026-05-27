@@ -329,5 +329,5 @@ async function copyTempPassword(): Promise<void> {
 }
 
 .copy-btn:hover { background: var(--nl-surface-2); color: var(--nl-accent); }
-.copy-btn .pi-check { color: #10b981; }
+.copy-btn .pi-check { color: var(--nl-success); }
 </style>

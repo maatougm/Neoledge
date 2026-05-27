@@ -13,7 +13,7 @@
     </div>
 
     <div v-else-if="store.templates.length === 0" class="empty-state">
-      <i class="pi pi-copy" style="font-size:2.5rem;color:#334155" />
+      <i class="pi pi-copy" style="font-size:2.5rem;color:var(--nl-text-3)" />
       <p>Aucun modèle créé. Créez votre premier modèle pour accélérer la configuration des projets.</p>
     </div>
 
@@ -346,7 +346,7 @@ async function handleApply() {
   padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.8rem;
   transition: background 0.15s;
 }
-.remove-row-btn:hover { background: #fee2e2; }
+.remove-row-btn:hover { background: var(--nl-danger-light); }
 
 .no-fields { padding: 1rem; text-align: center; color: var(--nl-text-3); font-size: 0.875rem; }
 

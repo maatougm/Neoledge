@@ -571,9 +571,9 @@ onMounted(async () => {
 .mem-blockers__warn {
   margin: 0;
   font-size: 0.8125rem;
-  color: #b45309;
-  background: #fef3c7;
-  border: 1px solid #fde68a;
+  color: var(--nl-warning);
+  background: var(--nl-warning-light);
+  border: 1px solid color-mix(in srgb, var(--nl-warning) 30%, transparent);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   display: inline-flex;

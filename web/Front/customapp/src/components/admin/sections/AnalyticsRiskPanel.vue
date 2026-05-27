@@ -221,11 +221,11 @@ function statusClass(status: string): string {
   color: var(--nl-text-2);
   white-space: nowrap;
 }
-.panel__status-badge--draft       { background: rgba(148,163,184,0.15); color: #475569; }
-.panel__status-badge--active      { background: rgba(59,130,246,0.12);  color: #1d4ed8; }
-.panel__status-badge--validation  { background: rgba(245,158,11,0.15);  color: #b45309; }
-.panel__status-badge--done        { background: rgba(16,185,129,0.15);  color: #047857; }
-.panel__status-badge--muted       { background: rgba(107,114,128,0.1);  color: #4b5563; }
+.panel__status-badge--draft       { background: rgba(148,163,184,0.15); color: var(--nl-text-2); }
+.panel__status-badge--active      { background: rgba(59,130,246,0.12);  color: var(--nl-info); }
+.panel__status-badge--validation  { background: rgba(245,158,11,0.15);  color: var(--nl-warning); }
+.panel__status-badge--done        { background: rgba(16,185,129,0.15);  color: var(--nl-success); }
+.panel__status-badge--muted       { background: rgba(107,114,128,0.1);  color: var(--nl-text-3); }
 
 .panel__score-cell {
   display: flex;

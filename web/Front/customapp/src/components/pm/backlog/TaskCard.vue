@@ -92,7 +92,7 @@ function emitUpdate(patch: Partial<ProposedTask>): void {
   border: 1px solid var(--nl-border, #e5e7eb);
   border-radius: 4px;
   font-size: 0.8125rem;
-  background: #fff;
+  background: var(--nl-surface);
 }
 .tc__select--type { min-width: 84px; }
 .tc__hours {
@@ -112,5 +112,5 @@ function emitUpdate(patch: Partial<ProposedTask>): void {
   border-radius: 4px;
   color: var(--nl-text-muted, #6b7280);
 }
-.tc__btn--danger:hover { background: #fee2e2; color: #dc2626; }
+.tc__btn--danger:hover { background: var(--nl-danger-light); color: var(--nl-danger); }
 </style>

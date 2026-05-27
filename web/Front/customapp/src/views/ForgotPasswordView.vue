@@ -99,7 +99,7 @@ async function handleSubmit(): Promise<void> {
 .fp-card {
   width: 100%;
   max-width: 420px;
-  background: #fff;
+  background: var(--nl-surface);
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.09);
   padding: 2.5rem 2rem;
@@ -144,7 +144,7 @@ async function handleSubmit(): Promise<void> {
 
 .fp-success__icon {
   font-size: 2.5rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   display: block;
   margin-bottom: 1rem;
 }
@@ -168,7 +168,7 @@ async function handleSubmit(): Promise<void> {
   justify-content: center;
   gap: 0.4rem;
   font-size: 0.875rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   text-decoration: none;
   font-weight: 500;
 }

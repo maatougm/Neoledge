@@ -260,8 +260,9 @@ const formatDate = (iso: string) =>
 .ptr__badge--draft       { background: var(--nl-surface-2);    color: var(--nl-text-3); }
 .ptr__badge--inprogress  { background: var(--nl-accent-light);  color: var(--nl-accent); }
 .ptr__badge--spec        { background: #F5F3FF;                 color: #7C3AED; }
-.ptr__badge--realization { background: #FFF7ED;                 color: var(--nl-warning); }
-.ptr__badge--mep         { background: #ECFDF5;                 color: #059669; }
+.ptr__badge--realization { background: var(--nl-warning-light); color: var(--nl-warning); }
+.ptr__badge--mep         { background: var(--nl-success-light); color: var(--nl-success); }
+:global(.dark) .ptr__badge--spec { background: rgba(124,58,237,0.20); color: #c4b5fd; }
 .ptr__badge--completed   { background: var(--nl-success-light); color: var(--nl-success); }
 
 /* ── Progress ─────────────────────────────────────────────────────────────── */

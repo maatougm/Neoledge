@@ -110,6 +110,26 @@
   --nl-kbd-bg:     #F4F4F5;
   --nl-kbd-border: #D4D4D8;
   --nl-kbd-text:   #3F3F46;
+
+  /* Info (blue) status — used by a few panels alongside danger/warning/success */
+  --nl-info:        #2563EB;
+  --nl-info-light:  rgba(37, 99, 235, 0.10);
+
+  /* ── Compatibility aliases ───────────────────────────────────────────────────
+     Some component scoped styles reference token names that were never defined
+     here, so their hardcoded fallback (white / near-black / stale teal) used to
+     win in BOTH light and dark mode. These aliases point the old names at the
+     real tokens; because they resolve via var(), they automatically follow the
+     .dark override of the referenced token. */
+  --nl-card-bg:         var(--nl-surface);
+  --nl-surface-alt:     var(--nl-surface-2);
+  --nl-table-header-bg: var(--nl-surface-2);
+  --nl-text:            var(--nl-text-1);
+  --nl-primary:         var(--nl-accent);
+  /* PrimeVue legacy tokens referenced by PersonalDashboard / FilterBuilder */
+  --surface-0:          var(--nl-surface);
+  --surface-200:        var(--nl-border);
+  --text-color:         var(--nl-text-1);
 }
 
 /* Dark mode */
@@ -144,6 +164,8 @@
   --nl-kbd-bg:        #26262A;
   --nl-kbd-border:    #3F3F46;
   --nl-kbd-text:      #D4D4D8;
+  --nl-info:          #60A5FA;
+  --nl-info-light:    rgba(96, 165, 250, 0.15);
 }
 
 *, *::before, *::after {

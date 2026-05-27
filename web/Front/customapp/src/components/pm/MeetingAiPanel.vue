@@ -545,10 +545,10 @@ async function confirmConvert(): Promise<void> {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  color: #dc2626;
+  color: var(--nl-danger);
   font-size: 0.875rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--nl-danger-light);
+  border: 1px solid color-mix(in srgb, var(--nl-danger) 30%, transparent);
   border-radius: var(--nl-radius);
   padding: 0.75rem;
 }
@@ -771,9 +771,9 @@ async function confirmConvert(): Promise<void> {
   white-space: nowrap;
 }
 
-.due-badge--overdue { background: #FEF2F2; color: #DC2626; }
-.due-badge--soon    { background: #FFF7ED; color: #D97706; }
-.due-badge--ok      { background: #F0FDF4; color: #16A34A; }
+.due-badge--overdue { background: var(--nl-danger-light); color: var(--nl-danger); }
+.due-badge--soon    { background: var(--nl-warning-light); color: var(--nl-warning); }
+.due-badge--ok      { background: var(--nl-success-light); color: var(--nl-success); }
 
 /* Decisions two-column grid */
 .decision-grid {
@@ -809,13 +809,13 @@ async function confirmConvert(): Promise<void> {
 }
 
 .decision-category-badge--decision {
-  background: #FEFBEA;
+  background: var(--nl-warning-light);
   color: #8A7400;
 }
 
 .decision-category-badge--risk {
-  background: #FFF7ED;
-  color: #D97706;
+  background: var(--nl-warning-light);
+  color: var(--nl-warning);
 }
 
 .decision-desc {

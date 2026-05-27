@@ -312,7 +312,7 @@ onUnmounted(() => {
 .pdash__stat-count {
   font-size: 1.6rem;
   font-weight: 700;
-  color: #0d9488;
+  color: var(--nl-accent);
   line-height: 1;
 }
 
@@ -391,7 +391,7 @@ onUnmounted(() => {
 }
 
 .pdash__activity-icon {
-  color: #0d9488;
+  color: var(--nl-accent);
   font-size: 0.85rem;
   margin-top: 0.1rem;
 }

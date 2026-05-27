@@ -113,7 +113,7 @@ function emitUpdate(patch: Partial<ProposedEpic>): void {
 }
 .ec__title:hover, .ec__title:focus {
   border-color: var(--nl-border, #e5e7eb);
-  background: #fff;
+  background: var(--nl-surface);
   outline: none;
 }
 .ec__select {
@@ -121,7 +121,7 @@ function emitUpdate(patch: Partial<ProposedEpic>): void {
   border: 1px solid var(--nl-border, #e5e7eb);
   border-radius: 4px;
   font-size: 0.875rem;
-  background: #fff;
+  background: var(--nl-surface);
 }
 .ec__hours {
   width: 64px;
@@ -136,7 +136,7 @@ function emitUpdate(patch: Partial<ProposedEpic>): void {
   font-size: 0.75rem;
   color: var(--nl-text-muted, #6b7280);
   white-space: nowrap;
-  background: #fff;
+  background: var(--nl-surface);
   padding: 0.25rem 0.5rem;
   border-radius: 12px;
   border: 1px solid var(--nl-border, #e5e7eb);

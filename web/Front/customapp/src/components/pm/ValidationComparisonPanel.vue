@@ -264,7 +264,7 @@ onMounted(async () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 0.9rem;
-  background: #fff;
+  background: var(--nl-surface);
   border-bottom: 1px solid var(--nl-border);
   font-weight: 600;
   font-size: 0.875rem;

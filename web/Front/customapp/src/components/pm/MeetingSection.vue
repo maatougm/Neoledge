@@ -342,9 +342,9 @@ function parseLangs(raw: string): string[] {
   white-space: nowrap;
 }
 
-.ai-badge--processing { background: #FFF7ED; color: #D97706; }
-.ai-badge--completed  { background: #F0FDF4; color: #16A34A; }
-.ai-badge--failed     { background: #FEF2F2; color: #DC2626; }
+.ai-badge--processing { background: var(--nl-warning-light); color: #D97706; }
+.ai-badge--completed  { background: var(--nl-success-light); color: #16A34A; }
+.ai-badge--failed     { background: var(--nl-danger-light); color: #DC2626; }
 
 .meeting-actions {
   display: flex;
