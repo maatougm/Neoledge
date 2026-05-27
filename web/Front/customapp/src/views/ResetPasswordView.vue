@@ -6,7 +6,7 @@
   <div class="rp-page">
     <div class="rp-card">
       <div class="rp-header">
-        <img :src="markUrl" alt="NeoLeadge" class="rp-logo" />
+        <span class="rp-logo"><NeoMark /></span>
         <h1 class="rp-title">Nouveau mot de passe</h1>
         <p class="rp-subtitle">Choisissez un mot de passe sécurisé d'au moins 8 caractères.</p>
       </div>
@@ -85,7 +85,7 @@ import { NeoButton, NeoPassword, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
 import axios from 'axios'
 import { applyAutofill } from '@/lib/autofillFix'
-import markUrl from '@/assets/neo-mark.png'
+import NeoMark from '@/components/common/NeoMark.vue'
 
 const route = useRoute()
 const token = route.query.token as string | undefined
@@ -154,12 +154,18 @@ async function handleSubmit(): Promise<void> {
 .rp-header { text-align: center; }
 
 .rp-logo {
+  /* Dark "app-icon" tile so the yellow vector mark stays crisp on the light card. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  object-fit: cover;
-  display: inline-block;
   margin-bottom: 1rem;
+  padding: 10px;
+  box-sizing: border-box;
+  background: #0A0A0B;
+  color: var(--nl-accent);
 }
 
 .rp-title {

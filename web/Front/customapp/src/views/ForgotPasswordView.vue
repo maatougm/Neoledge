@@ -6,7 +6,7 @@
   <div class="fp-page">
     <div class="fp-card">
       <div class="fp-header">
-        <img :src="markUrl" alt="NeoLeadge" class="fp-logo" />
+        <span class="fp-logo"><NeoMark /></span>
         <h1 class="fp-title">Mot de passe oublié</h1>
         <p class="fp-subtitle">
           Saisissez votre adresse e-mail. Si un compte y est associé, vous recevrez un lien pour réinitialiser votre mot de passe.
@@ -60,7 +60,7 @@
 import { ref } from 'vue'
 import { NeoButton, NeoInputText, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
-import markUrl from '@/assets/neo-mark.png'
+import NeoMark from '@/components/common/NeoMark.vue'
 import axios from 'axios'
 
 const email = ref<string>('')
@@ -111,12 +111,18 @@ async function handleSubmit(): Promise<void> {
 .fp-header { text-align: center; }
 
 .fp-logo {
+  /* Dark "app-icon" tile so the yellow vector mark stays crisp on the light card. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  object-fit: cover;
-  display: inline-block;
   margin-bottom: 1rem;
+  padding: 10px;
+  box-sizing: border-box;
+  background: #0A0A0B;
+  color: var(--nl-accent);
 }
 
 .fp-title {
