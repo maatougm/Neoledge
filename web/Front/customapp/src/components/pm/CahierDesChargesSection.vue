@@ -137,6 +137,23 @@
           </p>
         </div>
 
+        <!-- Approval banner: read-only confirmation, visible to the PM (and everyone).
+             Validation actions themselves live in CahierReviewActions and only render
+             for the SpecificationTeam reviewers / Admin. -->
+        <div v-if="cahierStatus?.status === 'approved' && cahierStatus.lastFeedback" class="cahier-approve-banner">
+          <div class="cahier-approve-banner__header">
+            <i class="pi pi-check-circle" />
+            <strong>Cahier approuvé par {{ cahierStatus.lastFeedback.userName ?? 'l\'équipe de validation' }}</strong>
+            <span class="cahier-approve-banner__date">{{ formatRelative(cahierStatus.lastFeedback.createdAt) }}</span>
+          </div>
+          <p
+            v-if="cahierStatus.lastFeedback.comment && cahierStatus.lastFeedback.comment !== 'Approuvé.'"
+            class="cahier-approve-banner__comment"
+          >
+            {{ cahierStatus.lastFeedback.comment }}
+          </p>
+        </div>
+
         <div class="cahier-actions">
           <NeoButton
             v-if="!editMode"
@@ -796,6 +813,51 @@ async function handleDownload() {
   margin-bottom: 16px;
 }
 .cahier-success-icon { font-size: 1.5rem; color: var(--nl-success, #27ae60); }
+
+/* Read-only validation banners (status + reviewer + comment) — shown to the PM too. */
+.cahier-reject-banner,
+.cahier-approve-banner {
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.cahier-reject-banner {
+  background: var(--nl-danger-light, rgba(220, 38, 38, 0.08));
+  border: 1px solid color-mix(in srgb, var(--nl-danger, #dc2626) 35%, transparent);
+}
+.cahier-approve-banner {
+  background: var(--nl-success-light, rgba(39, 174, 96, 0.1));
+  border: 1px solid color-mix(in srgb, var(--nl-success, #27ae60) 35%, transparent);
+}
+.cahier-reject-banner__header,
+.cahier-approve-banner__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--nl-text-1, #111827);
+}
+.cahier-reject-banner__header i { color: var(--nl-danger, #dc2626); font-size: 1.05rem; }
+.cahier-approve-banner__header i { color: var(--nl-success, #27ae60); font-size: 1.05rem; }
+.cahier-reject-banner__date,
+.cahier-approve-banner__date {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--nl-text-3, #9ca3af);
+}
+.cahier-reject-banner__section { margin: 0; font-size: 0.8125rem; color: var(--nl-text-2, #374151); }
+.cahier-reject-banner__comment,
+.cahier-approve-banner__comment {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--nl-text-2, #374151);
+  white-space: pre-wrap;
+}
+.cahier-reject-banner__hint { margin: 0; font-size: 0.75rem; color: var(--nl-text-3, #9ca3af); }
 .cahier-success-text { font-weight: 600; margin: 0; }
 .cahier-success-meta { font-size: 0.85rem; color: var(--nl-text-muted, #666); margin: 2px 0 0; }
 

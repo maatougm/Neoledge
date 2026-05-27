@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
@@ -829,7 +829,8 @@ RÈGLES :
     comment: string,
     section?: string,
   ): Promise<void> {
-    // Reject self-approval — the project's PM cannot approve their own cahier.
+    // Reject self-approval — the project's PM cannot approve their own cahier
+    // (catches the edge case of an Admin who is also this project's PM).
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
       select: { projectManagerId: true },
@@ -837,6 +838,28 @@ RÈGLES :
     if (project?.projectManagerId === userId) {
       throw new BadRequestException(
         'Vous ne pouvez pas valider votre propre cahier des charges. Cette action est réservée à l\'équipe de validation.',
+      )
+    }
+
+    // Only an Admin, or a SpecificationTeam user added as a member of THIS project,
+    // may validate. The frontend hides the controls for everyone else, but the server
+    // must enforce it too — otherwise any user with project access (a developer, another
+    // PM) could POST an approval directly (the endpoint guards only check project access).
+    const reviewer = await this.prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    })
+    let isAuthorisedReviewer = reviewer?.role === 'Admin'
+    if (reviewer?.role === 'SpecificationTeam') {
+      const membership = await this.prisma.projectMember.findFirst({
+        where: { projectId, userId },
+        select: { id: true },
+      })
+      isAuthorisedReviewer = !!membership
+    }
+    if (!isAuthorisedReviewer) {
+      throw new ForbiddenException(
+        "Seule l'équipe de spécification affectée à ce projet peut valider le cahier des charges.",
       )
     }
 
