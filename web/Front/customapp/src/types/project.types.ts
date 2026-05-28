@@ -186,11 +186,13 @@ export interface CreateTemplatePayload {
   description: string | null
   fields: Array<{
     label: string
-    fieldType: string
+    type: string
     category: string
     isRequired: boolean
     displayOrder: number
     options: string | null
+    isBacklogDriver?: boolean
+    backlogHint?: string | null
   }>
 }
 

@@ -28,6 +28,10 @@ export class TemplateFieldDto {
 
   // JSON-encoded options string — max 4KB to defend against oversized payloads.
   @IsOptional() @IsString() @MaxLength(4096) options?: string;
+
+  @IsOptional() @IsBoolean() isBacklogDriver?: boolean;
+
+  @IsOptional() @IsString() @MaxLength(500) backlogHint?: string;
 }
 
 export class CreateTemplateDto {

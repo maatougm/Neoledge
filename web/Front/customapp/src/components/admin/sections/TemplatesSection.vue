@@ -219,7 +219,7 @@ async function handleCreate() {
       description: form.description.trim() || null,
       fields: form.fields.map((f, i) => ({
         label: f.label,
-        fieldType: f.fieldType,
+        type: f.fieldType,
         category: 'Custom',
         isRequired: f.isRequired,
         displayOrder: i,
