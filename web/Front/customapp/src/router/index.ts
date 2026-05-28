@@ -248,12 +248,6 @@ const router = createRouter({
               props: true,
             },
             {
-              path: 'projects/:id/time',
-              name: 'pm-time',
-              component: () => import('@/views/TimeTrackingView.vue'),
-              props: true,
-            },
-            {
               path: 'projects/:id/members',
               name: 'pm-members',
               component: () => import('@/views/MembersView.vue'),
@@ -269,12 +263,6 @@ const router = createRouter({
               path: 'projects/:id/assign-tasks',
               name: 'pm-assign-tasks',
               component: () => import('@/views/AssignTasksView.vue'),
-              props: true,
-            },
-            {
-              path: 'projects/:id/activity',
-              name: 'pm-project-activity',
-              component: () => import('@/views/ProjectActivityView.vue'),
               props: true,
             },
             {

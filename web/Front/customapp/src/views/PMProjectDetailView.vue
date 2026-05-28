@@ -120,7 +120,6 @@
           <div class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-history" /> Activité récente</h2>
-              <RouterLink :to="`/app/pm/projects/${id}/activity`" class="po__head-link">Tout voir →</RouterLink>
             </div>
             <div v-if="activity.length === 0" class="nl-empty">
               <p>Aucune activité récente.</p>
