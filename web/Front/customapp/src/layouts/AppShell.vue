@@ -145,10 +145,6 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
         { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
         { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
     ]},
-    { heading: 'Suivi', items: [
-        { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
-        { key: 'proj-activity',     label: 'Activité',       icon: 'pi-history',     to: `${base}/activity` },
-    ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
   ]
   // Evict oldest entry if at capacity (Map iteration order is insertion order).
