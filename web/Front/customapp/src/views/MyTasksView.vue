@@ -84,9 +84,7 @@ const statusOptions = [
   { label: 'Nouveau',                   value: 'New' },
   { label: 'En cours',                  value: 'InProgress' },
   { label: 'En attente de validation',  value: 'AwaitingReview' },
-  { label: 'En pause',                  value: 'OnHold' },
   { label: 'Résolu',                    value: 'Resolved' },
-  { label: 'Clôturé',                   value: 'Closed' },
 ]
 
 const toast = useNeoToast()

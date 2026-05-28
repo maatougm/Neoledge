@@ -150,9 +150,6 @@ const statusOptions = [
   { label: 'En cours', value: 'InProgress' },
   { label: 'En attente de validation', value: 'AwaitingReview' },
   { label: 'Résolu', value: 'Resolved' },
-  { label: 'Fermé', value: 'Closed' },
-  { label: 'En attente', value: 'OnHold' },
-  { label: 'Rejeté', value: 'Rejected' },
 ]
 const priorityOptions = [
   { label: 'Basse', value: 'Low' },

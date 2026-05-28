@@ -302,8 +302,6 @@ const statusOptions: { label: string; value: WpStatus | '' }[] = [
   { label: 'En cours', value: 'InProgress' },
   { label: 'En attente de validation', value: 'AwaitingReview' },
   { label: 'Résolu', value: 'Resolved' },
-  { label: 'Fermé', value: 'Closed' },
-  { label: 'En attente', value: 'OnHold' },
 ]
 const typeOptions: { label: string; value: WpType | '' }[] = [
   { label: 'Tous types', value: '' },
