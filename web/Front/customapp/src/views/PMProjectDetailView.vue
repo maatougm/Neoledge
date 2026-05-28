@@ -73,68 +73,8 @@
 
       <!-- Grid -->
       <div class="po__grid">
-        <!-- Col 1 — my work + at-risk -->
+        <!-- Col 1 — work-package status breakdown -->
         <div class="po__col">
-          <div class="nl-card">
-            <div class="po__head">
-              <h2 class="po__head-title"><i class="pi pi-user" /> Mon travail ici</h2>
-              <RouterLink :to="`/app/pm/projects/${id}/workpackages?assignee=me`" class="po__head-link">Tout voir →</RouterLink>
-            </div>
-            <div v-if="myWps.length === 0" class="nl-empty">
-              <div class="nl-empty__icon"><i class="pi pi-check" /></div>
-              <p>Aucune tâche pour vous dans ce projet.</p>
-            </div>
-            <ul v-else class="po__wp-list">
-              <li
-                v-for="wp in (myWps || []).slice(0, 5)"
-                :key="wp.id"
-                class="po__wp nl-row"
-                @click="openWp(wp.id)"
-              >
-                <span class="nl-prio-dot" :class="`nl-prio-dot--${prioClass(wp.priority)}`" />
-                <div class="po__wp-body">
-                  <div class="po__wp-title">{{ wp.title }}</div>
-                  <div class="po__wp-meta">
-                    <StatusChip :status="wp.status" />
-                    <span v-if="wp.dueDate" :class="{ 'po__wp-due--overdue': isOverdue(wp.dueDate) }">
-                      {{ formatDueDate(wp.dueDate) }}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <div class="nl-card">
-            <div class="po__head">
-              <h2 class="po__head-title"><i class="pi pi-exclamation-triangle" /> À risque</h2>
-            </div>
-            <div v-if="atRiskWps.length === 0" class="nl-empty">
-              <div class="nl-empty__icon"><i class="pi pi-check" /></div>
-              <p>Rien à signaler. 👌</p>
-            </div>
-            <ul v-else class="po__wp-list">
-              <li
-                v-for="wp in (atRiskWps || []).slice(0, 5)"
-                :key="wp.id"
-                class="po__wp nl-row"
-                @click="openWp(wp.id)"
-              >
-                <span class="nl-prio-dot" :class="`nl-prio-dot--${prioClass(wp.priority)}`" />
-                <div class="po__wp-body">
-                  <div class="po__wp-title">{{ wp.title }}</div>
-                  <div class="po__wp-meta">
-                    <StatusChip :status="wp.status" />
-                    <span v-if="wp.assignee">{{ wp.assignee.firstName }} {{ wp.assignee.lastName }}</span>
-                    <span v-if="wp.dueDate" class="po__wp-due--overdue">
-                      {{ formatDueDate(wp.dueDate) }}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
           <div v-if="statusByCount.length > 0" class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-chart-pie" /> Répartition par statut</h2>
@@ -153,12 +93,8 @@
           </div>
         </div>
 
-        <!-- Col 2 — team responsibilities + milestones + activity -->
+        <!-- Col 2 — milestones + activity -->
         <div class="po__col">
-          <!-- Team responsibilities first: PMs assign the validation (spec) lead
-               + deployment lead here, so it must be immediately visible. -->
-          <ProjectResponsibilitiesCard v-if="canManage" :project-id="id" />
-
           <div class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-flag" /> Prochain jalon</h2>
@@ -236,7 +172,6 @@ import { NeoButton } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
-import ProjectResponsibilitiesCard from '@/components/pm/ProjectResponsibilitiesCard.vue'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
@@ -284,19 +219,6 @@ const wpOverdue     = computed<number>(() => wps.value.filter((w) =>
   w.dueDate && new Date(w.dueDate).getTime() < Date.now() && !isTerminal(w.status),
 ).length)
 
-const myWps = computed<WorkPackage[]>(() =>
-  (Array.isArray(wps.value) ? wps.value : []).filter((w) => w.assigneeId === authStore.userId && !isTerminal(w.status)),
-)
-
-const atRiskWps = computed<WorkPackage[]>(() =>
-  (Array.isArray(wps.value) ? wps.value : []).filter((w) => {
-    const isOpen = !isTerminal(w.status)
-    const overdue = w.dueDate && new Date(w.dueDate).getTime() < Date.now()
-    const urgent  = w.priority === 'Urgent' || w.priority === 'Critical'
-    return isOpen && (overdue || urgent)
-  }),
-)
-
 const statusByCount = computed(() => {
   const counts: Record<string, number> = {}
   const list = Array.isArray(wps.value) ? wps.value : []
@@ -331,7 +253,6 @@ const daysToEndLabel = computed<string>(() => {
 const activeSprintName = computed<string>(() => activeSprint.value?.name ?? '')
 
 function go(module: string): void { void router.push(`/app/pm/projects/${props.id}/${module}`) }
-function openWp(wpId: string): void { void router.push(`/app/pm/projects/${props.id}/workpackages?wpId=${wpId}`) }
 
 // ── Manual progress override (PM/Admin) ──────────────────────────────────────
 const editingProgress = ref<boolean>(false)
@@ -359,24 +280,6 @@ async function saveProgress(value: number | null): Promise<void> {
   } finally {
     savingProgress.value = false
   }
-}
-
-function prioClass(p: string): 'urgent' | 'high' | 'normal' | 'low' {
-  const v = (p || '').toLowerCase()
-  if (v === 'urgent' || v === 'critical') return 'urgent'
-  if (v === 'high') return 'high'
-  if (v === 'low') return 'low'
-  return 'normal'
-}
-function isOverdue(d: string | null): boolean { return !!d && new Date(d).getTime() < Date.now() }
-function formatDueDate(d: string): string {
-  const diff = Math.round((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  if (diff === 0) return "Aujourd'hui"
-  if (diff === 1) return 'Demain'
-  if (diff === -1) return 'Hier'
-  if (diff < 0) return `Il y a ${Math.abs(diff)}j`
-  if (diff <= 7) return `Dans ${diff}j`
-  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 function activityIcon(action: string): string {
