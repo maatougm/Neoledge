@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NeoButton, NeoSelect, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
@@ -118,7 +118,6 @@ const showRejectModal = ref(false)
 const rejectComment = ref('')
 const rejectSection = ref('')
 const submitting = ref(false)
-const isProjectMember = ref(false)
 
 const sectionOptions = [
   { label: '— Général —', value: '' },
@@ -132,30 +131,9 @@ const sectionOptions = [
   { label: 'Conclusion', value: 'conclusion' },
 ]
 
-// Only Admins or SpecificationTeam users explicitly added to this project may review.
-const canReview = computed(() => {
-  if (auth.userRole === 'Admin') return true
-  if (auth.userRole !== 'SpecificationTeam') return false
-  return isProjectMember.value
-})
-
-interface ProjectMemberLite { userId: string }
-
-onMounted(async () => {
-  if (auth.userRole !== 'SpecificationTeam') return
-  try {
-    // Endpoint returns `{ members: [...], projectManagerId }`, not a flat array.
-    // Without the unwrap, .some() threw silently and the spec reviewer was
-    // locked out of their own approve/reject buttons.
-    const { data } = await api.get<ProjectMemberLite[] | { members: ProjectMemberLite[] }>(
-      `/pm/projects/${props.projectId}/members`,
-    )
-    const list = Array.isArray(data) ? data : (data?.members ?? [])
-    isProjectMember.value = !!auth.userId && list.some((m) => m.userId === auth.userId)
-  } catch {
-    isProjectMember.value = false
-  }
-})
+// Spec team is global: any Admin or SpecificationTeam user may review any
+// project's cahier — no per-project membership required.
+const canReview = computed(() => auth.userRole === 'Admin' || auth.userRole === 'SpecificationTeam')
 
 async function onApprove(): Promise<void> {
   submitting.value = true

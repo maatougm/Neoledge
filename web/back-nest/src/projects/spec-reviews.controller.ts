@@ -38,8 +38,9 @@ export class SpecReviewsController {
    * GET /spec/pending-reviews
    *
    * Returns the cahier validation queue for the calling SpecificationTeam user.
-   * Only projects where the caller is in `ProjectMember` AND has a saved cahier
-   * appear. Their `cahierStatus` reflects the user's latest feedback row:
+   * The spec team is global — a small group handles every project — so ALL
+   * non-deleted projects with a saved cahier appear (no per-project assignment).
+   * Their `cahierStatus` reflects the user's latest feedback row:
    *   - 'pending' = no feedback yet
    *   - 'approved' = caller approved → row hidden from queue
    *   - 'rejected' = caller rejected the latest cahier → still in queue (PM
@@ -51,30 +52,23 @@ export class SpecReviewsController {
     const userId = (req as unknown as { user?: { userId?: string } }).user?.userId;
     if (!userId) return [];
 
-    // Step 1: projects where this user is a member AND a cahier has been saved.
-    const memberships = await this.prisma.projectMember.findMany({
-      where: {
-        userId,
-        project: { isDeleted: false, aiOutput: { not: null } },
-      },
+    // Step 1: every non-deleted project that has a saved cahier (global spec team).
+    const projects = await this.prisma.project.findMany({
+      where: { isDeleted: false, aiOutput: { not: null } },
       select: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            clientName: true,
-            status: true,
-            aiOutput: true,
-            updatedAt: true,
-            projectManager: { select: { firstName: true, lastName: true } },
-          },
-        },
+        id: true,
+        name: true,
+        clientName: true,
+        status: true,
+        aiOutput: true,
+        updatedAt: true,
+        projectManager: { select: { firstName: true, lastName: true } },
       },
     });
 
-    if (memberships.length === 0) return [];
+    if (projects.length === 0) return [];
 
-    const projectIds = memberships.map((m) => m.project.id);
+    const projectIds = projects.map((p) => p.id);
 
     // Step 2: fetch the caller's most recent feedback per project.
     const feedback = await this.prisma.cahierFeedback.findMany({
@@ -90,8 +84,7 @@ export class SpecReviewsController {
     }
 
     const rows: PendingReviewRow[] = [];
-    for (const m of memberships) {
-      const p = m.project;
+    for (const p of projects) {
       let cahierSavedAt: string | null = null;
       if (p.aiOutput) {
         try {
