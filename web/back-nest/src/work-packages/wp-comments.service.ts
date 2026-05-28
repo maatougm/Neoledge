@@ -12,8 +12,25 @@ export class WpCommentsService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async list(workPackageId: string) {
+  /**
+   * Re-verify the WP belongs to the project the caller was authorized for.
+   * ProjectAccessGuard only checks the URL :projectId, so without this a member
+   * of project A could pass A's id then substitute a wpId from project B (IDOR).
+   * Mirrors wp-attachments.service.ts's assertWpProjectAccess.
+   */
+  private async assertWpInProject(workPackageId: string, projectId: string): Promise<boolean> {
+    const wp = await this.prisma.workPackage.findFirst({
+      where: { id: workPackageId, projectId, isDeleted: false },
+      select: { id: true },
+    });
+    return !!wp;
+  }
+
+  async list(workPackageId: string, projectId: string) {
     try {
+      if (!(await this.assertWpInProject(workPackageId, projectId))) {
+        return Result.fail('Work package introuvable.');
+      }
       const comments = await this.prisma.workPackageComment.findMany({
         where: { workPackageId, isDeleted: false },
         include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatarPath: true } } },
@@ -26,9 +43,12 @@ export class WpCommentsService {
     }
   }
 
-  async create(workPackageId: string, userId: string, content: string) {
+  async create(workPackageId: string, userId: string, content: string, projectId: string) {
     try {
       if (!content.trim()) return Result.fail('Contenu requis.');
+      if (!(await this.assertWpInProject(workPackageId, projectId))) {
+        return Result.fail('Work package introuvable.');
+      }
       const c = await this.prisma.workPackageComment.create({
         data: { workPackageId, userId, content: content.trim() },
         include: { user: { select: { id: true, firstName: true, lastName: true, email: true, avatarPath: true } } },

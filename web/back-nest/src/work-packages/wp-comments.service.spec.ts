@@ -83,9 +83,11 @@ describe('WpCommentsService', () => {
   describe('list()', () => {
     it('returns comments ordered by createdAt ascending, filtered to non-deleted', async () => {
       const rows = [makeComment(), makeComment({ id: 'c-2' })];
+      // assertWpInProject: the WP must belong to the authorized project.
+      mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp());
       mockPrisma.workPackageComment.findMany.mockResolvedValue(rows);
 
-      const result = await service.list('wp-1');
+      const result = await service.list('wp-1', 'proj-1');
 
       expect(result.isSuccess).toBe(true);
       expect(result.value).toEqual(rows);
@@ -97,10 +99,21 @@ describe('WpCommentsService', () => {
       );
     });
 
+    it('refuses to list comments when the WP is not in the authorized project (IDOR guard)', async () => {
+      mockPrisma.workPackage.findFirst.mockResolvedValue(null);
+
+      const result = await service.list('wp-from-other-project', 'proj-1');
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Work package introuvable.');
+      expect(mockPrisma.workPackageComment.findMany).not.toHaveBeenCalled();
+    });
+
     it('returns failure when Prisma throws', async () => {
+      mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp());
       mockPrisma.workPackageComment.findMany.mockRejectedValue(new Error('DB down'));
 
-      const result = await service.list('wp-1');
+      const result = await service.list('wp-1', 'proj-1');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Échec du chargement des commentaires.');
@@ -111,19 +124,29 @@ describe('WpCommentsService', () => {
 
   describe('create()', () => {
     it('returns failure when content is empty after trim', async () => {
-      const result = await service.create('wp-1', 'user-1', '   ');
+      const result = await service.create('wp-1', 'user-1', '   ', 'proj-1');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Contenu requis.');
       expect(mockPrisma.workPackageComment.create).not.toHaveBeenCalled();
     });
 
+    it('refuses to create a comment when the WP is not in the authorized project (IDOR guard)', async () => {
+      mockPrisma.workPackage.findFirst.mockResolvedValue(null);
+
+      const result = await service.create('wp-from-other-project', 'user-1', 'hi', 'proj-1');
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Work package introuvable.');
+      expect(mockPrisma.workPackageComment.create).not.toHaveBeenCalled();
+    });
+
     it('persists the trimmed comment and returns it', async () => {
       mockPrisma.workPackageComment.create.mockResolvedValue(makeComment({ content: 'hi' }));
-      // No assignee + no watchers → fanout no-ops.
+      // No assignee + no watchers → fanout no-ops. Same mock backs assertWpInProject.
       mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp());
 
-      const result = await service.create('wp-1', 'user-1', '  hi  ');
+      const result = await service.create('wp-1', 'user-1', '  hi  ', 'proj-1');
 
       expect(result.isSuccess).toBe(true);
       expect(mockPrisma.workPackageComment.create).toHaveBeenCalledWith(
@@ -137,7 +160,7 @@ describe('WpCommentsService', () => {
       mockPrisma.workPackageComment.create.mockResolvedValue(makeComment({ content: 'review please' }));
       mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp({ assigneeId: 'assignee-1', watchers: [] }));
 
-      const result = await service.create('wp-1', 'author-1', 'review please');
+      const result = await service.create('wp-1', 'author-1', 'review please', 'proj-1');
       await flushMicrotasks();
 
       expect(result.isSuccess).toBe(true);
@@ -164,7 +187,7 @@ describe('WpCommentsService', () => {
         }),
       );
 
-      await service.create('wp-1', 'author-1', 'hello team');
+      await service.create('wp-1', 'author-1', 'hello team', 'proj-1');
       await flushMicrotasks();
 
       const targetIds = mockNotifications.notifyEnhanced.mock.calls.map((c) => (c[0] as { userId: string }).userId);
@@ -176,7 +199,7 @@ describe('WpCommentsService', () => {
       mockPrisma.workPackageComment.create.mockResolvedValue(makeComment());
       mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp({ assigneeId: 'self', watchers: [] }));
 
-      await service.create('wp-1', 'self', 'note to self');
+      await service.create('wp-1', 'self', 'note to self', 'proj-1');
       await flushMicrotasks();
 
       expect(mockNotifications.notifyEnhanced).not.toHaveBeenCalled();
@@ -187,7 +210,7 @@ describe('WpCommentsService', () => {
       mockPrisma.workPackageComment.create.mockResolvedValue(makeComment({ content: longContent }));
       mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp({ assigneeId: 'recv' }));
 
-      await service.create('wp-1', 'author', longContent);
+      await service.create('wp-1', 'author', longContent, 'proj-1');
       await flushMicrotasks();
 
       const call = mockNotifications.notifyEnhanced.mock.calls[0][0] as { message: string };
@@ -196,21 +219,11 @@ describe('WpCommentsService', () => {
       expect((call.message.match(/x/g) ?? []).length).toBe(120);
     });
 
-    it('no-ops the fanout when the WP cannot be loaded', async () => {
-      mockPrisma.workPackageComment.create.mockResolvedValue(makeComment());
-      mockPrisma.workPackage.findFirst.mockResolvedValue(null);
-
-      const result = await service.create('wp-1', 'user-1', 'hi');
-      await flushMicrotasks();
-
-      expect(result.isSuccess).toBe(true);
-      expect(mockNotifications.notifyEnhanced).not.toHaveBeenCalled();
-    });
-
     it('returns failure (and skips fanout) when create() throws', async () => {
+      mockPrisma.workPackage.findFirst.mockResolvedValue(makeWp());
       mockPrisma.workPackageComment.create.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.create('wp-1', 'user-1', 'hi');
+      const result = await service.create('wp-1', 'user-1', 'hi', 'proj-1');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Échec de la création.');
@@ -219,9 +232,12 @@ describe('WpCommentsService', () => {
 
     it('does not surface fanout failures to the caller (fire-and-forget)', async () => {
       mockPrisma.workPackageComment.create.mockResolvedValue(makeComment());
-      mockPrisma.workPackage.findFirst.mockRejectedValue(new Error('fanout crashed'));
+      // First findFirst = assertWpInProject (passes); second = fanout (crashes).
+      mockPrisma.workPackage.findFirst
+        .mockResolvedValueOnce(makeWp())
+        .mockRejectedValueOnce(new Error('fanout crashed'));
 
-      const result = await service.create('wp-1', 'user-1', 'hi');
+      const result = await service.create('wp-1', 'user-1', 'hi', 'proj-1');
       await flushMicrotasks();
 
       expect(result.isSuccess).toBe(true);

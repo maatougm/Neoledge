@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
+import { MEMBER_SUBMITTABLE_STATUSES } from './wp-status.constants.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { AgentRunnerService } from '../ai/agent/agent-runner.service.js';
 import { runAssignmentAgent, runAssignmentPlannerWorker, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
@@ -267,6 +268,9 @@ export class WorkPackagesService {
       include: {
         assignee: { select: USER_SELECT },
         author: { select: USER_SELECT },
+        // projectManagerId lets the detail panel gate PM-only actions (validate /
+        // reject a submitted task) to THIS project's PM, without a second request.
+        project: { select: { id: true, name: true, projectManagerId: true } },
         parent: { select: { id: true, title: true } },
         children: {
           where: { isDeleted: false },
@@ -377,6 +381,44 @@ export class WorkPackagesService {
         );
         if (forbidden.length > 0) {
           return Result.fail(`Champs non autorisés pour le rôle Member: ${forbidden.join(', ')}.`);
+        }
+        // Workflow guard: a Member may move their task among New / InProgress /
+        // AwaitingReview (start, submit for review, withdraw) but may NOT set
+        // Resolved/Closed — only the project's PM validates or closes a task.
+        // Without this a Member could PATCH {status:'Resolved'} and self-approve,
+        // bypassing the PM-review flow.
+        if (
+          dto.status !== undefined &&
+          !(MEMBER_SUBMITTABLE_STATUSES as readonly string[]).includes(dto.status)
+        ) {
+          return Result.fail(
+            "En tant que membre, vous ne pouvez pas valider ou clôturer une tâche. Soumettez-la pour validation : seul le chef de projet peut la clôturer.",
+          );
+        }
+      }
+
+      // Validation authority: only an Admin or THIS project's PM may validate
+      // (Resolved), close (Closed), or reject a submitted task (AwaitingReview →
+      // InProgress by someone other than the assignee). The frontend already gates
+      // these to the project PM; this mirrors it server-side so another project's
+      // PM-role member (who passes ProjectAccessGuard) can't act as approver.
+      // actorRole undefined = trusted internal caller (e.g. board move, tests) → skip.
+      if (actorRole && actorRole !== 'Member' && actorRole !== 'Admin') {
+        const isValidateOrClose = dto.status === 'Resolved' || dto.status === 'Closed';
+        const isReject =
+          dto.status === 'InProgress' &&
+          existing.status === 'AwaitingReview' &&
+          existing.assigneeId !== actorId;
+        if (isValidateOrClose || isReject) {
+          const proj = await this.prisma.project.findFirst({
+            where: { id: projectId, isDeleted: false },
+            select: { projectManagerId: true },
+          });
+          if (proj?.projectManagerId !== actorId) {
+            return Result.fail(
+              'Seul le chef de projet de ce projet peut valider, clôturer ou rejeter une tâche.',
+            );
+          }
         }
       }
 
@@ -489,8 +531,22 @@ export class WorkPackagesService {
         }
 
         if (statusChanged) {
-          // Pass the newly-assigned user as an exclusion so they don't receive a
-          // second notification from the watcher blast.
+          // PM validates (AwaitingReview → Resolved) or rejects (AwaitingReview →
+          // InProgress) a submitted task: send the assignee a tailored notification
+          // and exclude them from the generic StatusChange blast to avoid a double.
+          const isApproval = dto.status === 'Resolved' && existing.status === 'AwaitingReview';
+          const isRejection = dto.status === 'InProgress' && existing.status === 'AwaitingReview';
+          const assigneeId = wp.assigneeId;
+          const tailoredAssigneeNotify =
+            (isApproval || isRejection) && !!assigneeId && assigneeId !== actorId;
+
+          // Pass the newly-assigned user (or the assignee we notify ourselves below)
+          // as an exclusion so they don't receive a second notification from the blast.
+          const blastExclude = assigneeChanged
+            ? (newAssignee as string)
+            : tailoredAssigneeNotify
+              ? (assigneeId as string)
+              : undefined;
           void this.notifyWatchersAndAssignee(
             id,
             actorId,
@@ -498,7 +554,7 @@ export class WorkPackagesService {
             'Statut mis à jour',
             `"${wp.title}" → ${dto.status}`,
             projectId,
-            assigneeChanged ? (newAssignee as string) : undefined,
+            blastExclude,
           );
           void this.logActivity(projectId, actorId, 'work_package_status_changed', `"${wp.title}" : ${existing.status} → ${dto.status}`);
           void this.analyticsCache.invalidate('team_workload');
@@ -510,6 +566,26 @@ export class WorkPackagesService {
             void this.notifyPmOnAwaitingReview(projectId, id, wp.title, actorId).catch((e) =>
               this.logger.error('notifyPmOnAwaitingReview failed', e),
             );
+          }
+
+          // Close the loop back to the assignee on the PM's verdict.
+          if (tailoredAssigneeNotify) {
+            void this.notifications
+              .notifyEnhanced({
+                userId: assigneeId as string,
+                type: isApproval ? 'work_package_validated' : 'work_package_rejected',
+                reason: 'StatusChange',
+                title: isApproval ? 'Tâche validée' : 'Tâche renvoyée',
+                message: isApproval
+                  ? `Votre tâche « ${wp.title} » a été validée par le chef de projet.`
+                  : `Votre tâche « ${wp.title} » a été renvoyée pour modifications par le chef de projet.`,
+                projectId,
+                entityType: 'work_package',
+                entityId: id,
+                actorId,
+                link: `/app/team/my-tasks?projectId=${projectId}`,
+              })
+              .catch((e) => this.logger.error('notifyEnhanced (wp verdict) failed', e));
           }
         }
       }

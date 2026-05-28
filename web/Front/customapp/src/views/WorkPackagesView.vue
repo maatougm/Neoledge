@@ -159,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { NeoButton, NeoInputText, NeoSelect, NeoDatePicker, NeoTag, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
@@ -337,6 +337,13 @@ async function onAiBacklogAccepted() {
   await load()
 }
 
+// Deep-link: /…/workpackages?wpId=<id> opens that task's detail panel directly.
+// Used by "Mes tâches" row clicks and the PM's "Tâche à valider" notification.
+function openFromQuery(): void {
+  const qWp = route.query.wpId
+  if (typeof qWp === 'string' && qWp) selectedId.value = qWp
+}
+
 async function submitCreate() {
   if (!form.title.trim()) {
     toast.add({ severity: 'warn', detail: 'Titre requis.', life: 3000 })
@@ -371,7 +378,30 @@ function onDeleted(id: string) {
   if (selectedId.value === id) selectedId.value = null
 }
 
-onMounted(load)
+onMounted(() => {
+  openFromQuery()
+  void load()
+})
+
+// This route reuses the component instance across projects (param-only nav), so
+// setup() doesn't re-run. Re-sync projectId + selection when the :id changes, e.g.
+// clicking a "Tâche à valider" notification for project B while viewing project A.
+watch(
+  () => route.params.id,
+  (id) => {
+    if (typeof id !== 'string' || !id || id === projectId.value) return
+    projectId.value = id
+    selectedId.value = null
+    clearSelection()
+    openFromQuery()
+    void load()
+  },
+)
+// In-place notification click that only changes ?wpId= (same project) re-opens the panel.
+watch(
+  () => route.query.wpId,
+  () => openFromQuery(),
+)
 </script>
 
 <style scoped>

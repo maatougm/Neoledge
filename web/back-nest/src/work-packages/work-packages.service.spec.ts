@@ -265,6 +265,39 @@ describe('WorkPackagesService', () => {
       expect(r.error).toContain('Champs non autorisés');
     });
 
+    it('Member CANNOT self-validate (Resolved) or close (Closed) their own task', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      const r1 = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'u-mem', 'Member');
+      expect(r1.isFailure).toBe(true);
+      expect(r1.error).toContain('valider');
+      const r2 = await svc.update(existingId, 'p1', { status: 'Closed' }, 'u-mem', 'Member');
+      expect(r2.isFailure).toBe(true);
+    });
+
+    it('Member CAN submit their own task for review (→ AwaitingReview)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      const r = await svc.update(existingId, 'p1', { status: 'AwaitingReview' }, 'u-mem', 'Member');
+      expect(r.isSuccess).toBe(true);
+    });
+
+    it('a ProjectManager who is NOT this project\'s PM cannot validate a submitted task', async () => {
+      // Mock project's PM is 'pm-1' (see prisma.project.findFirst default).
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      const r = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-OTHER', 'ProjectManager');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toContain('chef de projet');
+    });
+
+    it("this project's PM CAN validate a submitted task", async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      const r = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-1', 'ProjectManager');
+      expect(r.isSuccess).toBe(true);
+    });
+
     it('rejects self-parent cycle', async () => {
       await expect(svc.update(existingId, 'p1', { parentId: existingId })).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -338,6 +371,28 @@ describe('WorkPackagesService', () => {
         (c: unknown[]) => (c[0] as { type: string }).type === 'work_package_awaiting_review',
       );
       expect(awaiting).toHaveLength(0);
+    });
+
+    it('notifies the assignee when the PM validates a submitted task (AwaitingReview → Resolved)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-1');
+      await new Promise((res) => setImmediate(res));
+      expect(notifications.notifyEnhanced).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-mem', type: 'work_package_validated' }),
+      );
+    });
+
+    it('notifies the assignee when the PM rejects a submitted task (AwaitingReview → InProgress)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      await svc.update(existingId, 'p1', { status: 'InProgress' }, 'pm-1');
+      await new Promise((res) => setImmediate(res));
+      expect(notifications.notifyEnhanced).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-mem', type: 'work_package_rejected' }),
+      );
     });
 
     it('returns Result.fail on prisma.update rejection', async () => {

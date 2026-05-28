@@ -108,6 +108,33 @@
       <div v-if="activeTab === 'Pièces jointes'">
         <WpAttachmentsPanel :work-package-id="props.workPackageId" />
       </div>
+
+      <div v-if="activeTab === 'Commentaires'">
+        <WpCommentsPanel :project-id="props.projectId" :work-package-id="props.workPackageId" />
+      </div>
+    </div>
+
+    <!-- Review workflow action bar -->
+    <div v-if="workflowActionsVisible" class="wp-detail__actions">
+      <template v-if="canSubmitForReview">
+        <span class="wp-detail__action-hint"><i class="pi pi-info-circle" /> Terminé ? Soumettez la tâche pour validation.</span>
+        <NeoButton label="Soumettre pour validation" icon="pi pi-send" @click="showSubmit = true" />
+      </template>
+
+      <template v-else-if="isAssignee && isAwaitingReview">
+        <span class="wp-detail__action-hint"><i class="pi pi-hourglass" /> En attente de validation par le chef de projet.</span>
+        <NeoButton label="Retirer" icon="pi pi-undo" severity="secondary" outlined size="small" :loading="acting" @click="withdrawSubmission" />
+      </template>
+
+      <template v-else-if="isProjectPm && isAwaitingReview">
+        <span class="wp-detail__action-hint wp-detail__action-hint--review"><i class="pi pi-flag" /> Soumise pour votre validation.</span>
+        <NeoButton label="Valider" icon="pi pi-check" :loading="acting" @click="acceptTask" />
+        <NeoButton label="Rejeter" icon="pi pi-times" severity="danger" outlined :loading="acting" @click="showReject = true" />
+      </template>
+
+      <template v-else-if="isResolved">
+        <span class="wp-detail__action-hint wp-detail__action-hint--done"><i class="pi pi-check-circle" /> Tâche validée.</span>
+      </template>
     </div>
 
     <div class="wp-detail__footer">
@@ -119,6 +146,37 @@
         @click="confirmDelete"
       />
     </div>
+
+    <!-- Member: submit for validation (optional note + file, neither required) -->
+    <WpSubmitModal
+      v-model:visible="showSubmit"
+      :project-id="props.projectId"
+      :work-package-id="props.workPackageId"
+      @submitted="load"
+    />
+
+    <!-- PM: reject with an optional reason -->
+    <AppModal v-model:visible="showReject" header="Rejeter la tâche" width="520px">
+      <div class="wp-submit-form">
+        <p class="wp-submit-hint">
+          La tâche repassera en « En cours » et le membre assigné sera notifié.
+        </p>
+        <div class="wp-submit-field">
+          <label class="wp-submit-label">Motif du rejet (facultatif)</label>
+          <textarea
+            v-model="rejectReason"
+            class="wp-submit-textarea"
+            rows="4"
+            placeholder="Ce qui doit être corrigé…"
+            :disabled="acting"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <NeoButton label="Annuler" severity="secondary" outlined :disabled="acting" @click="showReject = false" />
+        <NeoButton label="Rejeter" icon="pi pi-times" severity="danger" :loading="acting" @click="rejectTask" />
+      </template>
+    </AppModal>
   </div>
   <div v-else class="wp-detail wp-detail--loading">Chargement…</div>
 </template>
@@ -128,19 +186,118 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { NeoButton, NeoSelect, NeoDatePicker, NeoTag, useNeoToast, useNeoConfirm } from '@neolibrary/components'
 import WpStatusTag from '@/components/common/WpStatusTag.vue'
 import WpAttachmentsPanel from './WpAttachmentsPanel.vue'
+import WpCommentsPanel from './WpCommentsPanel.vue'
+import WpSubmitModal from './WpSubmitModal.vue'
+import AppModal from '@/components/common/AppModal.vue'
 import { useWorkPackageStore } from '@/stores/workPackageStore'
+import { useAuthStore } from '@/stores/authStore'
+import api from '@/lib/api'
 import type { UpdateWpPayload } from '@/types/work-package.types'
 
 const props = defineProps<{ projectId: string; workPackageId: string }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'deleted', id: string): void }>()
 
 const store = useWorkPackageStore()
+const auth = useAuthStore()
 const toast = useNeoToast()
 const confirm = useNeoConfirm()
 
 const wp = computed(() => store.currentWp)
-const activeTab = ref<'Détails' | 'Relations' | 'Observateurs' | 'Pièces jointes'>('Détails')
-const tabs: ('Détails' | 'Relations' | 'Observateurs' | 'Pièces jointes')[] = ['Détails', 'Relations', 'Observateurs', 'Pièces jointes']
+type DetailTab = 'Détails' | 'Commentaires' | 'Pièces jointes' | 'Relations' | 'Observateurs'
+const activeTab = ref<DetailTab>('Détails')
+const tabs: DetailTab[] = ['Détails', 'Commentaires', 'Pièces jointes', 'Relations', 'Observateurs']
+
+// ── Task review workflow ─────────────────────────────────────────────────────
+// New → InProgress (auto on assign) → AwaitingReview (member submits) →
+// Resolved (PM validates) / back to InProgress (PM rejects or member withdraws).
+const isAssignee = computed<boolean>(
+  () => !!wp.value && !!auth.userId && wp.value.assigneeId === auth.userId,
+)
+// PM-only: the actual manager of THIS project (not just anyone with the PM role).
+const isProjectPm = computed<boolean>(
+  () =>
+    !!wp.value &&
+    auth.userRole === 'ProjectManager' &&
+    !!auth.userId &&
+    wp.value.project?.projectManagerId === auth.userId,
+)
+const isAwaitingReview = computed<boolean>(() => wp.value?.status === 'AwaitingReview')
+const isResolved = computed<boolean>(() => wp.value?.status === 'Resolved')
+const canSubmitForReview = computed<boolean>(
+  () => isAssignee.value && (wp.value?.status === 'New' || wp.value?.status === 'InProgress'),
+)
+const workflowActionsVisible = computed<boolean>(
+  () =>
+    canSubmitForReview.value ||
+    (isAssignee.value && isAwaitingReview.value) ||
+    (isProjectPm.value && isAwaitingReview.value) ||
+    isResolved.value,
+)
+
+const acting = ref(false)
+const showSubmit = ref(false)
+const showReject = ref(false)
+const rejectReason = ref('')
+
+function commentsUrl(): string {
+  return `/pm/projects/${props.projectId}/work-packages/${props.workPackageId}/comments`
+}
+
+/** Member: pull back a submission that is still awaiting review. */
+async function withdrawSubmission(): Promise<void> {
+  acting.value = true
+  try {
+    const ok = await store.update(props.projectId, props.workPackageId, { status: 'InProgress' })
+    if (!ok) toast.add({ severity: 'error', detail: store.error ?? 'Échec.', life: 4000 })
+    else {
+      toast.add({ severity: 'info', detail: 'Soumission retirée.', life: 2500 })
+      await load()
+    }
+  } finally {
+    acting.value = false
+  }
+}
+
+/** PM: validate the submitted task. */
+async function acceptTask(): Promise<void> {
+  acting.value = true
+  try {
+    const ok = await store.update(props.projectId, props.workPackageId, { status: 'Resolved' })
+    if (!ok) toast.add({ severity: 'error', detail: store.error ?? 'Échec.', life: 4000 })
+    else {
+      toast.add({ severity: 'success', detail: 'Tâche validée.', life: 3000 })
+      await load()
+    }
+  } finally {
+    acting.value = false
+  }
+}
+
+/** PM: send the task back to the member, with an optional reason. */
+async function rejectTask(): Promise<void> {
+  acting.value = true
+  try {
+    const reason = rejectReason.value.trim()
+    if (reason) {
+      try {
+        await api.post(commentsUrl(), { content: `Rejet : ${reason}` })
+      } catch {
+        /* non-blocking — the status change is what matters */
+      }
+    }
+    const ok = await store.update(props.projectId, props.workPackageId, { status: 'InProgress' })
+    if (!ok) {
+      toast.add({ severity: 'error', detail: store.error ?? 'Échec.', life: 4000 })
+      return
+    }
+    toast.add({ severity: 'warn', detail: 'Tâche renvoyée au membre.', life: 3000 })
+    showReject.value = false
+    rejectReason.value = ''
+    await load()
+  } finally {
+    acting.value = false
+  }
+}
 
 const localTitle = ref('')
 const localDescription = ref('')
@@ -290,4 +447,47 @@ function confirmDelete() {
 .wp-detail__list li { padding: 0.25rem 0; display: flex; align-items: center; gap: 0.5rem; }
 .wp-detail__muted { color: var(--nl-text-muted, #9ca3af); font-style: italic; }
 .wp-detail__footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--nl-border, #e5e7eb); }
+
+/* Review workflow action bar */
+.wp-detail__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--nl-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--nl-surface-2, #f9fafb);
+}
+.wp-detail__action-hint {
+  flex: 1;
+  min-width: 160px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--nl-text-2, #374151);
+}
+.wp-detail__action-hint i { color: var(--nl-text-3, #6b7280); }
+.wp-detail__action-hint--review i { color: var(--nl-accent, #1e9e8f); }
+.wp-detail__action-hint--done { color: var(--nl-success, #059669); }
+.wp-detail__action-hint--done i { color: var(--nl-success, #059669); }
+
+/* Submit / reject modals */
+.wp-submit-form { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 0; }
+.wp-submit-hint { margin: 0; font-size: 0.8125rem; color: var(--nl-text-3, #6b7280); }
+.wp-submit-field { display: flex; flex-direction: column; gap: 0.375rem; }
+.wp-submit-label { font-size: 0.8125rem; font-weight: 500; color: var(--nl-text-2, #374151); }
+.wp-submit-textarea {
+  width: 100%;
+  border: 1px solid var(--nl-border, #d1d5db);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+}
+.wp-submit-file { font-size: 0.875rem; }
+.wp-submit-filehint { font-size: 0.75rem; color: var(--nl-text-3, #9ca3af); }
 </style>

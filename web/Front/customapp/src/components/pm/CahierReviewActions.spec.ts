@@ -1,8 +1,8 @@
 /**
  * @file CahierReviewActions.spec.ts — Approve/Reject buttons for the
- * SpecificationTeam. Tests the canReview gate (Admin always allowed,
- * SpecTeam needs project-member status, others denied) and the two
- * submit paths.
+ * SpecificationTeam. Tests the canReview gate (Admin + any SpecificationTeam
+ * user allowed — the spec team is global, no per-project membership required;
+ * all other roles denied) and the two submit paths.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -121,20 +121,15 @@ describe('CahierReviewActions', () => {
     expect(w.text()).toContain('Rejeter')
   })
 
-  it('SpecTeam without membership cannot review', async () => {
+  it('any SpecificationTeam user can review regardless of project membership (global spec team)', async () => {
+    // Spec team is global now — a SpecificationTeam user who is NOT a member of
+    // the project may still validate its cahier; no /members lookup is required.
     authenticate('SpecificationTeam', 'u1')
     ;(api.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { members: [{ userId: 'someone-else' }] } })
     const w = mountIt({ status: 'pending' })
     await flushPromises()
-    expect(w.find('button').exists()).toBe(false)
-  })
-
-  it('SpecTeam WITH membership can review', async () => {
-    authenticate('SpecificationTeam', 'u1')
-    ;(api.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { members: [{ userId: 'u1' }] } })
-    const w = mountIt({ status: 'pending' })
-    await flushPromises()
     expect(w.text()).toContain('Approuver')
+    expect(w.text()).toContain('Rejeter')
   })
 
   it('approve POSTs the right payload + emits reviewed', async () => {

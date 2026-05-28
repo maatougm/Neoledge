@@ -2,7 +2,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 import { onLogout } from './logoutBus'
 import type { MemberTaskCard } from './memberDashboardStore'
 
@@ -119,11 +119,15 @@ export const useMemberTasksStore = defineStore('memberTasks', () => {
     if (!task) return false
     const before = task.status
     task.status = newStatus
+    error.value = null
     try {
       await api.patch(`/pm/projects/${task.project.id}/work-packages/${id}`, { status: newStatus })
       return true
-    } catch {
+    } catch (e: unknown) {
       task.status = before
+      // Surface the backend's business message (e.g. "En tant que membre, vous ne
+      // pouvez pas valider…") instead of the optimistic snap-back being silent.
+      error.value = extractErrorMessage(e) ?? 'Mise à jour échouée.'
       return false
     }
   }
