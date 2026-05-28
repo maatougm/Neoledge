@@ -64,3 +64,47 @@ describe('AgileService.getBurndown', () => {
     }));
   });
 });
+
+describe('AgileService.moveCard validation authority', () => {
+  function makeSvc(opts: { mapStatus: string; projectManagerId?: string }) {
+    const collab = { broadcastCardMoved: jest.fn() };
+    const prisma = {
+      workPackage: {
+        findFirst: jest.fn(async () => ({ id: 'wp1', projectId: 'p1' })),
+        update: jest.fn(async () => ({ id: 'wp1', projectId: 'p1', boardColumnId: 'c1', status: opts.mapStatus })),
+      },
+      boardColumn: { findUnique: jest.fn(async () => ({ mapStatus: opts.mapStatus, board: { projectId: 'p1' } })) },
+      project: { findFirst: jest.fn(async () => ({ projectManagerId: opts.projectManagerId ?? 'pm-1' })) },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const svc = new AgileService(prisma as any, collab as any, { notifyEnhanced: jest.fn() } as any);
+    return { svc, prisma };
+  }
+
+  it('blocks a Member from dragging a card into a terminal (Resolved) column — self-approval guard', async () => {
+    const { svc, prisma } = makeSvc({ mapStatus: 'Resolved' });
+    const r = await svc.moveCard('p1', 'wp1', 'c1', 0, 'mem-1', 'Member');
+    expect(r.isFailure).toBe(true);
+    expect(prisma.workPackage.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a Member to move a card into a non-terminal (InProgress) column', async () => {
+    const { svc, prisma } = makeSvc({ mapStatus: 'InProgress' });
+    const r = await svc.moveCard('p1', 'wp1', 'c1', 0, 'mem-1', 'Member');
+    expect(r.isSuccess).toBe(true);
+    expect(prisma.workPackage.update).toHaveBeenCalled();
+  });
+
+  it("blocks a ProjectManager who is NOT this project's PM from moving a card to Resolved", async () => {
+    const { svc, prisma } = makeSvc({ mapStatus: 'Resolved', projectManagerId: 'pm-1' });
+    const r = await svc.moveCard('p1', 'wp1', 'c1', 0, 'pm-OTHER', 'ProjectManager');
+    expect(r.isFailure).toBe(true);
+    expect(prisma.workPackage.update).not.toHaveBeenCalled();
+  });
+
+  it("allows this project's PM to move a card to Resolved", async () => {
+    const { svc } = makeSvc({ mapStatus: 'Resolved', projectManagerId: 'pm-1' });
+    const r = await svc.moveCard('p1', 'wp1', 'c1', 0, 'pm-1', 'ProjectManager');
+    expect(r.isSuccess).toBe(true);
+  });
+});
