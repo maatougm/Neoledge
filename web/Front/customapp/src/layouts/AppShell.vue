@@ -87,11 +87,7 @@ const pmNav: NavSection[] = [
       { key: 'pm-projects',     label: 'Mes projets',     icon: 'pi-briefcase', to: '/app/pm/projects' },
   ]},
   { heading: 'Travail', items: [
-      { key: 'pm-team-planner', label: 'Planif. équipe', icon: 'pi-calendar', to: '/app/pm/team-planner' },
       { key: 'pm-templates',    label: 'Modèles',       icon: 'pi-copy',     to: '/app/pm/templates' },
-  ]},
-  { heading: 'Rapports', items: [
-      { key: 'pm-analytics', label: 'Analytiques', icon: 'pi-chart-bar', to: '/app/pm/analytics' },
   ]},
   { heading: 'Mon espace', items: [
       { key: 'profile',         label: 'Mon profil',    icon: 'pi-user',     to: '/app/profile' },
