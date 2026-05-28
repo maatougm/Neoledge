@@ -774,8 +774,9 @@ describe('WorkPackagesService', () => {
         ],
         'pm-1',
       );
-      // 2 buckets → 2 updateMany calls
-      expect(prisma.workPackage.updateMany).toHaveBeenCalledTimes(2);
+      // 2 buckets → 2 assign updateMany calls; the non-null (u-mem) bucket also
+      // runs a 'New' → InProgress auto-advance updateMany → 3 total.
+      expect(prisma.workPackage.updateMany).toHaveBeenCalledTimes(3);
     });
 
     it('un-assignments do NOT fire a notification', async () => {

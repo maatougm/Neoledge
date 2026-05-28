@@ -403,6 +403,12 @@ export class WorkPackagesService {
       if (dto.startDate !== undefined) data.startDate = dto.startDate ? new Date(dto.startDate) : null;
       if (dto.dueDate !== undefined) data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
 
+      // Auto-advance: assigning a still-'New' task to a member starts it (→ En cours),
+      // unless the caller explicitly set a status in the same update.
+      if (dto.assigneeId && existing.status === 'New' && data.status === undefined) {
+        data.status = 'InProgress';
+      }
+
       const wp = await this.prisma.workPackage.update({
         where: { id },
         data,
@@ -799,7 +805,15 @@ export class WorkPackagesService {
             data: { assigneeId, updatedAt: new Date() },
           });
           updated += res.count;
+          // Auto-advance: assigning a still-'New' task to a member starts it (→ En cours).
+          if (assigneeId) {
+            await tx.workPackage.updateMany({
+              where: { id: { in: wpIds }, projectId, isDeleted: false, status: 'New' },
+              data: { status: 'InProgress' },
+            });
+          }
         }
+
       });
     } catch (e) {
       this.logger.error('bulkAssign transaction failed', e);
