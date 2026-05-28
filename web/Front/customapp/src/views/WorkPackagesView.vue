@@ -192,14 +192,12 @@ const creating = ref(false)
 const filters = reactive<{ q: string; status: string; type: string }>({ q: '', status: '', type: '' })
 
 // Quick-filter pills
-type PillKey = 'all' | 'mine' | 'due-soon' | 'overdue' | 'unassigned' | 'blocked'
+type PillKey = 'all' | 'due-soon' | 'overdue' | 'unassigned'
 const pills: { key: PillKey; label: string; icon: string }[] = [
   { key: 'all',        label: 'Tout',         icon: 'pi-list' },
-  { key: 'mine',       label: 'Mes tâches',   icon: 'pi-user' },
   { key: 'due-soon',   label: 'Dues ≤ 7 j',   icon: 'pi-calendar' },
   { key: 'overdue',    label: 'En retard',    icon: 'pi-exclamation-triangle' },
   { key: 'unassigned', label: 'Non assignés', icon: 'pi-user-minus' },
-  { key: 'blocked',    label: 'Bloqués',      icon: 'pi-lock' },
 ]
 const activePill = ref<PillKey>('all')
 function activatePill(key: PillKey): void { activePill.value = key }
@@ -208,7 +206,6 @@ function matchesPill(wp: WorkPackage, key: PillKey): boolean {
   const now = Date.now()
   switch (key) {
     case 'all':        return true
-    case 'mine':       return wp.assigneeId === authStore.userId
     case 'due-soon': {
       if (!wp.dueDate) return false
       const d = new Date(wp.dueDate).getTime()
@@ -216,7 +213,6 @@ function matchesPill(wp: WorkPackage, key: PillKey): boolean {
     }
     case 'overdue':    return !!wp.dueDate && new Date(wp.dueDate).getTime() < now && wp.status !== 'Closed' && wp.status !== 'Resolved'
     case 'unassigned': return !wp.assigneeId
-    case 'blocked':    return String(wp.status) === 'OnHold' || String(wp.status) === 'Blocked' || String(wp.status) === 'On Hold'
   }
 }
 
