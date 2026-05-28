@@ -34,7 +34,7 @@ const createPayload: CreateTemplatePayload = {
   name: 'Modèle Standard',
   description: 'Champs NeoLeadge standard',
   fields: [
-    { label: 'Société', fieldType: 'Text', category: 'Custom', isRequired: true, displayOrder: 0, options: null },
+    { label: 'Société', type: 'Text', category: 'Custom', isRequired: true, displayOrder: 0, options: null },
   ],
 }
 
