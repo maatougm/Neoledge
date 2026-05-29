@@ -2,7 +2,10 @@ import { Controller, Get, Post, Patch, Param, Body, Req, Res, Header, UseGuards,
 import type { Response, Request } from 'express'
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js'
 import { ProjectAccessGuard } from '../common/guards/project-access.guard.js'
+import { RolesGuard } from '../common/guards/roles.guard.js'
 import { ProjectAccess } from '../common/decorators/project-access.decorator.js'
+import { Roles } from '../common/decorators/roles.decorator.js'
+import { AllowSpecReviewer } from '../common/decorators/allow-spec-reviewer.decorator.js'
 import { CahierDesChargesService } from './cahier-des-charges.service.js'
 import { CahierFeedbackDto } from './dto/cahier-feedback.dto.js'
 import type { CahierStreamEvent } from './cahier-des-charges.types.js'
@@ -23,9 +26,13 @@ export class CahierDesChargesController {
    * Generates a complete cahier des charges for the given project.
    * Gathers form data + all transcripts → calls AI (with past feedback) → returns .docx file.
    */
+  // PM/Admin only — this GET runs a full AI generation (cost + AiUsage writes),
+  // so it must NOT be reachable via the SpecificationTeam read-grant. The spec
+  // team reviews the SAVED cahier; they don't generate/regenerate.
   @Get('pm/projects/:projectId/cahier-des-charges/generate')
-  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
   @ProjectAccess('projectId')
+  @Roles('Admin', 'ProjectManager')
   async generateCahier(
     @Param('projectId') projectId: string,
     @Res() res: Response,
@@ -78,8 +85,10 @@ export class CahierDesChargesController {
   // on the second click and surfaced as a generic "Erreur lors de la génération".
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
   @Header('Pragma', 'no-cache')
-  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  // PM/Admin only — runs AI generation; keep it off the SpecTeam read-grant.
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
   @ProjectAccess('projectId')
+  @Roles('Admin', 'ProjectManager')
   async previewCahier(@Param('projectId') projectId: string) {
     this.logger.log(`Preview cahier des charges for project ${projectId}`)
 
@@ -116,8 +125,10 @@ export class CahierDesChargesController {
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
   @Header('Pragma', 'no-cache')
   @Header('X-Accel-Buffering', 'no')
-  @UseGuards(JwtAuthGuard, ProjectAccessGuard)
+  // PM/Admin only — runs AI generation; keep it off the SpecTeam read-grant.
+  @UseGuards(JwtAuthGuard, ProjectAccessGuard, RolesGuard)
   @ProjectAccess('projectId')
+  @Roles('Admin', 'ProjectManager')
   async previewStream(
     @Param('projectId') projectId: string,
     @Req() req: Request,
@@ -282,6 +293,10 @@ export class CahierDesChargesController {
   @Post('pm/projects/:projectId/cahier-des-charges/feedback')
   @UseGuards(JwtAuthGuard, ProjectAccessGuard)
   @ProjectAccess('projectId')
+  // Spec team is global (not project members): let an active SpecificationTeam
+  // reviewer submit feedback on any cahier'd project. saveFeedback re-authorizes
+  // (active SpecificationTeam or Admin; PM self-approval still blocked).
+  @AllowSpecReviewer()
   async submitFeedback(
     @Param('projectId') projectId: string,
     @Body() body: CahierFeedbackDto,

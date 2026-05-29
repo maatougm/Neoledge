@@ -156,21 +156,21 @@
 
         <div class="cahier-actions">
           <NeoButton
-            v-if="!editMode"
+            v-if="!editMode && canManageCahier"
             label="Télécharger (.docx)"
             icon="pi pi-download"
             :loading="downloading"
             @click="handleDownload"
           />
           <NeoButton
-            v-if="!editMode"
+            v-if="!editMode && canManageCahier"
             label="Modifier"
             icon="pi pi-pencil"
             outlined
             @click="enterEditMode"
           />
           <NeoButton
-            v-if="!editMode"
+            v-if="!editMode && canManageCahier"
             label="Régénérer"
             icon="pi pi-refresh"
             outlined
@@ -371,6 +371,7 @@ import CahierDocSection from './CahierDocSection.vue'
 import CahierReviewActions from './CahierReviewActions.vue'
 import CahierPreflightModal from './CahierPreflightModal.vue'
 import { formatRelative } from '@/lib/formatDate'
+import { useAuthStore } from '@/stores/authStore'
 
 interface CahierSection {
   title: string
@@ -406,6 +407,15 @@ interface CahierStatus {
 const props = defineProps<{ projectId: string }>()
 const toast = useNeoToast()
 const confirm = useNeoConfirm()
+const auth = useAuthStore()
+
+// Only the PM/Admin generate, download, edit or regenerate the cahier. The
+// SpecificationTeam (and anyone else) is review-only — they read the saved
+// cahier and approve/reject via CahierReviewActions. Hiding these also avoids
+// dead buttons: the underlying generate/content endpoints are PM/Admin-gated.
+const canManageCahier = computed<boolean>(
+  () => auth.userRole === 'ProjectManager' || auth.userRole === 'Admin',
+)
 
 function confirmRegenerate(): void {
   // Re-generation overwrites the saved cahier. If it has been approved, this

@@ -475,20 +475,12 @@ const openTemplatePicker = (): void => {
   void templateStore.fetchTemplates()
 }
 
+// Apply directly. The picker modal (select a template + click Appliquer) IS the
+// confirmation step — a nested confirm.require() here rendered a second dialog
+// BEHIND the open AppModal scrim (two stacked overlays), so it's removed.
 const confirmApplyTemplate = (): void => {
   if (!selectedTemplateId.value || applyingTemplate.value) return
-  const tpl = templateStore.templates.find((t) => t.id === selectedTemplateId.value)
-  const tplName = tpl?.name ?? 'ce modèle'
-  // useNeoConfirm.require() returns void — pass an `accept` callback per
-  // the library contract. NEVER `await` it.
-  confirm.require({
-    message: `Appliquer « ${tplName} » au questionnaire ? Les champs déjà présents seront ignorés.`,
-    header: 'Appliquer le modèle',
-    icon: 'pi pi-question-circle',
-    acceptLabel: 'Appliquer',
-    rejectLabel: 'Annuler',
-    accept: () => { void runApplyTemplate() },
-  })
+  void runApplyTemplate()
 }
 
 async function runApplyTemplate(): Promise<void> {

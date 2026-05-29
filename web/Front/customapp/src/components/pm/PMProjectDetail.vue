@@ -188,8 +188,8 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 const TABS_BY_ROLE: Record<string, TabId[]> = {
   ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity'],
   // Validation team needs full read context to review the cahier:
-  // questionnaire (formulaire), meetings (transcripts), the cahier itself
-  // (which they can edit), and the validation actions.
+  // questionnaire (formulaire), meetings (transcripts), the cahier (read-only —
+  // they approve/reject via the validation actions; only PM/Admin edit/regenerate).
   SpecificationTeam: ['questionnaire', 'meetings', 'cahier', 'validation', 'history', 'comments', 'activity'],
   Member:            ['cahier', 'history', 'comments', 'activity'],
 }
