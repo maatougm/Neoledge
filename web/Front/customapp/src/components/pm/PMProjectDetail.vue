@@ -22,35 +22,28 @@
           :severity="statusSeverity(project.status)"
         />
         <NeoButton
+          v-if="canExport"
+          label="Exporter CSV"
+          icon="pi pi-file-excel"
+          outlined
+          severity="secondary"
+          size="small"
+          :loading="exporting === 'csv'"
+          :disabled="exporting !== null"
+          @click="onExportCsv"
+        />
+        <NeoButton
+          v-if="canExport"
           label="Exporter PDF"
           icon="pi pi-file-pdf"
           outlined
+          severity="secondary"
           size="small"
-          @click="exportPdf"
+          :loading="exporting === 'pdf'"
+          :disabled="exporting !== null"
+          @click="onExportPdf"
         />
       </div>
-    </div>
-
-    <!-- Hidden print area -->
-    <div id="pm-print-area" style="display: none">
-      <h1>{{ project.name }}</h1>
-      <div class="meta">
-        Client : {{ project.clientName }} | Statut : {{ PROJECT_STATUS_LABELS[project.status] }}
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Champ</th>
-            <th>Valeur</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="field in project.fields" :key="field.id">
-            <td>{{ field.label }}</td>
-            <td>{{ fieldValue(field.id) }}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
 
     <!-- Project title + meta -->
@@ -89,10 +82,6 @@
         v-else-if="activeTab === 'history' && historyLoaded"
         :project-id="project.id"
       />
-      <ActivityFeed
-        v-else-if="activeTab === 'activity'"
-        :activities="store.activities"
-      />
       <MeetingSection
         v-else-if="activeTab === 'meetings'"
         :project-id="project.id"
@@ -113,13 +102,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { NeoButton, NeoTag } from '@neolibrary/components'
+import { NeoButton, NeoTag, useNeoToast } from '@neolibrary/components'
 import { watch } from 'vue'
 import PhasesStepper         from '@/components/pm/PhasesStepper.vue'
 import QuestionnaireForm     from '@/components/pm/QuestionnaireForm.vue'
 import AIOutputSection       from '@/components/pm/AIOutputSection.vue'
 import TeamValidationSection from '@/components/pm/TeamValidationSection.vue'
-import ActivityFeed          from '@/components/pm/ActivityFeed.vue'
 import MeetingSection        from '@/components/pm/MeetingSection.vue'
 import CommentsSection       from '@/components/pm/CommentsSection.vue'
 import ValidationTimeline    from '@/components/pm/ValidationTimeline.vue'
@@ -127,7 +115,8 @@ import CahierDesChargesSection from '@/components/pm/CahierDesChargesSection.vue
 import { usePmStore }        from '@/stores/pmStore'
 import { useCommentStore }   from '@/stores/commentStore'
 import { useAuthStore }      from '@/stores/authStore'
-import api                   from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
+import { exportProjectCsv, exportProjectPdf } from '@/lib/projectReport'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectDetail, ProjectStatus } from '@/types/project.types'
 import type { ProjectValidation } from '@/types/pm.types'
@@ -143,9 +132,10 @@ const emit = defineEmits<{ close: [] }>()
 const store = usePmStore()
 const commentStore = useCommentStore()
 const authStore = useAuthStore()
+const toast = useNeoToast()
 
-type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'activity' | 'meetings' | 'comments' | 'cahier'
-const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'activity', 'meetings', 'comments', 'cahier']
+type TabId = 'questionnaire' | 'ai' | 'validation' | 'history' | 'meetings' | 'comments' | 'cahier'
+const VALID_TABS: TabId[] = ['questionnaire', 'ai', 'validation', 'history', 'meetings', 'comments', 'cahier']
 const activeTab = ref<TabId>(
   (VALID_TABS as string[]).includes(props.initialTab ?? '')
     ? (props.initialTab as TabId)
@@ -158,7 +148,6 @@ watch(() => props.initialTab, (t) => {
 const historyLoaded = ref(false)
 
 watch(activeTab, (tab) => {
-  if (tab === 'activity') store.fetchActivity(props.project.id)
   if (tab === 'comments') commentStore.fetchComments(props.project.id)
   if (tab === 'history') historyLoaded.value = true
 })
@@ -166,7 +155,7 @@ watch(activeTab, (tab) => {
 // Ordre aligné sur le flux de travail réel du chef de projet :
 // 1. Remplir le questionnaire → 2. Faire les réunions → 3. Générer l'analyse IA
 // → 4. Finaliser le cahier des charges → 5. Validation par les équipes
-// → 6. Consulter l'historique → 7. Échanger en commentaires → 8. Activité.
+// → 6. Consulter l'historique → 7. Échanger en commentaires.
 const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'questionnaire', label: 'Questionnaire',           icon: 'pi-list-check' },
   { id: 'meetings',      label: 'Réunions',                icon: 'pi-microphone' },
@@ -175,7 +164,6 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'validation',    label: 'Validation équipes',      icon: 'pi-shield' },
   { id: 'history',       label: 'Historique validations',  icon: 'pi-clock' },
   { id: 'comments',      label: 'Commentaires',            icon: 'pi-comments' },
-  { id: 'activity',      label: 'Activité',                icon: 'pi-history' },
 ]
 
 // Per-role tab visibility.
@@ -186,12 +174,12 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
 // - SpecificationTeam: focused on validation
 // - Member: read-only observer
 const TABS_BY_ROLE: Record<string, TabId[]> = {
-  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments', 'activity'],
+  ProjectManager:    ['questionnaire', 'meetings', 'ai', 'cahier', 'history', 'comments'],
   // Validation team needs full read context to review the cahier:
   // questionnaire (formulaire), meetings (transcripts), the cahier (read-only —
   // they approve/reject via the validation actions; only PM/Admin edit/regenerate).
-  SpecificationTeam: ['questionnaire', 'meetings', 'cahier', 'validation', 'history', 'comments', 'activity'],
-  Member:            ['cahier', 'history', 'comments', 'activity'],
+  SpecificationTeam: ['questionnaire', 'meetings', 'cahier', 'validation', 'history', 'comments'],
+  Member:            ['cahier', 'history', 'comments'],
 }
 
 const visibleTabs = computed(() => {
@@ -281,42 +269,44 @@ watch(() => props.project?.id, (id) => {
 const statusSeverity = (s: ProjectStatus) =>
   PROJECT_STATUS_SEVERITY[s] as 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast'
 
-function fieldValue(fieldId: string): string {
-  const fv = props.project.fieldValues.find((v) => v.projectFieldId === fieldId)
-  return fv?.value ?? '—'
+// ─── Report export (CSV / PDF) ────────────────────────────────────────────────
+// Fetches a structured report from the backend and renders it client-side.
+// `exporting` doubles as a per-format loading flag and a re-entrancy guard.
+const exporting = ref<'csv' | 'pdf' | null>(null)
+
+// Only Admin + PM may export. The backend report-data endpoint is gated by
+// @Roles('Admin', 'ProjectManager'), so showing these buttons to a
+// SpecificationTeam reviewer (who also lands on this view) would render
+// always-failing buttons (403). Keep the frontend gate in lock-step with the
+// controller's @Roles.
+const canExport = computed(
+  () => authStore.userRole === 'ProjectManager' || authStore.userRole === 'Admin',
+)
+
+async function onExportCsv(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = 'csv'
+  try {
+    await exportProjectCsv(props.project.id)
+    toast.add({ severity: 'success', detail: 'Export CSV téléchargé.', life: 3000 })
+  } catch (err) {
+    toast.add({ severity: 'error', detail: extractErrorMessage(err) ?? "Échec de l'export CSV.", life: 4000 })
+  } finally {
+    exporting.value = null
+  }
 }
 
-function exportPdf(): void {
-  const printArea = document.getElementById('pm-print-area')
-  if (!printArea) return
-  const win = window.open('', '_blank')
-  if (!win) return
-
-  // Build DOM safely — no innerHTML injection from user data (#11)
-  const doc = win.document
-  doc.open()
-  doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
-    'body{font-family:Arial,sans-serif;padding:2rem;color:#111827}' +
-    'h1{font-size:1.4rem;margin-bottom:0.5rem}' +
-    '.meta{color:#6b7280;font-size:0.9rem;margin-bottom:1.5rem}' +
-    'table{width:100%;border-collapse:collapse}' +
-    'th{background:#f3f4f6;padding:0.5rem 0.75rem;text-align:left;font-size:0.8rem;text-transform:uppercase}' +
-    'td{padding:0.5rem 0.75rem;border-bottom:1px solid #e5e7eb;font-size:0.9rem}' +
-    '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem}' +
-    '</style></head><body></body></html>')
-  doc.close()
-
-  // Set title via textContent — safe against HTML injection
-  const titleEl = doc.createElement('title')
-  titleEl.textContent = props.project.name
-  doc.head.appendChild(titleEl)
-
-  // Clone the print area into the popup body — field values rendered by Vue are already text nodes
-  const clone = printArea.cloneNode(true) as HTMLElement
-  clone.style.display = 'block'
-  doc.body.appendChild(clone)
-
-  win.print()
+async function onExportPdf(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = 'pdf'
+  try {
+    await exportProjectPdf(props.project.id)
+    toast.add({ severity: 'success', detail: 'Export PDF téléchargé.', life: 3000 })
+  } catch (err) {
+    toast.add({ severity: 'error', detail: extractErrorMessage(err) ?? "Échec de l'export PDF.", life: 4000 })
+  } finally {
+    exporting.value = null
+  }
 }
 </script>
 

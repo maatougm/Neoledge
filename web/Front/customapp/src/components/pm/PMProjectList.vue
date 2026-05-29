@@ -45,13 +45,33 @@
         <div class="card-accent" :style="{ background: statusColor(p.status) }" />
 
         <div class="card-body">
-          <!-- Top row: name + status -->
+          <!-- Top row: name + status + export actions -->
           <div class="card-top">
             <h3 class="card-name">{{ p.name }}</h3>
             <NeoTag
               :value="PROJECT_STATUS_LABELS[p.status]"
               :severity="statusSeverity(p.status)"
             />
+            <div class="card-actions">
+              <button
+                class="card-action-btn"
+                title="Exporter CSV"
+                aria-label="Exporter CSV"
+                :disabled="exportingKey !== null"
+                @click.stop="onExport(p.id, 'csv')"
+              >
+                <i :class="exportingKey === `${p.id}:csv` ? 'pi pi-spin pi-spinner' : 'pi pi-file-excel'" />
+              </button>
+              <button
+                class="card-action-btn"
+                title="Exporter PDF"
+                aria-label="Exporter PDF"
+                :disabled="exportingKey !== null"
+                @click.stop="onExport(p.id, 'pdf')"
+              >
+                <i :class="exportingKey === `${p.id}:pdf` ? 'pi pi-spin pi-spinner' : 'pi pi-file-pdf'" />
+              </button>
+            </div>
           </div>
 
           <!-- Client + PM -->
@@ -108,13 +128,35 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NeoTag } from '@neolibrary/components'
+import { NeoTag, useNeoToast } from '@neolibrary/components'
 import { usePmStore } from '@/stores/pmStore'
+import { extractErrorMessage } from '@/lib/api'
+import { exportProjectCsv, exportProjectPdf } from '@/lib/projectReport'
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_SEVERITY } from '@/types/project.types'
 import type { ProjectStatus, ProjectSummary } from '@/types/project.types'
 
 const emit = defineEmits<{ select: [id: string] }>()
 const store = usePmStore()
+const toast = useNeoToast()
+
+// ─── Report export (CSV / PDF) ────────────────────────────────────────────────
+// `exportingKey` (`${id}:${fmt}`) drives the per-button spinner and also gates
+// all export buttons so a second click can't fire mid-download.
+const exportingKey = ref<string | null>(null)
+
+async function onExport(id: string, fmt: 'csv' | 'pdf'): Promise<void> {
+  if (exportingKey.value) return
+  exportingKey.value = `${id}:${fmt}`
+  try {
+    if (fmt === 'csv') await exportProjectCsv(id)
+    else await exportProjectPdf(id)
+    toast.add({ severity: 'success', detail: `Export ${fmt.toUpperCase()} téléchargé.`, life: 3000 })
+  } catch (err) {
+    toast.add({ severity: 'error', detail: extractErrorMessage(err) ?? "Échec de l'export.", life: 4000 })
+  } finally {
+    exportingKey.value = null
+  }
+}
 
 // ─── Phase pipeline ────────────────────────────────────────────────────────────
 
@@ -397,6 +439,38 @@ const formatDate = (iso: string) =>
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+
+/* ── Per-card export actions ─────────────────────────────────────────────────── */
+.card-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.card-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--nl-border);
+  background: var(--nl-surface);
+  color: var(--nl-text-3);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-action-btn:hover:not(:disabled) {
+  border-color: var(--nl-accent);
+  color: var(--nl-accent);
+}
+
+.card-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .card-meta-row {

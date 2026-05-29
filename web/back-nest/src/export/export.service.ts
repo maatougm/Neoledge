@@ -1,6 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
+import { TERMINAL_WP_STATUSES } from '../work-packages/wp-status.constants.js';
+
+/** Structured per-project report payload — the frontend turns this into CSV/PDF. */
+export interface ProjectReportData {
+  project: {
+    id: string;
+    name: string;
+    clientName: string;
+    pmName: string;
+    status: string;
+    priority: string;
+    startDate: string;
+    endDate: string;
+    progressPct: number;
+  };
+  fields: { label: string; value: string }[];
+  workPackages: {
+    title: string;
+    status: string;
+    priority: string;
+    assignee: string;
+    startDate: string;
+    dueDate: string;
+    percentDone: number;
+  }[];
+}
 
 /**
  * Sanitise a value for inclusion in a CSV cell.
@@ -9,7 +35,7 @@ import { Result } from '../common/result.js';
  *   cell starting with `=`, `+`, `-`, `@`, `\t` or `\r`) by prefixing a single
  *   quote.
  * - Follows RFC 4180 quoting: doubles any internal `"` and wraps the cell in
- *   `"` when it contains a comma, quote, or newline.
+ *   `"` when it contains the field separator (`;`), a quote, or a newline.
  */
 function safeCsvCell(value: unknown): string {
   const s = value == null ? '' : String(value);
@@ -17,9 +43,11 @@ function safeCsvCell(value: unknown): string {
   // Excel/Sheets formula execution on cell open.
   const needsEscape = /^[=+\-@\t\r]/.test(s);
   const escaped = needsEscape ? `'${s}` : s;
-  // Double internal quotes per RFC 4180 + wrap in quotes if contains
-  // comma / quote / newline.
-  if (/[",\r\n]/.test(escaped)) return `"${escaped.replace(/"/g, '""')}"`;
+  // Double internal quotes per RFC 4180 + wrap in quotes if the cell contains
+  // the `;` field separator, a quote, or a newline. Must test for `;` (not
+  // `,`) because the rows below are joined with `;` — a value like
+  // "ACME; Corp" would otherwise split into two columns and shift the sheet.
+  if (/[";\r\n]/.test(escaped)) return `"${escaped.replace(/"/g, '""')}"`;
   return escaped;
 }
 
@@ -131,5 +159,80 @@ export class ExportService {
     ];
 
     return Result.ok(lines.join('\n'));
+  }
+
+  /**
+   * Structured single-project report: header/status, questionnaire fields, and
+   * the project's work packages. Returned as plain JSON so the frontend can
+   * render it to both CSV and PDF without a second round-trip. Excludes
+   * soft-deleted WPs. Progress mirrors the list endpoints (% of WPs in a
+   * terminal status).
+   */
+  async generateReportData(projectId: string): Promise<Result<ProjectReportData>> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, isDeleted: false },
+      include: {
+        projectManager: { select: { firstName: true, lastName: true } },
+        fields: { orderBy: { orderIndex: 'asc' }, select: { id: true, label: true } },
+        fieldValues: { select: { projectFieldId: true, value: true } },
+      },
+    });
+    if (!project) return Result.fail<ProjectReportData>('Projet non trouvé.');
+
+    const workPackages = await this.prisma.workPackage.findMany({
+      where: { projectId, isDeleted: false },
+      select: {
+        title: true,
+        status: true,
+        priority: true,
+        percentDone: true,
+        startDate: true,
+        dueDate: true,
+        assignee: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { title: 'asc' }],
+    });
+
+    const wpTotal = workPackages.length;
+    const wpClosed = workPackages.filter((w) =>
+      (TERMINAL_WP_STATUSES as readonly string[]).includes(w.status),
+    ).length;
+    const progressPct = wpTotal === 0 ? 0 : Math.round((wpClosed / wpTotal) * 100);
+
+    // Map field id → value so the report keeps the PM's questionnaire order
+    // (fields are already ordered by orderIndex) even when some have no value.
+    const valueByField = new Map(project.fieldValues.map((v) => [v.projectFieldId, v.value]));
+    const fields = project.fields.map((f) => ({
+      label: f.label,
+      value: valueByField.get(f.id) ?? '',
+    }));
+
+    const pmName = project.projectManager
+      ? `${project.projectManager.firstName} ${project.projectManager.lastName}`.trim()
+      : 'Non assigné';
+
+    return Result.ok<ProjectReportData>({
+      project: {
+        id: project.id,
+        name: project.name,
+        clientName: project.clientName,
+        pmName,
+        status: project.status,
+        priority: project.priority,
+        startDate: project.startDate.toISOString().slice(0, 10),
+        endDate: project.endDate.toISOString().slice(0, 10),
+        progressPct,
+      },
+      fields,
+      workPackages: workPackages.map((w) => ({
+        title: w.title,
+        status: w.status,
+        priority: w.priority,
+        assignee: w.assignee ? `${w.assignee.firstName} ${w.assignee.lastName}`.trim() : '',
+        startDate: w.startDate ? w.startDate.toISOString().slice(0, 10) : '',
+        dueDate: w.dueDate ? w.dueDate.toISOString().slice(0, 10) : '',
+        percentDone: w.percentDone,
+      })),
+    });
   }
 }

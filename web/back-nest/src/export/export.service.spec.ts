@@ -7,6 +7,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
   },
+  workPackage: {
+    findMany: jest.fn(),
+  },
 };
 
 function makeProject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -55,10 +58,10 @@ describe('ExportService', () => {
       expect(payload.fileName).toMatch(/^projets-export-\d+\.csv$/);
     });
 
-    it('quotes cells containing commas, quotes, and newlines (RFC 4180)', async () => {
+    it('quotes cells containing the ; separator, quotes, and newlines (RFC 4180)', async () => {
       mockPrisma.project.findMany.mockResolvedValueOnce([
         makeProject({
-          name: 'A, B',
+          name: 'ACME; Corp',
           clientName: 'has "quotes"',
           status: 'Active\nMulti',
         }),
@@ -67,11 +70,24 @@ describe('ExportService', () => {
       const result = await service.exportCsv();
       const content = (result.value as { content: string }).content;
 
-      // semicolon-separated, so a comma alone in `A, B` would NOT need quoting
-      // for the field separator — but the safeCsvCell test triggers on `,` regardless.
-      expect(content).toContain('"A, B"');
+      // The separator is `;`, so a value containing `;` MUST be quoted or it
+      // splits into two columns and shifts the rest of the row.
+      expect(content).toContain('"ACME; Corp"');
       expect(content).toContain('"has ""quotes"""');
       expect(content).toMatch(/"Active\nMulti"/);
+    });
+
+    it('does NOT quote a bare comma — it is safe with a ; separator', async () => {
+      mockPrisma.project.findMany.mockResolvedValueOnce([
+        makeProject({ name: 'A, B' }),
+      ]);
+
+      const result = await service.exportCsv();
+      const content = (result.value as { content: string }).content;
+
+      // A comma is not the field separator, so the cell stays unquoted.
+      expect(content).toContain('A, B;');
+      expect(content).not.toContain('"A, B"');
     });
 
     it('neutralises formula-injection payloads with a leading single-quote', async () => {
@@ -215,6 +231,75 @@ describe('ExportService', () => {
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Projet non trouvé.');
+    });
+  });
+
+  // ── generateReportData ───────────────────────────────────────────────────────
+
+  describe('generateReportData', () => {
+    it('assembles header, ordered fields, work packages, and progress %', async () => {
+      mockPrisma.project.findFirst.mockResolvedValueOnce({
+        ...makeProject(),
+        projectManager: { firstName: 'Alice', lastName: 'PM' },
+        fields: [
+          { id: 'f1', label: 'Stack' },
+          { id: 'f2', label: 'Budget' }, // no value → empty string
+        ],
+        fieldValues: [{ projectFieldId: 'f1', value: 'NestJS' }],
+      });
+      mockPrisma.workPackage.findMany.mockResolvedValueOnce([
+        { title: 'Setup', status: 'Closed', priority: 'High', percentDone: 100, startDate: new Date('2026-02-01T00:00:00Z'), dueDate: new Date('2026-02-05T00:00:00Z'), assignee: { firstName: 'Bob', lastName: 'Dev' } },
+        { title: 'Build', status: 'New', priority: 'Normal', percentDone: 0, startDate: null, dueDate: null, assignee: null },
+      ]);
+
+      const result = await service.generateReportData('p1');
+
+      expect(result.isSuccess).toBe(true);
+      const data = result.value!;
+      expect(data.project).toMatchObject({
+        id: 'p1', name: 'My Project', clientName: 'ACME', pmName: 'Alice PM',
+        status: 'Active', priority: 'Normal', startDate: '2026-01-01', endDate: '2026-12-31',
+        progressPct: 50, // 1 of 2 WPs terminal (Closed)
+      });
+      expect(data.fields).toEqual([
+        { label: 'Stack', value: 'NestJS' },
+        { label: 'Budget', value: '' },
+      ]);
+      expect(data.workPackages[0]).toEqual({
+        title: 'Setup', status: 'Closed', priority: 'High', assignee: 'Bob Dev',
+        startDate: '2026-02-01', dueDate: '2026-02-05', percentDone: 100,
+      });
+      expect(data.workPackages[1]).toMatchObject({ title: 'Build', assignee: '', startDate: '', dueDate: '' });
+      // only non-deleted WPs of THIS project are queried
+      const wpArgs = mockPrisma.workPackage.findMany.mock.calls[0][0] as { where: Record<string, unknown> };
+      expect(wpArgs.where).toMatchObject({ projectId: 'p1', isDeleted: false });
+    });
+
+    it('reports 0% progress and empty arrays when the project has no WPs/fields', async () => {
+      mockPrisma.project.findFirst.mockResolvedValueOnce({
+        ...makeProject({ projectManager: null }),
+        fields: [],
+        fieldValues: [],
+      });
+      mockPrisma.workPackage.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.generateReportData('p1');
+
+      expect(result.isSuccess).toBe(true);
+      expect(result.value!.project.progressPct).toBe(0);
+      expect(result.value!.project.pmName).toBe('Non assigné');
+      expect(result.value!.fields).toEqual([]);
+      expect(result.value!.workPackages).toEqual([]);
+    });
+
+    it('returns a failure when the project is not found', async () => {
+      mockPrisma.project.findFirst.mockResolvedValueOnce(null);
+
+      const result = await service.generateReportData('missing');
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Projet non trouvé.');
+      expect(mockPrisma.workPackage.findMany).not.toHaveBeenCalled();
     });
   });
 });

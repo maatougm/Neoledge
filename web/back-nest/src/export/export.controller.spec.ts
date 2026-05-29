@@ -11,13 +11,19 @@ function makeRes() {
 
 describe('ExportController', () => {
   let controller: ExportController
-  let mockService: { exportCsv: jest.Mock; exportJson: jest.Mock; generateReport: jest.Mock }
+  let mockService: {
+    exportCsv: jest.Mock
+    exportJson: jest.Mock
+    generateReport: jest.Mock
+    generateReportData: jest.Mock
+  }
 
   beforeEach(() => {
     mockService = {
       exportCsv: jest.fn(),
       exportJson: jest.fn(),
       generateReport: jest.fn(),
+      generateReportData: jest.fn(),
     }
     controller = new ExportController(mockService as any)
   })
@@ -74,6 +80,20 @@ describe('ExportController', () => {
     it('throws NotFound on failure', async () => {
       mockService.generateReport.mockResolvedValue(fail('Projet non trouvé'))
       await expect(controller.getReport('p-1')).rejects.toThrow(NotFoundException)
+    })
+  })
+
+  describe('getReportData', () => {
+    it('returns the structured service value', async () => {
+      const payload = { project: { id: 'p-1', name: 'P' }, fields: [], workPackages: [] }
+      mockService.generateReportData.mockResolvedValue(ok(payload))
+      expect(await controller.getReportData('p-1')).toEqual(payload)
+      expect(mockService.generateReportData).toHaveBeenCalledWith('p-1')
+    })
+
+    it('throws NotFound on failure', async () => {
+      mockService.generateReportData.mockResolvedValue(fail('Projet non trouvé'))
+      await expect(controller.getReportData('p-1')).rejects.toThrow(NotFoundException)
     })
   })
 })
