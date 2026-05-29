@@ -51,6 +51,11 @@ model AppUser {
   passwordHash        String
   role                String    @default("Member") @db.VarChar(50)
   isActive            Boolean   @default(true)
+  // Soft-delete: admin "delete" sets isDeleted=true (+ isActive=false +
+  // tokenVersion++) instead of hard-deleting, preserving FK history. Excluded
+  // from admin lists + auth. (Distinct from isActive, which is a reversible
+  // deactivation that still shows the user as "Inactif".)
+  isDeleted           Boolean   @default(false)
   createdAt           DateTime  @default(now())
   lastLoginAt         DateTime?
   failedLoginAttempts Int       @default(0)

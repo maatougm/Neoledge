@@ -44,7 +44,9 @@ export class AuthService {
       where: { email },
     });
 
-    if (dbUser) {
+    // A soft-deleted account is treated as non-existent — same 401 + timing path
+    // as an unknown email (no enumeration).
+    if (dbUser && !dbUser.isDeleted) {
       return this.authenticateDbUser(dbUser, password);
     }
 
@@ -292,7 +294,8 @@ export class AuthService {
     const user = await this.prisma.appUser.findUnique({ where: { email } });
 
     // Always return success to avoid leaking whether the email exists.
-    if (!user || !user.isActive) return;
+    // Soft-deleted (or inactive) accounts get no reset link.
+    if (!user || !user.isActive || user.isDeleted) return;
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -319,6 +322,7 @@ export class AuthService {
         passwordResetToken: tokenHash,
         passwordResetTokenExpiry: { gt: new Date() },
         isActive: true,
+        isDeleted: false,
       },
     });
 

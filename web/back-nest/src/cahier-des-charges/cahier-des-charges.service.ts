@@ -713,7 +713,7 @@ RÈGLES :
    */
   private async notifyReviewTeams(projectId: string, projectName: string): Promise<void> {
     const reviewers = await this.prisma.appUser.findMany({
-      where: { role: 'SpecificationTeam', isActive: true },
+      where: { role: 'SpecificationTeam', isActive: true, isDeleted: false },
       select: { id: true },
     })
     if (reviewers.length === 0) {
@@ -844,11 +844,12 @@ RÈGLES :
     // any user with project access (a developer, another PM) could POST an approval.
     const reviewer = await this.prisma.appUser.findUnique({
       where: { id: userId },
-      select: { role: true, isActive: true },
+      select: { role: true, isActive: true, isDeleted: true },
     })
     const isAuthorisedReviewer =
-      reviewer?.role === 'Admin' ||
-      (reviewer?.role === 'SpecificationTeam' && reviewer.isActive !== false)
+      reviewer?.isDeleted === false &&
+      (reviewer.role === 'Admin' ||
+        (reviewer.role === 'SpecificationTeam' && reviewer.isActive !== false))
     if (!isAuthorisedReviewer) {
       throw new ForbiddenException(
         "Seule l'équipe de spécification peut valider le cahier des charges.",

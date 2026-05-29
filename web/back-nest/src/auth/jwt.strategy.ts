@@ -62,9 +62,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const tokenVersion = payload.tokenVersion ?? 0;
     const dbUser = await this.prisma.appUser.findUnique({
       where: { id: payload.sub },
-      select: { tokenVersion: true },
+      select: { tokenVersion: true, isDeleted: true },
     });
-    if (!dbUser || tokenVersion !== dbUser.tokenVersion) {
+    // Reject stale tokens (version bumped on reset/deactivate/delete) AND any
+    // soft-deleted account (defence-in-depth — delete() also bumps the version).
+    if (!dbUser || dbUser.isDeleted || tokenVersion !== dbUser.tokenVersion) {
       throw new UnauthorizedException('Session invalidated — please log in again');
     }
     return {

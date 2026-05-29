@@ -287,7 +287,7 @@ export class PmController {
     if (!project) return [];
 
     const users = await this.prisma.appUser.findMany({
-      where: { isActive: true, role: 'Member' },
+      where: { isActive: true, isDeleted: false, role: 'Member' },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: [{ firstName: 'asc' }],
     });

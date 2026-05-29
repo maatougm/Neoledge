@@ -225,6 +225,33 @@ describe('WorkPackagesService', () => {
       expect(r.isFailure).toBe(true);
       expect(r.error).toMatch(/création/i);
     });
+
+    // ── assignee validation (assertAssignable) ──
+    // The same rule bulkAssign enforces: assignee must be an active,
+    // non-soft-deleted Member. Without this a deactivated/deleted/non-Member
+    // user could be assigned directly and leave a dangling assigneeId.
+
+    it('rejects a create whose assignee is soft-deleted', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true, isDeleted: true });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-gone' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toMatch(/assignable/i);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a create whose assignee is inactive', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: false, isDeleted: false });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-inactive' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a create whose assignee is not a Member (PM / SpecificationTeam)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'SpecificationTeam', isActive: true, isDeleted: false });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-spec' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update() ──────────────────────────────────────────────────────────────
@@ -335,6 +362,28 @@ describe('WorkPackagesService', () => {
       expect(notifications.notifyEnhanced).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'u-old', type: 'work_package_unassigned' }),
       );
+    });
+
+    it('rejects a reassignment to a soft-deleted user (assertAssignable)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true, isDeleted: true });
+      const r = await svc.update(existingId, 'p1', { assigneeId: 'u-gone' }, 'pm-1');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toMatch(/assignable/i);
+    });
+
+    it('rejects a reassignment to a non-Member user (assertAssignable)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'ProjectManager', isActive: true, isDeleted: false });
+      const r = await svc.update(existingId, 'p1', { assigneeId: 'u-pm' }, 'pm-1');
+      expect(r.isFailure).toBe(true);
+    });
+
+    it('allows unassigning (assigneeId:null) without an assignability check', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-old';
+      // Make any assignability lookup fail — it must NOT be consulted for unassign.
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: false, isDeleted: true });
+      const r = await svc.update(existingId, 'p1', { assigneeId: null }, 'pm-1');
+      expect(r.isSuccess).toBe(true);
     });
 
     it('fires status-change watcher blast + invalidates cache on status change', async () => {

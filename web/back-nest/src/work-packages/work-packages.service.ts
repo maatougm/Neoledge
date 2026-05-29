@@ -73,6 +73,32 @@ export class WorkPackagesService {
     }
   }
 
+  /**
+   * Reject a single-WP write whose assignee is not a valid task assignee.
+   * Mirrors the batch rule enforced in bulkAssign(): a task may only be assigned
+   * to an ACTIVE, non-soft-deleted user with the Member role (PMs own the
+   * project and SpecificationTeam validates the cahier — neither is assignable).
+   *
+   * Without this, create()/update() would happily persist an assigneeId for a
+   * deactivated or soft-deleted user — leaving a dangling reference that every
+   * picker query (which filters `isActive: true`) deliberately excludes. The
+   * three write paths (create / update / bulkAssign) MUST enforce the same rule
+   * or they drift. Uses findUnique + in-code checks (id is the PK) so it reads
+   * the same as ensureProjectMembership.
+   */
+  private async assertAssignable(assigneeId: string): Promise<Result> {
+    const user = await this.prisma.appUser.findUnique({
+      where: { id: assigneeId },
+      select: { isActive: true, isDeleted: true, role: true },
+    });
+    if (!user || !user.isActive || user.isDeleted || user.role !== 'Member') {
+      return Result.fail(
+        "L'utilisateur sélectionné n'est pas assignable : seul un membre actif de l'équipe peut recevoir une tâche.",
+      );
+    }
+    return Result.ok();
+  }
+
   /** Fire-and-forget notification for WP events. Never throws. */
   private async notifyWatchersAndAssignee(
     wpId: string,
@@ -302,6 +328,13 @@ export class WorkPackagesService {
           throw new BadRequestException('parentId must belong to same project');
         }
       }
+      // Validate the assignee (same rule bulkAssign enforces) before writing —
+      // a deactivated/soft-deleted/non-Member id must not be persisted as the
+      // assignee. See assertAssignable().
+      if (dto.assigneeId) {
+        const assignable = await this.assertAssignable(dto.assigneeId);
+        if (assignable.isFailure) return Result.fail(assignable.error!);
+      }
       const maxPos = await this.prisma.workPackage.aggregate({
         where: { projectId, parentId: dto.parentId ?? null },
         _max: { position: true },
@@ -435,6 +468,14 @@ export class WorkPackagesService {
         if (!parent || parent.projectId !== projectId) {
           throw new BadRequestException('parentId must belong to same project');
         }
+      }
+
+      // Validate the assignee on direct reassignment too (bulkAssign already
+      // does — these paths must match or a deactivated/soft-deleted user can be
+      // assigned via PATCH, leaving a dangling assigneeId). null = unassign → skip.
+      if (dto.assigneeId) {
+        const assignable = await this.assertAssignable(dto.assigneeId);
+        if (assignable.isFailure) return Result.fail(assignable.error!);
       }
 
       const data: Record<string, unknown> = {};
@@ -842,13 +883,15 @@ export class WorkPackagesService {
     //
     // This is the single source of truth — the UI's /assignable-users
     // endpoint and the AI's read_project_members tool return the exact same
-    // set. If you change this, change those two too.
+    // set. If you change this, change those two too. The single-WP create()/
+    // update() paths enforce the same rule via assertAssignable() — keep all
+    // three in lock-step.
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
       const users = await this.prisma.appUser.findMany({
-        where: { id: { in: uniqueAssignees }, isActive: true },
+        where: { id: { in: uniqueAssignees }, isActive: true, isDeleted: false },
         select: { id: true, role: true },
       });
       if (users.length !== uniqueAssignees.length) {

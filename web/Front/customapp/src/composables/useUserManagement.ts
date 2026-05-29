@@ -111,8 +111,8 @@ export function useUserManagement() {
 
   const handleDelete = (user: UserResponse) => {
     confirm.require({
-      message: `Supprimer définitivement le compte de ${user.firstName} ${user.lastName} (${user.email}) ? Cette action est irréversible. Si l'utilisateur a déjà créé des projets ou des tâches, la suppression sera refusée — désactivez-le à la place.`,
-      header: 'Confirmer la suppression définitive',
+      message: `Supprimer le compte de ${user.firstName} ${user.lastName} (${user.email}) ? L'utilisateur sera retiré de la liste et ne pourra plus se connecter. Son historique (projets, tâches, commentaires…) est conservé.`,
+      header: 'Confirmer la suppression',
       icon: 'pi pi-trash',
       acceptLabel: 'Supprimer',
       rejectLabel: 'Annuler',

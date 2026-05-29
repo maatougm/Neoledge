@@ -181,18 +181,21 @@ describe('UsersService', () => {
   // ── getById ───────────────────────────────────────────────────────────────
 
   describe('getById', () => {
-    it('returns the user when found', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
+    it('returns the user when found (excludes soft-deleted via findFirst)', async () => {
+      mockPrisma.appUser.findFirst.mockResolvedValue(makeUser());
 
       const result = await service.getById('user-1');
 
       expect(result.isSuccess).toBe(true);
       expect(result.value?.id).toBe('user-1');
       expect(result.value).not.toHaveProperty('passwordHash');
+      expect(mockPrisma.appUser.findFirst).toHaveBeenCalledWith({
+        where: { id: 'user-1', isDeleted: false },
+      });
     });
 
-    it('returns failure when not found', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(null);
+    it('returns failure when not found (or soft-deleted)', async () => {
+      mockPrisma.appUser.findFirst.mockResolvedValue(null);
 
       const result = await service.getById('missing');
 
@@ -212,10 +215,10 @@ describe('UsersService', () => {
       expect(result.isSuccess).toBe(true);
       expect(result.value).toHaveLength(1);
       const call = mockPrisma.appUser.findMany.mock.calls[0][0] as {
-        where: { role: string; isActive: boolean };
+        where: { role: string; isActive: boolean; isDeleted: boolean };
         orderBy: { lastName: string };
       };
-      expect(call.where).toEqual({ role: 'ProjectManager', isActive: true });
+      expect(call.where).toEqual({ role: 'ProjectManager', isActive: true, isDeleted: false });
       expect(call.orderBy).toEqual({ lastName: 'asc' });
     });
 
@@ -487,111 +490,59 @@ describe('UsersService', () => {
 
   // ── delete ────────────────────────────────────────────────────────────────
 
-  describe('delete', () => {
-    function mockBlockerCounts(counts: {
-      managedProjects?: number;
-      createdProjects?: number;
-      authoredWps?: number;
-      timeEntries?: number;
-      projectComments?: number;
-      wpComments?: number;
-      projectAttachments?: number;
-      wpAttachments?: number;
-    }): void {
-      mockPrisma.project.count
-        .mockResolvedValueOnce(counts.managedProjects ?? 0)
-        .mockResolvedValueOnce(counts.createdProjects ?? 0);
-      mockPrisma.workPackage.count.mockResolvedValueOnce(counts.authoredWps ?? 0);
-      mockPrisma.timeEntry.count.mockResolvedValueOnce(counts.timeEntries ?? 0);
-      mockPrisma.projectComment.count.mockResolvedValueOnce(counts.projectComments ?? 0);
-      mockPrisma.workPackageComment.count.mockResolvedValueOnce(counts.wpComments ?? 0);
-      mockPrisma.projectAttachment.count.mockResolvedValueOnce(counts.projectAttachments ?? 0);
-      mockPrisma.workPackageAttachment.count.mockResolvedValueOnce(counts.wpAttachments ?? 0);
-    }
-
+  describe('delete (soft-delete)', () => {
     it('refuses self-deletion', async () => {
       const result = await service.delete('admin-1', 'admin-1');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Vous ne pouvez pas supprimer votre propre compte.');
-      expect(mockPrisma.appUser.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.appUser.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
     });
 
-    it('returns failure when the user is not found', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(null);
+    it('returns failure when the user is not found (or already soft-deleted)', async () => {
+      mockPrisma.appUser.findFirst.mockResolvedValue(null);
 
       const result = await service.delete('missing', 'admin-1');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Utilisateur non trouvé.');
-      expect(mockPrisma.appUser.delete).not.toHaveBeenCalled();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
     });
 
-    it('hard-deletes when no blocking references exist', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({});
-      mockPrisma.appUser.delete.mockResolvedValue(makeUser());
+    it('soft-deletes: sets isDeleted=true, isActive=false, bumps tokenVersion (NO hard delete)', async () => {
+      mockPrisma.appUser.findFirst.mockResolvedValue(makeUser());
+      mockPrisma.appUser.update.mockResolvedValue(makeUser({ isActive: false }));
 
       const result = await service.delete('user-1', 'admin-1');
 
       expect(result.isSuccess).toBe(true);
-      expect(mockPrisma.appUser.delete).toHaveBeenCalledWith({ where: { id: 'user-1' } });
-    });
-
-    it('refuses deletion when the user has managed projects (NoAction FK)', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({ managedProjects: 3 });
-
-      const result = await service.delete('user-1', 'admin-1');
-
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('3 projet(s) géré(s)');
-      expect(result.error).toContain('Désactivez');
+      // The lookup must exclude already-deleted users.
+      expect(mockPrisma.appUser.findFirst).toHaveBeenCalledWith({
+        where: { id: 'user-1', isDeleted: false },
+      });
+      const updateCall = mockPrisma.appUser.update.mock.calls[0][0] as {
+        where: { id: string };
+        data: { isDeleted: boolean; isActive: boolean; tokenVersion: { increment: number } };
+      };
+      expect(updateCall.where).toEqual({ id: 'user-1' });
+      expect(updateCall.data.isDeleted).toBe(true);
+      expect(updateCall.data.isActive).toBe(false);
+      expect(updateCall.data.tokenVersion).toEqual({ increment: 1 });
+      // Never hard-deletes — history is preserved.
       expect(mockPrisma.appUser.delete).not.toHaveBeenCalled();
     });
 
-    it('aggregates project + WP comment counts into a single "commentaire(s)" blocker', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({ projectComments: 2, wpComments: 5 });
+    it('succeeds even for a user with history (no FK-blocker refusal)', async () => {
+      // Previously this would refuse with "Suppression impossible". Soft-delete
+      // never touches FK-referenced rows, so it always succeeds.
+      mockPrisma.appUser.findFirst.mockResolvedValue(makeUser());
+      mockPrisma.appUser.update.mockResolvedValue(makeUser({ isActive: false }));
 
       const result = await service.delete('user-1', 'admin-1');
 
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('7 commentaire(s)');
-    });
-
-    it('aggregates project + WP attachment counts into a single "pièce(s) jointe(s)" blocker', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({ projectAttachments: 1, wpAttachments: 4 });
-
-      const result = await service.delete('user-1', 'admin-1');
-
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('5 pièce(s) jointe(s)');
-    });
-
-    it('combines multiple blocker categories into one French message', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({ managedProjects: 1, authoredWps: 4, timeEntries: 12 });
-
-      const result = await service.delete('user-1', 'admin-1');
-
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('1 projet(s) géré(s)');
-      expect(result.error).toContain('4 tâche(s) créée(s)');
-      expect(result.error).toContain('12 entrée(s) de temps');
-    });
-
-    it('returns a defence-in-depth message when Prisma rejects the delete', async () => {
-      mockPrisma.appUser.findUnique.mockResolvedValue(makeUser());
-      mockBlockerCounts({});
-      mockPrisma.appUser.delete.mockRejectedValue(new Error('FK constraint nA'));
-
-      const result = await service.delete('user-1', 'admin-1');
-
-      expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('Suppression refusée par la base');
-      expect(result.error).toContain('FK constraint nA');
+      expect(result.isSuccess).toBe(true);
+      expect(mockPrisma.appUser.delete).not.toHaveBeenCalled();
     });
   });
 });

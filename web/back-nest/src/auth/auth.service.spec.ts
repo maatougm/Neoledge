@@ -639,6 +639,7 @@ describe('AuthService', () => {
           passwordResetToken: expectedHash,
           passwordResetTokenExpiry: { gt: expect.any(Date) },
           isActive: true,
+          isDeleted: false,
         },
       });
 

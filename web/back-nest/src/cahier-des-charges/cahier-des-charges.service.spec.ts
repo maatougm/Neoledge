@@ -11,6 +11,7 @@ describe('CahierDesChargesService — saveFeedback authorization', () => {
     projectManagerId?: string | null
     reviewerRole?: string | null
     reviewerActive?: boolean
+    reviewerDeleted?: boolean
   }) {
     const prisma = {
       project: {
@@ -22,7 +23,11 @@ describe('CahierDesChargesService — saveFeedback authorization', () => {
         findUnique: jest.fn().mockResolvedValue(
           opts.reviewerRole === null
             ? null
-            : { role: opts.reviewerRole ?? 'SpecificationTeam', isActive: opts.reviewerActive ?? true },
+            : {
+                role: opts.reviewerRole ?? 'SpecificationTeam',
+                isActive: opts.reviewerActive ?? true,
+                isDeleted: opts.reviewerDeleted ?? false,
+              },
         ),
       },
       cahierFeedback: { create: jest.fn().mockResolvedValue({ id: 'fb-1' }) },

@@ -122,7 +122,7 @@
                   severity="danger"
                   text
                   size="small"
-                  title="Supprimer définitivement"
+                  title="Supprimer"
                   @click="emit('delete', user)"
                 />
               </div>

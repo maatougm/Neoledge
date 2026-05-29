@@ -45,7 +45,10 @@ export class ProjectMembersService {
         select: { projectManagerId: true },
       }),
       this.prisma.projectMember.findMany({
-        where: { projectId },
+        // Hide soft-deleted users from the members panel (and from the
+        // reassign-candidate picker built off this list). Deactivated-but-not-
+        // deleted users still show as "Inactif" (isActive is reversible).
+        where: { projectId, user: { isDeleted: false } },
         include: {
           user: {
             select: {
