@@ -72,6 +72,10 @@ model AppUser {
   teamId                    String?   @db.VarChar(36)
   passwordResetToken        String?   @db.VarChar(255)
   passwordResetTokenExpiry  DateTime?
+  // Passwordless "magic link" sign-in. Stores SHA256(rawToken) like the reset
+  // flow; single-use (cleared on consume) with a short 15-min TTL.
+  magicLinkToken            String?   @db.VarChar(255)
+  magicLinkTokenExpiry      DateTime?
 
   // Relations
   team             Team?              @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull, onUpdate: NoAction)

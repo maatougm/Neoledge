@@ -130,6 +130,52 @@ describe('authStore', () => {
     })
   })
 
+  describe('requestMagicLink', () => {
+    it('POSTs the email to /auth/magic-link and resolves without storing a jwt', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { message: 'ok' } })
+      const s = useAuthStore()
+      await expect(s.requestMagicLink('a@b.co')).resolves.toBeUndefined()
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://api.example.com/auth/magic-link',
+        { email: 'a@b.co' },
+      )
+      expect(s.jwt).toBe('')
+    })
+  })
+
+  describe('magicLogin', () => {
+    it('stores the jwt + persists it on a non-TOTP magic login', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { jwt: 'role-pm' } })
+      const s = useAuthStore()
+      const r = await s.magicLogin('rawtoken')
+      expect(r).toEqual({ requiresTotp: false })
+      expect(s.jwt).toBe('role-pm')
+      expect(localStorage.getItem('nl_jwt')).toBe('role-pm')
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://api.example.com/auth/magic-login',
+        { token: 'rawtoken' },
+      )
+    })
+
+    it('returns requiresTotp + tempToken when the account has 2FA', async () => {
+      mockedAxios.post.mockResolvedValue({ data: { requiresTotp: true, tempToken: 'tmp' } })
+      const s = useAuthStore()
+      const r = await s.magicLogin('rawtoken')
+      expect(r).toEqual({ requiresTotp: true, tempToken: 'tmp' })
+      expect(s.jwt).toBe('')
+      expect(localStorage.getItem('nl_jwt')).toBeNull()
+    })
+
+    it('propagates a rejection on an invalid / expired link (401)', async () => {
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('unauth'), { isAxiosError: true, response: { status: 401 } }),
+      )
+      const s = useAuthStore()
+      await expect(s.magicLogin('bad')).rejects.toBeTruthy()
+      expect(s.jwt).toBe('')
+    })
+  })
+
   describe('logout', () => {
     it('clears local state then notifies the server', async () => {
       mockedAxios.get.mockResolvedValue({ data: {} })

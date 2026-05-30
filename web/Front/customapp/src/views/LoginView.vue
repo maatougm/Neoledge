@@ -113,6 +113,27 @@
             />
           </form>
 
+          <!-- Passwordless magic-link sign-in -->
+          <div class="magic-row">
+            <button
+              type="button"
+              class="magic-link-btn"
+              :disabled="loading || magicLoading"
+              @click="handleMagicLink"
+            >
+              <i class="pi pi-envelope" aria-hidden="true" />
+              {{ magicLoading ? 'Envoi en cours…' : 'Recevez plutôt un lien de connexion par email' }}
+            </button>
+          </div>
+
+          <NeoMessage
+            v-if="magicMsg"
+            severity="success"
+            :text="magicMsg"
+            :closable="true"
+            @close="magicMsg = null"
+          />
+
           <!-- Quick-access demo accounts (visible in prod per request) -->
           <template v-if="true">
             <div class="divider"><span>Accès rapide</span></div>
@@ -211,6 +232,10 @@ const password = ref('')
 const loading  = ref(false)
 const errorMsg = ref<string | null>(null)
 
+// ── Magic-link state ─────────────────────────────────────────────────────────
+const magicLoading = ref(false)
+const magicMsg     = ref<string | null>(null)
+
 // ── TOTP state ─────────────────────────────────────────────────────────────────
 const totpRequired  = ref(false)
 const totpTempToken = ref('')
@@ -295,6 +320,30 @@ function cancelTotp(): void {
   totpTempToken.value = ''
   totpCode.value      = ''
   totpError.value     = null
+}
+
+// ── Magic-link handler ───────────────────────────────────────────────────────
+async function handleMagicLink(): Promise<void> {
+  const addr = email.value.trim()
+  if (!addr) {
+    errorMsg.value = 'Saisissez votre adresse e-mail pour recevoir un lien de connexion.'
+    return
+  }
+  errorMsg.value = null
+  magicMsg.value = null
+  magicLoading.value = true
+  try {
+    await authStore.requestMagicLink(addr)
+    // Generic confirmation — the backend reveals nothing about whether the
+    // address exists, so neither does the UI.
+    magicMsg.value =
+      'Si un compte correspond à cet email, un lien de connexion vous a été envoyé. Vérifiez votre boîte de réception (valable 15 minutes).'
+  } catch {
+    // Only a network/5xx error reaches here (the request endpoint is always 200).
+    errorMsg.value = 'Une erreur réseau est survenue. Veuillez réessayer.'
+  } finally {
+    magicLoading.value = false
+  }
 }
 </script>
 
@@ -497,6 +546,31 @@ function cancelTotp(): void {
   text-decoration: none;
 }
 .forgot-link:hover { text-decoration: underline; }
+
+/* Passwordless magic-link button */
+.magic-row {
+  display: flex;
+  justify-content: center;
+  margin-top: -0.5rem;
+}
+
+.magic-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  font-family: var(--nl-font);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--nl-accent, #0d9488);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.magic-link-btn:hover:not(:disabled) { text-decoration: underline; }
+.magic-link-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* TOTP icon */
 .totp-icon-wrap {

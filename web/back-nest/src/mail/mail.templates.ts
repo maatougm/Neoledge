@@ -130,6 +130,29 @@ export function forgotPasswordEmail(firstName: string, resetUrl: string): string
   return baseLayout('Réinitialisation de votre mot de passe NeoLeadge', body);
 }
 
+export function magicLoginEmail(firstName: string, magicUrl: string): string {
+  const safeName = escapeHtml(firstName);
+  const safeUrl = escapeHtml(magicUrl);
+  const body = `
+    ${heading('Votre lien de connexion')}
+    ${paragraph(`Bonjour <strong>${safeName}</strong>,`)}
+    ${paragraph('Vous avez demandé un lien de connexion sans mot de passe à NeoLeadge. Cliquez sur le bouton ci-dessous pour vous connecter :')}
+    <div style="text-align:center;margin:24px 0;">
+      <a href="${safeUrl}" style="display:inline-block;background-color:${BRAND_COLOR};color:#ffffff;font-size:15px;font-weight:600;padding:12px 28px;border-radius:${BORDER_RADIUS};text-decoration:none;">
+        Se connecter
+      </a>
+    </div>
+    ${paragraph('<span style="font-size:13px;color:#6b7280;">Ce lien est à usage unique et valable pendant <strong>15 minutes</strong>. Après ce délai, vous devrez faire une nouvelle demande.</span>')}
+    ${divider()}
+    <div style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:${BORDER_RADIUS};padding:12px 16px;">
+      <p style="margin:0;font-size:13px;color:#92400e;">
+        ⚠️ Si vous n'avez pas demandé ce lien, ignorez cet email. Personne ne peut accéder à votre compte sans ce lien.
+      </p>
+    </div>
+  `;
+  return baseLayout('Votre lien de connexion NeoLeadge', body);
+}
+
 export function passwordResetEmail(tempPassword: string): string {
   const safeTempPassword = escapeHtml(tempPassword);
   const body = `

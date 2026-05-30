@@ -84,6 +84,7 @@ const mockPrisma = {
     findFirst: jest.fn(),
     findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     create: jest.fn(),
   },
 };
@@ -125,6 +126,8 @@ describe('AuthService', () => {
     jest.clearAllMocks();
     // Restore default mock returns after clearAllMocks wiped them.
     mockJwt.sign.mockReturnValue('mock.jwt.token');
+    // Atomic magic-link consume succeeds (count 1) unless a test overrides it.
+    mockPrisma.appUser.updateMany.mockResolvedValue({ count: 1 });
     mockConfig.get.mockImplementation((key: string) => {
       if (key === 'JWT_SECRET') return TEST_JWT_SECRET;
       if (key === 'FRONTEND_URL') return 'https://app.example.com';
@@ -661,6 +664,178 @@ describe('AuthService', () => {
       mockPrisma.appUser.findFirst.mockResolvedValueOnce(null);
       await expect(service.resetPasswordByToken('bad', 'pw')).rejects.toThrow(/invalide|expir/i);
       expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── requestMagicLink ───────────────────────────────────────────────────────
+
+  describe('requestMagicLink', () => {
+    it('writes a hashed magic token (~15 min TTL), sends the email with the RAW token, stays silent', async () => {
+      const user = makeUser();
+      mockPrisma.appUser.findUnique.mockResolvedValueOnce(user);
+      mockPrisma.appUser.update.mockResolvedValue({});
+      mockMail.send.mockResolvedValue(undefined);
+
+      await expect(service.requestMagicLink(user.email)).resolves.toBeUndefined();
+      await new Promise((r) => setImmediate(r));
+
+      const updateCall = mockPrisma.appUser.update.mock.calls[0]?.[0] as {
+        data: { magicLinkToken: string; magicLinkTokenExpiry: Date };
+      };
+      // Stored value is sha256 hex (64), NOT the raw token.
+      expect(updateCall.data.magicLinkToken).toMatch(/^[a-f0-9]{64}$/);
+      const ms = updateCall.data.magicLinkTokenExpiry.getTime() - Date.now();
+      expect(ms).toBeGreaterThan(13 * 60_000);
+      expect(ms).toBeLessThan(17 * 60_000);
+
+      expect(mockMail.send).toHaveBeenCalled();
+      const [toEmail, subject, html] = mockMail.send.mock.calls[0] as unknown as [string, string, string];
+      expect(toEmail).toBe(user.email);
+      expect(subject).toMatch(/connexion/i);
+      const linkMatch = /\/magic-login\?token=([a-f0-9]+)/.exec(html);
+      expect(linkMatch).not.toBeNull();
+      // sha256(rawToken) must equal the stored hash — proves we hash before storing.
+      const expectedHash = createHash('sha256').update(linkMatch![1]).digest('hex');
+      expect(updateCall.data.magicLinkToken).toBe(expectedHash);
+    });
+
+    it('returns silently for an unknown email (no enumeration, no token write, no email)', async () => {
+      mockPrisma.appUser.findUnique.mockResolvedValueOnce(null);
+      await expect(service.requestMagicLink('ghost@example.com')).resolves.toBeUndefined();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+      expect(mockMail.send).not.toHaveBeenCalled();
+    });
+
+    it('returns silently for an inactive account', async () => {
+      mockPrisma.appUser.findUnique.mockResolvedValueOnce(makeUser({ isActive: false }));
+      await expect(service.requestMagicLink('alice@example.com')).resolves.toBeUndefined();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+      expect(mockMail.send).not.toHaveBeenCalled();
+    });
+
+    it('returns silently for a soft-deleted account', async () => {
+      // DbUser omits isDeleted; spread an explicit flag onto a base user.
+      mockPrisma.appUser.findUnique.mockResolvedValueOnce({ ...makeUser(), isDeleted: true });
+      await expect(service.requestMagicLink('alice@example.com')).resolves.toBeUndefined();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+      expect(mockMail.send).not.toHaveBeenCalled();
+    });
+
+    it('per-email cooldown: a second immediate request does NOT issue a second link', async () => {
+      const user = makeUser();
+      mockPrisma.appUser.findUnique.mockResolvedValue(user);
+      mockPrisma.appUser.update.mockResolvedValue({});
+      mockMail.send.mockResolvedValue(undefined);
+
+      await service.requestMagicLink(user.email);
+      await service.requestMagicLink(user.email);
+      await new Promise((r) => setImmediate(r));
+
+      // Only the first request wrote a token + sent an email.
+      expect(mockPrisma.appUser.update).toHaveBeenCalledTimes(1);
+      expect(mockMail.send).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── loginWithMagicToken ────────────────────────────────────────────────────
+
+  describe('loginWithMagicToken', () => {
+    it('looks up by hashed token, atomically consumes it, stamps lastLoginAt, issues an access JWT', async () => {
+      const rawToken = 'b'.repeat(64);
+      const expectedHash = createHash('sha256').update(rawToken).digest('hex');
+      const user = makeUser();
+      mockPrisma.appUser.findFirst.mockResolvedValueOnce(user);
+      mockPrisma.appUser.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.appUser.update.mockResolvedValue({});
+      mockPrisma.appUser.findUniqueOrThrow.mockResolvedValueOnce({ tokenVersion: 9 });
+
+      const result = await service.loginWithMagicToken(rawToken);
+
+      expect('jwt' in result && result.jwt).toBe('mock.jwt.token');
+      // Lookup by the HASH, gated on active + not-deleted + not-expired.
+      expect(mockPrisma.appUser.findFirst).toHaveBeenCalledWith({
+        where: {
+          magicLinkToken: expectedHash,
+          magicLinkTokenExpiry: { gt: expect.any(Date) },
+          isActive: true,
+          isDeleted: false,
+        },
+      });
+      // Single-use consume is an ATOMIC conditional updateMany on the hash.
+      expect(mockPrisma.appUser.updateMany).toHaveBeenCalledWith({
+        where: { id: user.id, magicLinkToken: expectedHash },
+        data: { magicLinkToken: null, magicLinkTokenExpiry: null },
+      });
+      // Bookkeeping write resets lockout + stamps lastLoginAt.
+      const updateCall = mockPrisma.appUser.update.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(updateCall.data.lastLoginAt).toBeInstanceOf(Date);
+      expect(updateCall.data.failedLoginAttempts).toBe(0);
+      expect(updateCall.data.lockedUntil).toBeNull();
+      // JWT carries the current tokenVersion + aud:'access'.
+      expect(mockJwt.sign).toHaveBeenCalledWith(expect.objectContaining({
+        sub: user.id, tokenVersion: 9, aud: 'access',
+      }));
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        'AppUser', user.id, 'LOGIN', user.id, undefined, { stage: 'magic-link' },
+      );
+    });
+
+    it('rejects an invalid / expired token (lookup returned null) and consumes nothing', async () => {
+      mockPrisma.appUser.findFirst.mockResolvedValueOnce(null);
+      await expect(service.loginWithMagicToken('nope')).rejects.toThrow(/invalide|expir/i);
+      expect(mockPrisma.appUser.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+    });
+
+    it('does NOT let a magic link bypass an in-force lockout (and does not consume the token)', async () => {
+      const user = makeUser({ lockedUntil: new Date(Date.now() + 60_000) });
+      mockPrisma.appUser.findFirst.mockResolvedValueOnce(user);
+
+      await expect(service.loginWithMagicToken('d'.repeat(64))).rejects.toThrow(/locked/i);
+      // Token left intact (no consume) so the owner can retry after the lock lifts.
+      expect(mockPrisma.appUser.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a concurrent double-spend (atomic consume returns count 0)', async () => {
+      const user = makeUser();
+      mockPrisma.appUser.findFirst.mockResolvedValueOnce(user);
+      mockPrisma.appUser.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.loginWithMagicToken('e'.repeat(64))).rejects.toThrow(/invalide|expir/i);
+      // Lost the race → no JWT, no bookkeeping write.
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+      expect(mockJwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('issues a TOTP challenge (not a JWT) when the account has 2FA — token still consumed', async () => {
+      const user = makeUser({ totpEnabled: true, totpSecret: 'SECRET' });
+      mockPrisma.appUser.findFirst.mockResolvedValueOnce(user);
+      mockPrisma.appUser.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockJwt.sign.mockReturnValueOnce('temp.totp.token');
+
+      const result = await service.loginWithMagicToken('c'.repeat(64));
+
+      expect('requiresTotp' in result && result.requiresTotp).toBe(true);
+      expect('tempToken' in result && result.tempToken).toBe('temp.totp.token');
+      // Temp token carries the totp claims.
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: user.id, totpPending: true, aud: 'totp' }),
+        expect.objectContaining({ secret: TEST_JWT_SECRET, expiresIn: '5m' }),
+      );
+      // The magic token is consumed atomically; NO bookkeeping update on the TOTP branch.
+      expect(mockPrisma.appUser.updateMany).toHaveBeenCalledWith({
+        where: { id: user.id, magicLinkToken: expect.any(String) },
+        data: { magicLinkToken: null, magicLinkTokenExpiry: null },
+      });
+      expect(mockPrisma.appUser.update).not.toHaveBeenCalled();
+      // No full JWT issued → tokenVersion lookup not performed.
+      expect(mockPrisma.appUser.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        'AppUser', user.id, 'LOGIN', user.id, undefined, { stage: 'magic-link-totp-pending' },
+      );
     });
   });
 

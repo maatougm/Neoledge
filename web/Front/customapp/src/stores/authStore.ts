@@ -121,6 +121,43 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * Request a passwordless magic-link sign-in email. Always resolves (the
+   * backend returns 200 whether or not the account exists — no enumeration),
+   * so callers should show a generic "if an account exists…" confirmation.
+   */
+  const requestMagicLink = async (email: string): Promise<void> => {
+    const config = useConfigStore()
+    await axios.post(config.apiUrl + '/auth/magic-link', { email })
+  }
+
+  /**
+   * Consume a magic-link token.
+   * Returns:
+   *   - `{ requiresTotp: false }` on success (jwt stored).
+   *   - `{ requiresTotp: true, tempToken }` when the account has 2FA enabled.
+   * Throws on an invalid / expired link (401).
+   */
+  const magicLogin = async (
+    token: string,
+  ): Promise<{ requiresTotp: boolean; tempToken?: string }> => {
+    const config = useConfigStore()
+    const response = await axios.post<{
+      jwt?: string
+      requiresTotp?: boolean
+      tempToken?: string
+    }>(config.apiUrl + '/auth/magic-login', { token })
+
+    if (response.data.requiresTotp) {
+      return { requiresTotp: true, tempToken: response.data.tempToken }
+    }
+
+    const newToken = response.data.jwt ?? ''
+    jwt.value = newToken
+    _persist(newToken)
+    return { requiresTotp: false }
+  }
+
+  /**
    * Logout — clears local state then notifies the backend.
    * Navigation to /login is handled by the router guard (via 401 or explicit redirect).
    */
@@ -197,6 +234,8 @@ export const useAuthStore = defineStore('auth', () => {
     init,
     login,
     loginTotp,
+    requestMagicLink,
+    magicLogin,
     logout,
     setJwt,
     clear,

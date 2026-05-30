@@ -20,7 +20,7 @@ declare module 'vue-router' {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'forgot-password', 'reset-password'])
+const PUBLIC_ROUTE_NAMES = new Set(['login', 'unauthorized', 'forgot-password', 'reset-password', 'magic-login'])
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +48,11 @@ const router = createRouter({
       path: '/reset-password',
       name: 'reset-password',
       component: () => import('@/views/ResetPasswordView.vue'),
+    },
+    {
+      path: '/magic-login',
+      name: 'magic-login',
+      component: () => import('@/views/MagicLoginView.vue'),
     },
     {
       path: '/unauthorized',
