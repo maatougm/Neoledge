@@ -3,6 +3,8 @@ import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/lib/api', () => ({
   default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  extractErrorMessage: (e: unknown) =>
+    (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? null,
 }))
 
 import api from '@/lib/api'

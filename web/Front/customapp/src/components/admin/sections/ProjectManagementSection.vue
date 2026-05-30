@@ -40,7 +40,7 @@
     <!-- Project table -->
     <template v-else>
       <div v-if="store.loading" class="loading-state">
-        <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: #0d9488" />
+        <i class="pi pi-spin pi-spinner" style="font-size: 1.5rem; color: var(--nl-accent)" />
       </div>
       <div v-else-if="store.projects.length === 0" class="empty-state">
         <i class="pi pi-folder-open" />

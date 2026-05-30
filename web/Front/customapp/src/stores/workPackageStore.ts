@@ -2,7 +2,7 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api from '@/lib/api'
+import api, { extractErrorMessage } from '@/lib/api'
 import { onLogout } from './logoutBus'
 import type { WorkPackage, CreateWpPayload, UpdateWpPayload, WorkPackageCustomField } from '@/types/work-package.types'
 
@@ -34,7 +34,10 @@ export const useWorkPackageStore = defineStore('workPackages', () => {
   }
 
   function _errMsg(err: unknown): string {
-    return err instanceof Error ? err.message : String(err)
+    // Prefer the backend's business message (response.data.message) over axios's
+    // generic "Request failed with status code 400" — 4xx don't auto-toast, so
+    // this is what surfaces to the user via store.error.
+    return extractErrorMessage(err) ?? (err instanceof Error ? err.message : String(err))
   }
 
   async function fetchOne(projectId: string, id: string): Promise<WorkPackage | null> {

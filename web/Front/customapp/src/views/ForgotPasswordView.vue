@@ -6,7 +6,7 @@
   <div class="fp-page">
     <div class="fp-card">
       <div class="fp-header">
-        <div class="fp-logo" aria-label="Neo Project">NP</div>
+        <span class="fp-logo"><NeoMark /></span>
         <h1 class="fp-title">Mot de passe oublié</h1>
         <p class="fp-subtitle">
           Saisissez votre adresse e-mail. Si un compte y est associé, vous recevrez un lien pour réinitialiser votre mot de passe.
@@ -60,6 +60,7 @@
 import { ref } from 'vue'
 import { NeoButton, NeoInputText, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
+import NeoMark from '@/components/common/NeoMark.vue'
 import axios from 'axios'
 
 const email = ref<string>('')
@@ -98,7 +99,7 @@ async function handleSubmit(): Promise<void> {
 .fp-card {
   width: 100%;
   max-width: 420px;
-  background: #fff;
+  background: var(--nl-surface);
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.09);
   padding: 2.5rem 2rem;
@@ -110,17 +111,18 @@ async function handleSubmit(): Promise<void> {
 .fp-header { text-align: center; }
 
 .fp-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: #0d9488;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 700;
+  /* Dark "app-icon" tile so the yellow vector mark stays crisp on the light card. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   margin-bottom: 1rem;
+  padding: 10px;
+  box-sizing: border-box;
+  background: #0A0A0B;
+  color: var(--nl-accent);
 }
 
 .fp-title {
@@ -148,7 +150,7 @@ async function handleSubmit(): Promise<void> {
 
 .fp-success__icon {
   font-size: 2.5rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   display: block;
   margin-bottom: 1rem;
 }
@@ -172,7 +174,7 @@ async function handleSubmit(): Promise<void> {
   justify-content: center;
   gap: 0.4rem;
   font-size: 0.875rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   text-decoration: none;
   font-weight: 500;
 }

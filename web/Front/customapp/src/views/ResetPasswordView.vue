@@ -6,7 +6,7 @@
   <div class="rp-page">
     <div class="rp-card">
       <div class="rp-header">
-        <div class="rp-logo" aria-label="Neo Project">NP</div>
+        <span class="rp-logo"><NeoMark /></span>
         <h1 class="rp-title">Nouveau mot de passe</h1>
         <p class="rp-subtitle">Choisissez un mot de passe sécurisé d'au moins 8 caractères.</p>
       </div>
@@ -85,6 +85,7 @@ import { NeoButton, NeoPassword, NeoMessage } from '@neolibrary/components'
 import api from '@/lib/api'
 import axios from 'axios'
 import { applyAutofill } from '@/lib/autofillFix'
+import NeoMark from '@/components/common/NeoMark.vue'
 
 const route = useRoute()
 const token = route.query.token as string | undefined
@@ -141,7 +142,7 @@ async function handleSubmit(): Promise<void> {
 .rp-card {
   width: 100%;
   max-width: 420px;
-  background: #fff;
+  background: var(--nl-surface);
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.09);
   padding: 2.5rem 2rem;
@@ -153,17 +154,18 @@ async function handleSubmit(): Promise<void> {
 .rp-header { text-align: center; }
 
 .rp-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: #0d9488;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 700;
+  /* Dark "app-icon" tile so the yellow vector mark stays crisp on the light card. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   margin-bottom: 1rem;
+  padding: 10px;
+  box-sizing: border-box;
+  background: #0A0A0B;
+  color: var(--nl-accent);
 }
 
 .rp-title {
@@ -199,7 +201,7 @@ async function handleSubmit(): Promise<void> {
 
 .rp-success__icon {
   font-size: 2.5rem;
-  color: #0d9488;
+  color: var(--nl-accent);
 }
 
 .rp-success__text {
@@ -214,7 +216,7 @@ async function handleSubmit(): Promise<void> {
   justify-content: center;
   gap: 0.4rem;
   font-size: 0.875rem;
-  color: #0d9488;
+  color: var(--nl-accent);
   text-decoration: none;
   font-weight: 500;
 }
@@ -225,12 +227,12 @@ async function handleSubmit(): Promise<void> {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1.5rem;
-  background: #0d9488;
-  color: #fff;
+  background: var(--nl-accent);
+  color: var(--nl-on-accent);
   border-radius: 8px;
   font-weight: 600;
   text-decoration: none;
   font-size: 0.9rem;
 }
-.rp-btn:hover { background: #0f766e; }
+.rp-btn:hover { background: var(--nl-accent-hover); }
 </style>

@@ -73,7 +73,7 @@ const adminNav: NavSection[] = [
       { key: 'admin-users',      label: 'Utilisateurs',  icon: 'pi-users',      to: '/app/admin/users'      },
   ]},
   { heading: 'Rapports', items: [
-      { key: 'admin-journal',   label: 'Journal',        icon: 'pi-history',  to: '/app/admin/journal'   },
+      { key: 'admin-journal',   label: 'Audit sécurité', icon: 'pi-shield',   to: '/app/admin/journal'   },
   ]},
   { heading: 'Système', items: [
       { key: 'admin-system',    label: 'Statut système', icon: 'pi-server',   to: '/app/admin/system'    },
@@ -87,12 +87,7 @@ const pmNav: NavSection[] = [
       { key: 'pm-projects',     label: 'Mes projets',     icon: 'pi-briefcase', to: '/app/pm/projects' },
   ]},
   { heading: 'Travail', items: [
-      { key: 'pm-my-tasks',     label: 'Mes tâches',    icon: 'pi-list',     to: '/app/pm/my-tasks' },
-      { key: 'pm-team-planner', label: 'Planif. équipe', icon: 'pi-calendar', to: '/app/pm/team-planner' },
       { key: 'pm-templates',    label: 'Modèles',       icon: 'pi-copy',     to: '/app/pm/templates' },
-  ]},
-  { heading: 'Rapports', items: [
-      { key: 'pm-analytics', label: 'Analytiques', icon: 'pi-chart-bar', to: '/app/pm/analytics' },
   ]},
   { heading: 'Mon espace', items: [
       { key: 'profile',         label: 'Mon profil',    icon: 'pi-user',     to: '/app/profile' },
@@ -149,10 +144,6 @@ function buildProjectModuleNav(projectId: string): NavSection[] {
         { key: 'proj-board',        label: 'Board',          icon: 'pi-th-large',    to: `${base}/board` },
         { key: 'proj-gantt',        label: 'Gantt',          icon: 'pi-chart-bar',   to: `${base}/gantt` },
         { key: 'proj-workpackages', label: 'Work Packages',  icon: 'pi-list',        to: `${base}/workpackages` },
-    ]},
-    { heading: 'Suivi', items: [
-        { key: 'proj-time',         label: 'Temps',          icon: 'pi-clock',       to: `${base}/time` },
-        { key: 'proj-activity',     label: 'Activité',       icon: 'pi-history',     to: `${base}/activity` },
     ]},
     { heading: 'Mon espace', items: [{ key: 'profile', label: 'Mon profil', icon: 'pi-user', to: '/app/profile' }] },
   ]

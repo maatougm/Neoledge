@@ -30,7 +30,7 @@
               title="Définir la progression manuellement"
               @click="startEditProgress"
             >
-              <i class="pi pi-pencil" />
+              <i class="pi pi-pencil" /> Modifier
             </button>
           </span>
         </div>
@@ -73,68 +73,8 @@
 
       <!-- Grid -->
       <div class="po__grid">
-        <!-- Col 1 — my work + at-risk -->
+        <!-- Col 1 — work-package status breakdown -->
         <div class="po__col">
-          <div class="nl-card">
-            <div class="po__head">
-              <h2 class="po__head-title"><i class="pi pi-user" /> Mon travail ici</h2>
-              <RouterLink :to="`/app/pm/projects/${id}/workpackages?assignee=me`" class="po__head-link">Tout voir →</RouterLink>
-            </div>
-            <div v-if="myWps.length === 0" class="nl-empty">
-              <div class="nl-empty__icon"><i class="pi pi-check" /></div>
-              <p>Aucune tâche pour vous dans ce projet.</p>
-            </div>
-            <ul v-else class="po__wp-list">
-              <li
-                v-for="wp in (myWps || []).slice(0, 5)"
-                :key="wp.id"
-                class="po__wp nl-row"
-                @click="openWp(wp.id)"
-              >
-                <span class="nl-prio-dot" :class="`nl-prio-dot--${prioClass(wp.priority)}`" />
-                <div class="po__wp-body">
-                  <div class="po__wp-title">{{ wp.title }}</div>
-                  <div class="po__wp-meta">
-                    <StatusChip :status="wp.status" />
-                    <span v-if="wp.dueDate" :class="{ 'po__wp-due--overdue': isOverdue(wp.dueDate) }">
-                      {{ formatDueDate(wp.dueDate) }}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <div class="nl-card">
-            <div class="po__head">
-              <h2 class="po__head-title"><i class="pi pi-exclamation-triangle" /> À risque</h2>
-            </div>
-            <div v-if="atRiskWps.length === 0" class="nl-empty">
-              <div class="nl-empty__icon"><i class="pi pi-check" /></div>
-              <p>Rien à signaler. 👌</p>
-            </div>
-            <ul v-else class="po__wp-list">
-              <li
-                v-for="wp in (atRiskWps || []).slice(0, 5)"
-                :key="wp.id"
-                class="po__wp nl-row"
-                @click="openWp(wp.id)"
-              >
-                <span class="nl-prio-dot" :class="`nl-prio-dot--${prioClass(wp.priority)}`" />
-                <div class="po__wp-body">
-                  <div class="po__wp-title">{{ wp.title }}</div>
-                  <div class="po__wp-meta">
-                    <StatusChip :status="wp.status" />
-                    <span v-if="wp.assignee">{{ wp.assignee.firstName }} {{ wp.assignee.lastName }}</span>
-                    <span v-if="wp.dueDate" class="po__wp-due--overdue">
-                      {{ formatDueDate(wp.dueDate) }}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </div>
-
           <div v-if="statusByCount.length > 0" class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-chart-pie" /> Répartition par statut</h2>
@@ -180,7 +120,6 @@
           <div class="nl-card">
             <div class="po__head">
               <h2 class="po__head-title"><i class="pi pi-history" /> Activité récente</h2>
-              <RouterLink :to="`/app/pm/projects/${id}/activity`" class="po__head-link">Tout voir →</RouterLink>
             </div>
             <div v-if="activity.length === 0" class="nl-empty">
               <p>Aucune activité récente.</p>
@@ -199,8 +138,6 @@
               </li>
             </ul>
           </div>
-
-          <ProjectResponsibilitiesCard v-if="canManage" :project-id="id" />
 
           <div v-if="presenceList.length > 0" class="nl-card">
             <div class="po__head">
@@ -234,7 +171,6 @@ import { NeoButton } from '@neolibrary/components'
 import ProjectModuleShell from '@/components/common/ProjectModuleShell.vue'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
-import ProjectResponsibilitiesCard from '@/components/pm/ProjectResponsibilitiesCard.vue'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollaborationSocket } from '@/composables/useCollaborationSocket'
@@ -282,19 +218,6 @@ const wpOverdue     = computed<number>(() => wps.value.filter((w) =>
   w.dueDate && new Date(w.dueDate).getTime() < Date.now() && !isTerminal(w.status),
 ).length)
 
-const myWps = computed<WorkPackage[]>(() =>
-  (Array.isArray(wps.value) ? wps.value : []).filter((w) => w.assigneeId === authStore.userId && !isTerminal(w.status)),
-)
-
-const atRiskWps = computed<WorkPackage[]>(() =>
-  (Array.isArray(wps.value) ? wps.value : []).filter((w) => {
-    const isOpen = !isTerminal(w.status)
-    const overdue = w.dueDate && new Date(w.dueDate).getTime() < Date.now()
-    const urgent  = w.priority === 'Urgent' || w.priority === 'Critical'
-    return isOpen && (overdue || urgent)
-  }),
-)
-
 const statusByCount = computed(() => {
   const counts: Record<string, number> = {}
   const list = Array.isArray(wps.value) ? wps.value : []
@@ -329,7 +252,6 @@ const daysToEndLabel = computed<string>(() => {
 const activeSprintName = computed<string>(() => activeSprint.value?.name ?? '')
 
 function go(module: string): void { void router.push(`/app/pm/projects/${props.id}/${module}`) }
-function openWp(wpId: string): void { void router.push(`/app/pm/projects/${props.id}/workpackages?wpId=${wpId}`) }
 
 // ── Manual progress override (PM/Admin) ──────────────────────────────────────
 const editingProgress = ref<boolean>(false)
@@ -357,24 +279,6 @@ async function saveProgress(value: number | null): Promise<void> {
   } finally {
     savingProgress.value = false
   }
-}
-
-function prioClass(p: string): 'urgent' | 'high' | 'normal' | 'low' {
-  const v = (p || '').toLowerCase()
-  if (v === 'urgent' || v === 'critical') return 'urgent'
-  if (v === 'high') return 'high'
-  if (v === 'low') return 'low'
-  return 'normal'
-}
-function isOverdue(d: string | null): boolean { return !!d && new Date(d).getTime() < Date.now() }
-function formatDueDate(d: string): string {
-  const diff = Math.round((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  if (diff === 0) return "Aujourd'hui"
-  if (diff === 1) return 'Demain'
-  if (diff === -1) return 'Hier'
-  if (diff < 0) return `Il y a ${Math.abs(diff)}j`
-  if (diff <= 7) return `Dans ${diff}j`
-  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 function activityIcon(action: string): string {
@@ -462,8 +366,14 @@ onUnmounted(() => {
 .po__progress-value { font-size: var(--nl-fs-2xl); font-weight: 700; color: var(--nl-text-1); line-height: 1; }
 .po__progress-mode { font-size: 0.7rem; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--nl-text-3); margin-left: 0.4rem; }
 .po__progress-controls { display: inline-flex; align-items: center; gap: 0.5rem; }
-.po__progress-edit { border: none; background: transparent; cursor: pointer; color: var(--nl-text-3); padding: 0.25rem; border-radius: 4px; }
-.po__progress-edit:hover { background: var(--nl-surface-2, #f3f4f6); color: var(--nl-accent, #1e9e8f); }
+.po__progress-edit {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  border: 1px solid var(--nl-border); background: var(--nl-surface);
+  cursor: pointer; color: var(--nl-text-2);
+  padding: 0.25rem 0.65rem; border-radius: var(--nl-radius-pill);
+  font-size: var(--nl-fs-sm); font-weight: 500;
+}
+.po__progress-edit:hover { background: var(--nl-accent-light); color: var(--nl-accent); border-color: var(--nl-accent); }
 .po__progress-editor { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .po__progress-range { flex: 1; min-width: 120px; accent-color: var(--nl-accent, #1e9e8f); }
 .po__progress-num { width: 64px; padding: 0.3rem 0.4rem; border: 1px solid var(--nl-border, #e5e7eb); border-radius: 6px; }

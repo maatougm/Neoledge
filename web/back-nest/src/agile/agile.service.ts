@@ -4,6 +4,7 @@ import { Result } from '../common/result.js';
 import { CollaborationGateway } from '../collaboration/collaboration.gateway.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import type { CloseSprintDto, SprintWpDisposition } from './dto/close-sprint.dto.js';
+import { TERMINAL_WP_STATUSES, MEMBER_SUBMITTABLE_STATUSES } from '../work-packages/wp-status.constants.js';
 
 // Statuses that count a WP as "finished" for the sprint-close review.
 const FINISHED_STATUSES = new Set(['Done', 'Closed', 'Resolved']);
@@ -248,7 +249,14 @@ export class AgileService {
     }
   }
 
-  async moveCard(projectId: string, workPackageId: string, boardColumnId: string | null, position: number) {
+  async moveCard(
+    projectId: string,
+    workPackageId: string,
+    boardColumnId: string | null,
+    position: number,
+    actorId?: string,
+    actorRole?: string,
+  ) {
     try {
       // Verify the WP belongs to the URL's project — prevents cross-project moves
       // when a malicious client posts another project's wpId to this endpoint.
@@ -271,7 +279,33 @@ export class AgileService {
       }
 
       const data: Record<string, unknown> = { boardColumnId, position };
-      if (col?.mapStatus) data.status = col.mapStatus;
+      if (col?.mapStatus) {
+        const target = col.mapStatus;
+        // A board move sets WP status from the target column — apply the SAME
+        // validation authority as the WorkPackagesService.update() guard, else a
+        // Member could drag their card to the "Resolved" column and self-approve.
+        // (actorRole undefined = trusted internal caller → skip.)
+        if (actorRole === 'Member' && !(MEMBER_SUBMITTABLE_STATUSES as readonly string[]).includes(target)) {
+          return Result.fail(
+            "En tant que membre, vous ne pouvez pas valider ou clôturer une tâche. Seul le chef de projet peut la clôturer.",
+          );
+        }
+        if (
+          actorRole &&
+          actorRole !== 'Member' &&
+          actorRole !== 'Admin' &&
+          (TERMINAL_WP_STATUSES as readonly string[]).includes(target)
+        ) {
+          const proj = await this.prisma.project.findFirst({
+            where: { id: projectId, isDeleted: false },
+            select: { projectManagerId: true },
+          });
+          if (proj?.projectManagerId !== actorId) {
+            return Result.fail('Seul le chef de projet de ce projet peut valider ou clôturer une tâche.');
+          }
+        }
+        data.status = target;
+      }
       const wp = await this.prisma.workPackage.update({ where: { id: workPackageId }, data });
       // Broadcast to other connected clients so their board updates live.
       this.collab.broadcastCardMoved(wp.projectId, {

@@ -7,13 +7,17 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { TotpService } from './totp.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MailService } from '../mail/mail.service.js';
-import { forgotPasswordEmail } from '../mail/mail.templates.js';
+import { forgotPasswordEmail, magicLoginEmail } from '../mail/mail.templates.js';
 import { getJwtSecret } from './jwt-secret.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 15;
 const TEMP_TOKEN_EXPIRES_IN = '5m';
 const BCRYPT_ROUNDS = 12;
+// Magic-link sign-in: short single-use token + a per-email resend cooldown so a
+// single address can't be email-bombed by repeated requests.
+const MAGIC_LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const MAGIC_LINK_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 
 // Precomputed bcrypt hash of a value no real user will ever supply. We run
 // `bcrypt.compare` against it when the email is unknown so the login endpoint
@@ -30,6 +34,12 @@ type LoginResult =
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // Per-email magic-link resend cooldown. In-process (single-instance) — same
+  // constraint as the collaboration presence map; revisit if the app is ever
+  // scaled to multiple instances. Only real (active, non-deleted) recipients
+  // get an entry, so the map is bounded by the active-user count.
+  private readonly magicLinkCooldown = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -44,7 +54,9 @@ export class AuthService {
       where: { email },
     });
 
-    if (dbUser) {
+    // A soft-deleted account is treated as non-existent — same 401 + timing path
+    // as an unknown email (no enumeration).
+    if (dbUser && !dbUser.isDeleted) {
       return this.authenticateDbUser(dbUser, password);
     }
 
@@ -292,7 +304,8 @@ export class AuthService {
     const user = await this.prisma.appUser.findUnique({ where: { email } });
 
     // Always return success to avoid leaking whether the email exists.
-    if (!user || !user.isActive) return;
+    // Soft-deleted (or inactive) accounts get no reset link.
+    if (!user || !user.isActive || user.isDeleted) return;
 
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -319,6 +332,7 @@ export class AuthService {
         passwordResetToken: tokenHash,
         passwordResetTokenExpiry: { gt: new Date() },
         isActive: true,
+        isDeleted: false,
       },
     });
 
@@ -338,6 +352,137 @@ export class AuthService {
         tokenVersion: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * Request a passwordless "magic link" sign-in. Mirrors forgotPassword():
+   * always resolves the same way regardless of whether the email exists
+   * (no enumeration), and only active, non-soft-deleted accounts receive a
+   * link. The emailed link points the SPA at `/magic-login?token=<raw>`; the
+   * SPA then POSTs the token to `loginWithMagicToken` (a POST verify, NOT a
+   * GET, so email-scanner prefetch can't silently consume a single-use token).
+   */
+  async requestMagicLink(email: string): Promise<void> {
+    const user = await this.prisma.appUser.findUnique({ where: { email } });
+
+    // Unknown / inactive / soft-deleted → silently no-op (no enumeration, and
+    // no cooldown entry, which keeps the map bounded to real recipients).
+    // Note: like forgotPassword(), the happy path does one extra DB write that a
+    // careful attacker could time to distinguish "fresh real account" from
+    // "unknown / cooled-down". This residual timing channel is accepted here for
+    // parity with the existing reset flow; the response body/status is identical.
+    if (!user || !user.isActive || user.isDeleted) return;
+
+    // Per-email resend throttle: if a link was issued in the last 60s, don't
+    // issue another (prevents bombing a real inbox). Same 200 response either
+    // way, so this leaks nothing.
+    const now = Date.now();
+    const lastSent = this.magicLinkCooldown.get(user.email);
+    if (lastSent && now - lastSent < MAGIC_LINK_RESEND_COOLDOWN_MS) return;
+    this.magicLinkCooldown.set(user.email, now);
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiry = new Date(now + MAGIC_LINK_TTL_MS);
+
+    await this.prisma.appUser.update({
+      where: { id: user.id },
+      data: { magicLinkToken: tokenHash, magicLinkTokenExpiry: expiry },
+    });
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:5173';
+    const magicUrl = `${frontendUrl}/magic-login?token=${rawToken}`;
+
+    void this.mail
+      .send(user.email, 'Votre lien de connexion NeoLeadge', magicLoginEmail(user.firstName, magicUrl))
+      .catch((e) => this.logger.error('magic-link email failed', e));
+  }
+
+  /**
+   * Consume a magic-link token and issue a session JWT — or, when the account
+   * has 2FA enabled, a short-lived TOTP challenge (so a magic link can never
+   * bypass the user's second factor). The token is single-use: it is cleared
+   * the moment it is found, regardless of the TOTP outcome.
+   */
+  async loginWithMagicToken(rawToken: string): Promise<LoginResult> {
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await this.prisma.appUser.findFirst({
+      where: {
+        magicLinkToken: tokenHash,
+        magicLinkTokenExpiry: { gt: new Date() },
+        isActive: true,
+        isDeleted: false,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(this.authFailureMessage('Lien de connexion invalide ou expiré.'));
+    }
+
+    // A magic link must NOT bypass the failed-login lockout window — the
+    // password (authenticateDbUser) and TOTP (loginWithTotp) paths both enforce
+    // it. Reject WITHOUT consuming the token so the legitimate owner can still
+    // use the link once the lock expires.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      throw new UnauthorizedException(this.authFailureMessage('Account is locked. Please try again later.'));
+    }
+
+    // Atomic single-use consume: flip magicLinkToken set→null in one conditional
+    // write. Only the request that actually clears it (count === 1) proceeds, so
+    // two concurrent uses of the same link can't both mint a session (closes the
+    // read-then-write TOCTOU double-spend window).
+    const consumed = await this.prisma.appUser.updateMany({
+      where: { id: user.id, magicLinkToken: tokenHash },
+      data: { magicLinkToken: null, magicLinkTokenExpiry: null },
+    });
+    if (consumed.count === 0) {
+      throw new UnauthorizedException(this.authFailureMessage('Lien de connexion invalide ou expiré.'));
+    }
+    // Let the user request a fresh link immediately if they need to.
+    this.magicLinkCooldown.delete(user.email);
+
+    // 2FA-enabled accounts still complete the TOTP challenge — the magic link
+    // replaces the password factor only, never the second factor.
+    if (user.totpEnabled) {
+      const tempToken = this.jwtService.sign(
+        { sub: user.id, totpPending: true, aud: 'totp' },
+        {
+          secret: getJwtSecret(this.configService),
+          expiresIn: TEMP_TOKEN_EXPIRES_IN,
+        },
+      );
+
+      void this.audit.log('AppUser', user.id, 'LOGIN', user.id, undefined, {
+        stage: 'magic-link-totp-pending',
+      }).catch((e) => this.logger.error('audit magic-link totp-pending failed', e));
+
+      return { requiresTotp: true, tempToken };
+    }
+
+    // Token already consumed above; just record the successful login.
+    await this.prisma.appUser.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    const jwt = await this.generateTokenForUser({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
+
+    void this.audit.log('AppUser', user.id, 'LOGIN', user.id, undefined, {
+      stage: 'magic-link',
+    }).catch((e) => this.logger.error('audit magic-link login failed', e));
+
+    return { jwt };
   }
 
   private async authenticateDbUser(

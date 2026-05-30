@@ -1,4 +1,4 @@
-<!-- @file src/views/TeamPlannerView.vue — Team capacity + assignments + conflicts -->
+<!-- @file src/views/TeamPlannerView.vue — Team capacity + assignments -->
 <template>
   <div class="tp-view">
     <ModulePageHeader title="Planification d'équipe">
@@ -65,23 +65,6 @@
         </div>
         <div v-if="!store.assignments.length" class="tp-empty">Aucune assignation sur la période.</div>
       </div>
-
-      <!-- Conflicts -->
-      <div v-if="activeTab === 'Conflits'">
-        <table v-if="store.conflicts.length" class="tp-table">
-          <thead>
-            <tr><th>Utilisateur</th><th>WP A</th><th>WP B</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="(c, i) in store.conflicts" :key="i">
-              <td>{{ userNameFor(c.userId) }}</td>
-              <td>{{ c.wp1.title }} ({{ formatDate(c.wp1.startDate || '') }} — {{ formatDate(c.wp1.dueDate || '') }})</td>
-              <td>{{ c.wp2.title }} ({{ formatDate(c.wp2.startDate || '') }} — {{ formatDate(c.wp2.dueDate || '') }})</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="tp-empty">Aucun conflit détecté.</div>
-      </div>
     </div>
   </div>
 </template>
@@ -96,7 +79,7 @@ import { formatDateShort } from '@/lib/formatDate'
 const store = useTeamPlannerStore()
 const toast = useNeoToast()
 
-const tabs = ['Capacité', 'Assignations', 'Conflits'] as const
+const tabs = ['Capacité', 'Assignations'] as const
 const activeTab = ref<(typeof tabs)[number]>('Capacité')
 
 const today = new Date()
@@ -116,17 +99,6 @@ function fillClass(pct: number): string {
   return 'tp-heatmap__fill--normal'
 }
 
-// Map a userId to a human-readable name using the data we already loaded for
-// the assignments tab — falls back to a UUID prefix only if we have nothing.
-function userNameFor(userId: string): string {
-  const u = store.assignments.find((a) => a.user.id === userId)?.user
-  if (u) return `${u.firstName} ${u.lastName}`
-  // Try the heatmap rows too
-  const cap = store.capacity.find((c) => c.user.id === userId)?.user
-  if (cap) return `${cap.firstName} ${cap.lastName}`
-  return `${userId.slice(0, 8)}…`
-}
-
 async function load() {
   if (!fromDate.value || !toDate.value) return
   if (fromDate.value > toDate.value) {
@@ -136,7 +108,6 @@ async function load() {
   await Promise.all([
     store.fetchCapacity(fromDate.value, toDate.value),
     store.fetchAssignments(fromDate.value, toDate.value),
-    store.fetchConflicts(fromDate.value, toDate.value),
   ])
 }
 

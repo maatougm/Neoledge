@@ -851,7 +851,7 @@ onUnmounted(() => {
 .lm__mode-card h3 { font-size: 1rem; margin: 8px 0 6px; font-weight: 600; }
 .lm__mode-card p { font-size: 0.875rem; color: var(--nl-text-2); margin: 0; }
 .lm__mode-icon { font-size: 1.75rem; color: var(--nl-accent); }
-.lm__mode-warn { color: #b45309; font-size: 0.8125rem; margin-top: 8px !important; }
+.lm__mode-warn { color: var(--nl-warning); font-size: 0.8125rem; margin-top: 8px !important; }
 
 /* ── Active session ───────────────────────────────────────────────────────── */
 .lm__header {
@@ -862,19 +862,19 @@ onUnmounted(() => {
 
 .lm__rec-badge {
   display: inline-flex; align-items: center; gap: 6px;
-  background: #fee2e2; color: #991b1b;
+  background: var(--nl-danger-light); color: var(--nl-danger);
   padding: 2px 10px; border-radius: 999px;
   font-size: 0.8125rem; font-weight: 600;
 }
 .lm__rec-badge--paused {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--nl-warning-light);
+  color: var(--nl-warning);
 }
 .lm__rec-badge--paused i {
   font-size: 0.75rem;
 }
 .lm__rec-dot {
-  width: 8px; height: 8px; background: #dc2626; border-radius: 50%;
+  width: 8px; height: 8px; background: var(--nl-danger); border-radius: 50%;
   animation: lm-pulse 1.2s infinite;
 }
 @keyframes lm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }

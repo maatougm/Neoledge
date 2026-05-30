@@ -31,6 +31,7 @@ export class TemplatesService {
       fields: t.fields.map((f) => ({
         id: f.id, label: f.label, type: f.type, category: f.category,
         isRequired: f.isRequired, displayOrder: f.displayOrder, options: f.options,
+        isBacklogDriver: f.isBacklogDriver, backlogHint: f.backlogHint,
       })),
     });
   }
@@ -49,6 +50,8 @@ export class TemplatesService {
             isRequired: f.isRequired ?? false,
             displayOrder: f.displayOrder ?? i,
             options: f.options ?? null,
+            isBacklogDriver: f.isBacklogDriver ?? false,
+            backlogHint: f.backlogHint ?? null,
           })),
         },
       },
@@ -89,6 +92,8 @@ export class TemplatesService {
             isRequired: f.isRequired,
             displayOrder: i,
             options: f.options,
+            isBacklogDriver: f.isBacklogDriver,
+            backlogHint: f.backlogHint,
           })),
         },
       },
@@ -130,6 +135,8 @@ export class TemplatesService {
           isRequired: tf.isRequired,
           orderIndex: tf.displayOrder,
           options: tf.options,
+          isBacklogDriver: tf.isBacklogDriver,
+          backlogHint: tf.backlogHint,
         },
       });
       await this.prisma.projectFieldValue.create({

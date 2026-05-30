@@ -3,7 +3,18 @@
      phase, projects I lead, my tasks for today, upcoming milestones, and
      the notification preview. -->
 <template>
-  <div class="pmd">
+  <div class="pmd-shell">
+    <nav class="pmd-tabs" role="tablist">
+      <button type="button" role="tab" class="pmd-tab" :class="{ 'pmd-tab--active': tab === 'overview' }" :aria-selected="tab === 'overview'" @click="setTab('overview')">
+        <i class="pi pi-th-large" /> Vue d'ensemble
+      </button>
+      <button type="button" role="tab" class="pmd-tab" :class="{ 'pmd-tab--active': tab === 'planning' }" :aria-selected="tab === 'planning'" @click="setTab('planning')">
+        <i class="pi pi-calendar" /> Planification d'équipe
+      </button>
+    </nav>
+
+    <div class="pmd-body">
+      <div v-show="tab === 'overview'" class="pmd">
     <header class="pmd__head">
       <p class="pmd__eyebrow">Espace chef de projet</p>
       <h1 class="pmd__title">Bonjour {{ firstName }}.</h1>
@@ -15,7 +26,6 @@
       <StatCard icon="pi-briefcase"        label="Projets actifs"                :value="stats.active"             tone="normal" />
       <StatCard icon="pi-clock"             label="Cahiers en cours de validation" :value="stats.awaitingSpec"      tone="warning" />
       <StatCard icon="pi-check-circle"      label="Cahiers validés"               :value="stats.cahierValidated"   tone="normal" />
-      <StatCard icon="pi-list"              label="Mes tâches ouvertes"           :value="stats.openTasks"          tone="normal" />
     </section>
 
     <NeoMessage v-if="error" severity="error" :text="error" class="mb-3" />
@@ -149,18 +159,23 @@
         </section>
       </div>
     </div>
+      </div>
+
+      <TeamPlannerView v-if="tab === 'planning'" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { NeoMessage, NeoTag } from '@neolibrary/components'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useNotificationStore } from '@/stores/notificationStore'
 import StatCard from '@/components/common/StatCard.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import TeamPlannerView from '@/views/TeamPlannerView.vue'
 import type { Notification } from '@/types/notification.types'
 
 interface Project {
@@ -188,7 +203,18 @@ interface Milestone {
 }
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
+
+// Two-tab dashboard: portfolio overview + team planning (merged in from the old
+// standalone Planif. équipe page). The active tab is mirrored in the URL so it's
+// deep-linkable / refresh-safe.
+type DashTab = 'overview' | 'planning'
+const tab = ref<DashTab>(route.query.tab === 'planning' ? 'planning' : 'overview')
+function setTab(t: DashTab): void {
+  tab.value = t
+  void router.replace({ query: { ...route.query, tab: t } })
+}
 const notifStore = useNotificationStore()
 
 const firstName = computed<string>(() => authStore.userFullName.split(' ')[0] || 'Vous')
@@ -367,6 +393,23 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Tabbed shell: overview + team planning under one nav item. */
+.pmd-shell { display: flex; flex-direction: column; height: 100%; }
+.pmd-tabs {
+  flex-shrink: 0; display: flex; gap: 0.25rem;
+  border-bottom: 1px solid var(--nl-border);
+}
+.pmd-tab {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: transparent; border: none;
+  padding: 0.75rem 1rem; font-size: 0.9rem; font-weight: 600;
+  color: var(--nl-text-2, #6b7280); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.pmd-tab:hover { color: var(--nl-text-1, #111827); }
+.pmd-tab--active { color: var(--nl-accent); border-bottom-color: var(--nl-accent); }
+.pmd-body { flex: 1; min-height: 0; overflow-y: auto; }
+
 .pmd { padding: 1.75rem; max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
 
 .pmd__head { margin-bottom: 0.25rem; }
@@ -378,7 +421,7 @@ onMounted(async () => {
 .pmd__subtitle { margin: 0; color: var(--nl-text-2); font-size: 0.9375rem; }
 
 .pmd__stats {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
 }
 @media (max-width: 900px) { .pmd__stats { grid-template-columns: repeat(2, 1fr); } }

@@ -225,6 +225,33 @@ describe('WorkPackagesService', () => {
       expect(r.isFailure).toBe(true);
       expect(r.error).toMatch(/création/i);
     });
+
+    // ── assignee validation (assertAssignable) ──
+    // The same rule bulkAssign enforces: assignee must be an active,
+    // non-soft-deleted Member. Without this a deactivated/deleted/non-Member
+    // user could be assigned directly and leave a dangling assigneeId.
+
+    it('rejects a create whose assignee is soft-deleted', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true, isDeleted: true });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-gone' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toMatch(/assignable/i);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a create whose assignee is inactive', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: false, isDeleted: false });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-inactive' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a create whose assignee is not a Member (PM / SpecificationTeam)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'SpecificationTeam', isActive: true, isDeleted: false });
+      const r = await svc.create('p1', { title: 'Task', assigneeId: 'u-spec' }, 'u-author');
+      expect(r.isFailure).toBe(true);
+      expect(prisma.workPackage.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update() ──────────────────────────────────────────────────────────────
@@ -263,6 +290,39 @@ describe('WorkPackagesService', () => {
       const r = await svc.update(existingId, 'p1', { priority: 'Critical' }, 'u-mem', 'Member');
       expect(r.isFailure).toBe(true);
       expect(r.error).toContain('Champs non autorisés');
+    });
+
+    it('Member CANNOT self-validate (Resolved) or close (Closed) their own task', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      const r1 = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'u-mem', 'Member');
+      expect(r1.isFailure).toBe(true);
+      expect(r1.error).toContain('valider');
+      const r2 = await svc.update(existingId, 'p1', { status: 'Closed' }, 'u-mem', 'Member');
+      expect(r2.isFailure).toBe(true);
+    });
+
+    it('Member CAN submit their own task for review (→ AwaitingReview)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      const r = await svc.update(existingId, 'p1', { status: 'AwaitingReview' }, 'u-mem', 'Member');
+      expect(r.isSuccess).toBe(true);
+    });
+
+    it('a ProjectManager who is NOT this project\'s PM cannot validate a submitted task', async () => {
+      // Mock project's PM is 'pm-1' (see prisma.project.findFirst default).
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      const r = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-OTHER', 'ProjectManager');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toContain('chef de projet');
+    });
+
+    it("this project's PM CAN validate a submitted task", async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      const r = await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-1', 'ProjectManager');
+      expect(r.isSuccess).toBe(true);
     });
 
     it('rejects self-parent cycle', async () => {
@@ -304,6 +364,28 @@ describe('WorkPackagesService', () => {
       );
     });
 
+    it('rejects a reassignment to a soft-deleted user (assertAssignable)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: true, isDeleted: true });
+      const r = await svc.update(existingId, 'p1', { assigneeId: 'u-gone' }, 'pm-1');
+      expect(r.isFailure).toBe(true);
+      expect(r.error).toMatch(/assignable/i);
+    });
+
+    it('rejects a reassignment to a non-Member user (assertAssignable)', async () => {
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'ProjectManager', isActive: true, isDeleted: false });
+      const r = await svc.update(existingId, 'p1', { assigneeId: 'u-pm' }, 'pm-1');
+      expect(r.isFailure).toBe(true);
+    });
+
+    it('allows unassigning (assigneeId:null) without an assignability check', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-old';
+      // Make any assignability lookup fail — it must NOT be consulted for unassign.
+      prisma.appUser.findUnique.mockResolvedValueOnce({ role: 'Member', isActive: false, isDeleted: true });
+      const r = await svc.update(existingId, 'p1', { assigneeId: null }, 'pm-1');
+      expect(r.isSuccess).toBe(true);
+    });
+
     it('fires status-change watcher blast + invalidates cache on status change', async () => {
       const r = await svc.update(existingId, 'p1', { status: 'InProgress' }, 'pm-1');
       expect(r.isSuccess).toBe(true);
@@ -338,6 +420,28 @@ describe('WorkPackagesService', () => {
         (c: unknown[]) => (c[0] as { type: string }).type === 'work_package_awaiting_review',
       );
       expect(awaiting).toHaveLength(0);
+    });
+
+    it('notifies the assignee when the PM validates a submitted task (AwaitingReview → Resolved)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      await svc.update(existingId, 'p1', { status: 'Resolved' }, 'pm-1');
+      await new Promise((res) => setImmediate(res));
+      expect(notifications.notifyEnhanced).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-mem', type: 'work_package_validated' }),
+      );
+    });
+
+    it('notifies the assignee when the PM rejects a submitted task (AwaitingReview → InProgress)', async () => {
+      const idx = prisma._store.wp.findIndex((w: Record<string, unknown>) => w.id === existingId);
+      (prisma._store.wp[idx] as Record<string, unknown>).assigneeId = 'u-mem';
+      (prisma._store.wp[idx] as Record<string, unknown>).status = 'AwaitingReview';
+      await svc.update(existingId, 'p1', { status: 'InProgress' }, 'pm-1');
+      await new Promise((res) => setImmediate(res));
+      expect(notifications.notifyEnhanced).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-mem', type: 'work_package_rejected' }),
+      );
     });
 
     it('returns Result.fail on prisma.update rejection', async () => {
@@ -774,8 +878,9 @@ describe('WorkPackagesService', () => {
         ],
         'pm-1',
       );
-      // 2 buckets → 2 updateMany calls
-      expect(prisma.workPackage.updateMany).toHaveBeenCalledTimes(2);
+      // 2 buckets → 2 assign updateMany calls; the non-null (u-mem) bucket also
+      // runs a 'New' → InProgress auto-advance updateMany → 3 total.
+      expect(prisma.workPackage.updateMany).toHaveBeenCalledTimes(3);
     });
 
     it('un-assignments do NOT fire a notification', async () => {

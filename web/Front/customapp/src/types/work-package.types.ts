@@ -37,6 +37,9 @@ export interface WorkPackage {
   updatedAt: string
   assignee?: UserSummary | null
   author?: UserSummary
+  // Populated by the detail endpoint (findOne) so the UI can gate PM-only actions
+  // (validate / reject a submitted task) to THIS project's manager.
+  project?: { id: string; name?: string | null; projectManagerId?: string | null }
   parent?: { id: string; title: string } | null
   children?: WorkPackage[]
   watchers?: { userId: string; user: UserSummary }[]

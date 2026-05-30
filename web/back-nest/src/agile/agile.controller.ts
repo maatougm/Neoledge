@@ -95,8 +95,16 @@ export class AgileController {
     @Param('projectId') projectId: string,
     @Param('wpId') wpId: string,
     @Body() body: MoveCardDto,
+    @CurrentUser() user: { userId: string; role?: string },
   ) {
-    const r = await this.service.moveCard(projectId, wpId, body.columnId ?? null, body.position ?? 0);
+    const r = await this.service.moveCard(
+      projectId,
+      wpId,
+      body.columnId ?? null,
+      body.position ?? 0,
+      user.userId,
+      user.role,
+    );
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

@@ -162,13 +162,17 @@ export class NotificationsService {
     entityId?: string | null;
     actorId?: string | null;
     link?: string | null;
+    /** Skip the project-membership scope check. Only for callers that have
+     *  already validated the target audience (e.g. broadcasting a cahier to
+     *  all active SpecificationTeam users, who are not project members). */
+    skipScopeCheck?: boolean;
   }): Promise<void> {
     // Skip self-notifications.
     if (params.actorId && params.actorId === params.userId) return;
 
     // Scope check: when a projectId is provided, verify the target user is
     // a member (PM, Admin, or in ProjectMember). Fail-closed on errors.
-    if (params.projectId) {
+    if (params.projectId && !params.skipScopeCheck) {
       const allowed = await this.assertProjectMember(params.userId, params.projectId);
       if (!allowed) {
         this.logger.warn(`notifyEnhanced: user ${params.userId} not a member of project ${params.projectId} — skipping`);

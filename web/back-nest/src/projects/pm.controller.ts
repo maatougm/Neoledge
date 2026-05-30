@@ -94,10 +94,13 @@ export class PmController {
   /**
    * Active users list — used by PM views like Members, assignee dropdowns, etc.
    *
-   * `?forMembers=true` filters out inactive users + Admin / Viewer roles
-   * (system roles that should never be added as project members) so the
-   * Members page doesn't leak that list to the UI. Default behaviour
-   * (no flag) stays unchanged for legacy callers.
+   * `?forMembers=true` filters out inactive users + Admin / Viewer /
+   * ProjectManager roles (system roles that should never be added as project
+   * members — the project already has its own PM, and PMs aren't part of the
+   * execution or validation team) so the Members page doesn't leak that list
+   * to the UI. SpecificationTeam users ARE kept: adding one enrols them as a
+   * cahier validator for the project (see notifyReviewTeams). Default
+   * behaviour (no flag) stays unchanged for legacy callers.
    */
   @Get('users')
   async getUsers(@CurrentUser() user: JwtUser, @Query('forMembers') forMembers?: string) {
@@ -113,7 +116,11 @@ export class PmController {
     const items = (result.value as unknown as { items: any[] }).items;
     if (forMembers !== 'true') return items;
     return items.filter(
-      (u) => u.isActive !== false && u.role !== 'Admin' && u.role !== 'Viewer',
+      (u) =>
+        u.isActive !== false &&
+        u.role !== 'Admin' &&
+        u.role !== 'Viewer' &&
+        u.role !== 'ProjectManager',
     );
   }
 
@@ -280,7 +287,7 @@ export class PmController {
     if (!project) return [];
 
     const users = await this.prisma.appUser.findMany({
-      where: { isActive: true, role: 'Member' },
+      where: { isActive: true, isDeleted: false, role: 'Member' },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: [{ firstName: 'asc' }],
     });

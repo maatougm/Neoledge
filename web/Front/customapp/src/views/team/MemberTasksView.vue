@@ -118,10 +118,19 @@
         </div>
         <StatusTransitionMenu
           :current-status="task.status"
+          :allowed-statuses="MEMBER_SUBMITTABLE_STATUSES"
           @select="(s: string) => onTransition(task.id, s)"
         />
       </li>
     </ul>
+
+    <WpSubmitModal
+      v-if="submitTaskId && submitProjectId"
+      v-model:visible="showSubmit"
+      :project-id="submitProjectId"
+      :work-package-id="submitTaskId"
+      @submitted="onSubmitted"
+    />
   </div>
 </template>
 
@@ -132,6 +141,8 @@ import { NeoSelect, NeoInputText, NeoButton, NeoMessage, useNeoToast } from '@ne
 import { useMemberTasksStore } from '@/stores/memberTasksStore'
 import { useMemberDashboardStore } from '@/stores/memberDashboardStore'
 import StatusTransitionMenu from '@/components/team/StatusTransitionMenu.vue'
+import WpSubmitModal from '@/components/workpackages/WpSubmitModal.vue'
+import { MEMBER_SUBMITTABLE_STATUSES } from '@/lib/wpStatus'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,6 +161,11 @@ const busy = ref(false)
 const projectFilter = ref<string | null>(null)
 const sprintFilter = ref<string | null>(null)
 const qFilter = ref<string>('')
+
+// Submit-for-validation modal (optional comment + file → AwaitingReview).
+const showSubmit = ref(false)
+const submitTaskId = ref<string | null>(null)
+const submitProjectId = ref<string | null>(null)
 
 function readFromQuery(): void {
   const tab = (route.query.tab as string | undefined) ?? 'todo'
@@ -203,8 +219,25 @@ function onSearchEnter(): void {
 }
 
 async function onTransition(id: string, newStatus: string): Promise<void> {
+  // "En revue" = submit for the PM to validate → open the modal so the member
+  // can attach an optional note + file. Other transitions apply directly.
+  if (newStatus === 'AwaitingReview') {
+    const task = store.items.find((t) => t.id === id)
+    if (task) {
+      submitTaskId.value = task.id
+      submitProjectId.value = task.project.id
+      showSubmit.value = true
+    }
+    return
+  }
   const ok = await store.transitionOne(id, newStatus)
-  if (!ok) toast.add({ severity: 'error', detail: 'Mise à jour échouée.', life: 3000 })
+  if (!ok) toast.add({ severity: 'error', detail: store.error ?? 'Mise à jour échouée.', life: 4000 })
+}
+
+function onSubmitted(): void {
+  submitTaskId.value = null
+  submitProjectId.value = null
+  void store.fetchAll()
 }
 
 async function onBulk(status: string): Promise<void> {

@@ -73,7 +73,9 @@ export class UsersService {
     search?: string,
     role?: string,
   ): Promise<Result<PaginatedResult<UserResponseDto>>> {
-    const where: Record<string, unknown> = {};
+    // Soft-deleted users are hidden from the admin list (unlike deactivated
+    // users, which stay visible as "Inactif").
+    const where: Record<string, unknown> = { isDeleted: false };
 
     if (search) {
       where.OR = [
@@ -106,7 +108,7 @@ export class UsersService {
   }
 
   async getById(id: string): Promise<Result<UserResponseDto>> {
-    const user = await this.prisma.appUser.findUnique({ where: { id } });
+    const user = await this.prisma.appUser.findFirst({ where: { id, isDeleted: false } });
 
     if (!user) {
       return Result.fail('Utilisateur non trouvé.');
@@ -117,7 +119,7 @@ export class UsersService {
 
   async getByRole(role: string): Promise<Result<UserResponseDto[]>> {
     const users = await this.prisma.appUser.findMany({
-      where: { role, isActive: true },
+      where: { role, isActive: true, isDeleted: false },
       orderBy: { lastName: 'asc' },
     });
 
@@ -154,7 +156,8 @@ export class UsersService {
   ): Promise<Result<UserResponseDto>> {
     const user = await this.prisma.appUser.findUnique({ where: { id } });
 
-    if (!user) {
+    // Soft-deleted accounts are inaccessible to admin mutations (no zombie edits).
+    if (!user || user.isDeleted) {
       return Result.fail('Utilisateur non trouvé.');
     }
 
@@ -190,7 +193,7 @@ export class UsersService {
   ): Promise<Result<{ success: true }>> {
     const user = await this.prisma.appUser.findUnique({ where: { id } });
 
-    if (!user) {
+    if (!user || user.isDeleted) {
       return Result.fail('Utilisateur non trouvé.');
     }
 
@@ -236,7 +239,7 @@ export class UsersService {
 
     const user = await this.prisma.appUser.findUnique({ where: { id } });
 
-    if (!user) {
+    if (!user || user.isDeleted) {
       return Result.fail('Utilisateur non trouvé.');
     }
 
@@ -254,7 +257,11 @@ export class UsersService {
   async reactivate(id: string): Promise<Result> {
     const user = await this.prisma.appUser.findUnique({ where: { id } });
 
-    if (!user) {
+    // Reactivation must NOT resurrect a soft-deleted account: a deleted user has
+    // isActive=false, and flipping it back to true would re-expose them in every
+    // isActive-only picker/recipient query. A true "undelete" would be a separate
+    // path that also clears isDeleted.
+    if (!user || user.isDeleted) {
       return Result.fail('Utilisateur non trouvé.');
     }
 
@@ -267,77 +274,47 @@ export class UsersService {
   }
 
   /**
-   * Hard delete an account. Most history relations on AppUser are
-   * `onDelete: NoAction` so the DB will refuse the delete if the user
-   * has authored projects/WPs, logged time, posted comments, or uploaded
-   * attachments. We count the blocking references up front and return a
-   * descriptive error instead of letting Prisma throw a P2003.
+   * Soft-delete an account. AppUser carries history relations that are
+   * `onDelete: NoAction` (authored projects/WPs, time entries, comments,
+   * attachments, audit logs…), so a hard delete is refused by the DB whenever
+   * the user has any history — which is almost always. Instead we flag the row
+   * `isDeleted = true`, force `isActive = false`, and bump `tokenVersion` to
+   * invalidate every outstanding JWT.
    *
-   * The relations configured with Cascade / SetNull (notifications,
-   * watchers, project memberships, role assignments, cahier feedback,
-   * meeting attendance, …) are cleaned up automatically by the DB.
+   * Effects:
+   *  - Hidden from the admin user list + role lookups (which filter isDeleted).
+   *  - Cannot authenticate: login/forgot/reset treat the row as non-existent,
+   *    and any live session dies on the next request (tokenVersion mismatch).
+   *  - Excluded from every assignee/picker query (all of which filter
+   *    `isActive: true`, now false) — so the set stays consistent everywhere.
+   *  - All FK history is preserved.
    */
   async delete(id: string, requestingUserId: string): Promise<Result> {
     if (id === requestingUserId) {
       return Result.fail('Vous ne pouvez pas supprimer votre propre compte.');
     }
 
-    const user = await this.prisma.appUser.findUnique({ where: { id } });
+    const user = await this.prisma.appUser.findFirst({
+      where: { id, isDeleted: false },
+    });
     if (!user) {
       return Result.fail('Utilisateur non trouvé.');
     }
 
-    // Count history rows that would block the delete (FK = NoAction).
-    const [
-      managedProjects,
-      createdProjects,
-      authoredWps,
-      timeEntries,
-      projectComments,
-      wpComments,
-      projectAttachments,
-      wpAttachments,
-    ] = await Promise.all([
-      this.prisma.project.count({ where: { projectManagerId: id } }),
-      this.prisma.project.count({ where: { createdByAdminId: id } }),
-      this.prisma.workPackage.count({ where: { authorId: id } }),
-      this.prisma.timeEntry.count({ where: { userId: id } }),
-      this.prisma.projectComment.count({ where: { userId: id } }),
-      this.prisma.workPackageComment.count({ where: { userId: id } }),
-      this.prisma.projectAttachment.count({ where: { uploadedByUserId: id } }),
-      this.prisma.workPackageAttachment.count({
-        where: { uploadedByUserId: id },
-      }),
-    ]);
+    // Tombstone the (unique) email so it can be reclaimed by a future account —
+    // otherwise the @unique constraint would block ever re-creating a user with
+    // this address. The original is preserved on the audit trail / FK history.
+    const tombstoneEmail = `deleted+${id}@neoleadge.invalid`;
 
-    const blockers: string[] = [];
-    if (managedProjects > 0) blockers.push(`${managedProjects} projet(s) géré(s)`);
-    if (createdProjects > 0) blockers.push(`${createdProjects} projet(s) créé(s)`);
-    if (authoredWps > 0) blockers.push(`${authoredWps} tâche(s) créée(s)`);
-    if (timeEntries > 0) blockers.push(`${timeEntries} entrée(s) de temps`);
-    if (projectComments + wpComments > 0) {
-      blockers.push(`${projectComments + wpComments} commentaire(s)`);
-    }
-    if (projectAttachments + wpAttachments > 0) {
-      blockers.push(`${projectAttachments + wpAttachments} pièce(s) jointe(s)`);
-    }
-
-    if (blockers.length > 0) {
-      return Result.fail(
-        `Suppression impossible — l'utilisateur a ${blockers.join(', ')}. Désactivez-le plutôt pour préserver l'historique.`,
-      );
-    }
-
-    try {
-      await this.prisma.appUser.delete({ where: { id } });
-    } catch (e) {
-      // Defence-in-depth: if a relation we did not count above still
-      // holds the row, surface a clean error instead of a 500.
-      const msg = e instanceof Error ? e.message : String(e);
-      return Result.fail(
-        `Suppression refusée par la base : ${msg}. Désactivez l'utilisateur à la place.`,
-      );
-    }
+    await this.prisma.appUser.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        isActive: false,
+        email: tombstoneEmail,
+        tokenVersion: { increment: 1 },
+      },
+    });
 
     return Result.ok();
   }

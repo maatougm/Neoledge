@@ -99,7 +99,7 @@ export function buildAssignmentTools(projectId: string, candidateWpIds: string[]
       if (!project) return { members: [] }
 
       const users = await prisma.appUser.findMany({
-        where: { isActive: true, role: 'Member' },
+        where: { isActive: true, isDeleted: false, role: 'Member' },
         select: {
           id: true, firstName: true, lastName: true, email: true,
           role: true, jobTitle: true, department: true,

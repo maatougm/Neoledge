@@ -24,29 +24,29 @@ describe('WpCommentsController', () => {
 
   it('list returns service value', async () => {
     mockService.list.mockResolvedValue(Result.ok([{ id: 'c1' }]));
-    expect(await controller.list('wp1')).toEqual([{ id: 'c1' }]);
-    expect(mockService.list).toHaveBeenCalledWith('wp1');
+    expect(await controller.list('p1', 'wp1')).toEqual([{ id: 'c1' }]);
+    expect(mockService.list).toHaveBeenCalledWith('wp1', 'p1');
   });
 
   it('list maps failure to BadRequestException', async () => {
     mockService.list.mockResolvedValue(Result.fail('bad'));
-    await expect(controller.list('wp1')).rejects.toThrow(BadRequestException);
+    await expect(controller.list('p1', 'wp1')).rejects.toThrow(BadRequestException);
   });
 
   it('create rejects empty content', async () => {
-    await expect(controller.create('wp1', { content: '  ' }, u)).rejects.toThrow(BadRequestException);
-    await expect(controller.create('wp1', { content: '' }, u)).rejects.toThrow(BadRequestException);
+    await expect(controller.create('p1', 'wp1', { content: '  ' }, u)).rejects.toThrow(BadRequestException);
+    await expect(controller.create('p1', 'wp1', { content: '' }, u)).rejects.toThrow(BadRequestException);
   });
 
-  it('create forwards args', async () => {
+  it('create forwards args (incl. projectId for WP-in-project check)', async () => {
     mockService.create.mockResolvedValue(Result.ok({ id: 'c1', content: 'hi' }));
-    expect(await controller.create('wp1', { content: 'hi' }, u)).toEqual({ id: 'c1', content: 'hi' });
-    expect(mockService.create).toHaveBeenCalledWith('wp1', 'u1', 'hi');
+    expect(await controller.create('p1', 'wp1', { content: 'hi' }, u)).toEqual({ id: 'c1', content: 'hi' });
+    expect(mockService.create).toHaveBeenCalledWith('wp1', 'u1', 'hi', 'p1');
   });
 
   it('create maps failure', async () => {
     mockService.create.mockResolvedValue(Result.fail('not a member'));
-    await expect(controller.create('wp1', { content: 'hi' }, u)).rejects.toThrow(BadRequestException);
+    await expect(controller.create('p1', 'wp1', { content: 'hi' }, u)).rejects.toThrow(BadRequestException);
   });
 
   it('update rejects empty content', async () => {

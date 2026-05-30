@@ -13,7 +13,7 @@
     </button>
     <ul v-if="open" class="stm__menu" @click.stop>
       <li
-        v-for="opt in options"
+        v-for="opt in visibleOptions"
         :key="opt.value"
         class="stm__item"
         :class="{ 'stm__item--active': opt.value === currentStatus }"
@@ -29,7 +29,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-const props = defineProps<{ currentStatus: string }>()
+const props = defineProps<{
+  currentStatus: string
+  /** When provided, only these status values are offered (plus the current one).
+   *  Members pass MEMBER_SUBMITTABLE_STATUSES so "Résolu" isn't offered. */
+  allowedStatuses?: readonly string[]
+}>()
 const emit = defineEmits<{ select: [newStatus: string] }>()
 
 const open = ref(false)
@@ -55,6 +60,15 @@ const options = [
   { value: 'AwaitingReview', label: 'En revue' },
   { value: 'Resolved',       label: 'Résolu' },
 ] as const
+
+// When allowedStatuses is set, restrict the menu to those (always keep the
+// current status visible so it can render as active). Members get the
+// submittable set, so "Résolu" — which the backend rejects for them — is hidden.
+const visibleOptions = computed(() =>
+  props.allowedStatuses
+    ? options.filter((o) => props.allowedStatuses!.includes(o.value) || o.value === props.currentStatus)
+    : options,
+)
 
 const currentSeverity = computed<'info' | 'warn' | 'success' | 'secondary'>(() => {
   if (props.currentStatus === 'New') return 'info'

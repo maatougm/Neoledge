@@ -382,7 +382,7 @@ async function applyRenames() {
 }
 
 .bubble--client {
-  background: #eff6ff;
+  background: var(--nl-surface-2);
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
@@ -500,22 +500,22 @@ async function applyRenames() {
 }
 
 .bubble--speaker-1 {
-  background: #eff6ff;
+  background: var(--nl-surface-2);
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .bubble--speaker-2 {
-  background: #f5f3ff;
+  background: var(--nl-surface-2);
   border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .bubble--speaker-3 {
-  background: #fffbeb;
+  background: var(--nl-surface-2);
   border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 .bubble--speaker-4 {
-  background: #fdf2f8;
+  background: var(--nl-surface-2);
   border: 1px solid rgba(236, 72, 153, 0.2);
 }
 

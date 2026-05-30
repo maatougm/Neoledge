@@ -9,12 +9,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { TotpCodeDto, TotpLoginDto, DisableTotpDto } from './dto/totp-enable.dto.js';
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
 import { ResetPasswordDto } from './dto/reset-password.dto.js';
+import { MagicLinkRequestDto } from './dto/magic-link-request.dto.js';
+import { MagicLoginDto } from './dto/magic-login.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -163,6 +166,40 @@ export class AuthController {
   async resetPasswordByToken(@Body() dto: ResetPasswordDto) {
     await this.authService.resetPasswordByToken(dto.token, dto.newPassword);
     return { message: 'Mot de passe réinitialisé avec succès.' };
+  }
+
+  // ── Passwordless Magic-Link Login ───────────────────────────────────────────
+
+  // Tight per-route limits on these unauthenticated, email-sending /
+  // state-mutating endpoints — the global cap (120/min/IP) is far too loose for
+  // a mailbomb-capable route. 5/min to request a link, 10/min to consume one.
+  @Post('auth/magic-link')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a passwordless sign-in link by email' })
+  @ApiResponse({ status: 200, description: 'Sign-in link sent if account exists' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async requestMagicLink(@Body() dto: MagicLinkRequestDto) {
+    await this.authService.requestMagicLink(dto.email);
+    return { message: 'Si un compte correspond à cet email, un lien de connexion a été envoyé.' };
+  }
+
+  @Post('auth/magic-login')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Consume a magic-link token — returns JWT or TOTP challenge' })
+  @ApiResponse({ status: 200, description: 'Login successful or TOTP required' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired link' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async magicLogin(@Body() dto: MagicLoginDto) {
+    try {
+      return await this.authService.loginWithMagicToken(dto.token);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Lien de connexion invalide ou expiré.');
+    }
   }
 
   /** No-op logout endpoint — JWT is stateless; client already cleared the token. */

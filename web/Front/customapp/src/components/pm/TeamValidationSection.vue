@@ -447,7 +447,7 @@ const retrySubmit = async (): Promise<void> => {
   font-size: 0.82rem;
   line-height: 1.5;
   resize: vertical;
-  background: #fff;
+  background: var(--nl-surface);
 }
 .editor-field textarea:focus,
 .editor-field--feedback:focus,

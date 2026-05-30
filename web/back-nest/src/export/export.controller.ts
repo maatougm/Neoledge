@@ -4,6 +4,8 @@ import { ExportService } from './export.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
+import { ProjectAccessGuard } from '../common/guards/project-access.guard.js';
+import { ProjectAccess } from '../common/decorators/project-access.decorator.js';
 
 @Controller('api/export')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,6 +33,21 @@ export class ExportController {
   @Get('projects/:projectId/report')
   async getReport(@Param('projectId') projectId: string) {
     const result = await this.service.generateReport(projectId);
+    if (result.isFailure) throw new NotFoundException(result.error);
+    return result.value;
+  }
+
+  /**
+   * Structured single-project report (JSON) the frontend renders to CSV/PDF.
+   * Project-scoped: the class-level @Roles already limits this to Admin/PM, and
+   * ProjectAccessGuard additionally requires the caller to actually own/belong
+   * to THIS project — closing the IDOR where any PM could export any project.
+   */
+  @Get('projects/:projectId/report-data')
+  @UseGuards(ProjectAccessGuard)
+  @ProjectAccess('projectId')
+  async getReportData(@Param('projectId') projectId: string) {
+    const result = await this.service.generateReportData(projectId);
     if (result.isFailure) throw new NotFoundException(result.error);
     return result.value;
   }

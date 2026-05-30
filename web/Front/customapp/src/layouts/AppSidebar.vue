@@ -8,7 +8,7 @@
   >
     <!-- Logo -->
     <div class="sidebar__logo">
-      <div class="sidebar__logo-pill"><span class="sidebar__logo-text-short">NP</span></div>
+      <div class="sidebar__logo-pill"><NeoMark class="sidebar__logo-mark" /></div>
       <transition name="fade-slide">
         <img v-if="isExpanded" :src="logoUrl" alt="NeoLeadge" class="sidebar__logo-img" />
       </transition>
@@ -88,6 +88,7 @@
 import { ref, inject, computed } from 'vue'
 import { useUiStore } from '@/stores/uiStore'
 import logoUrl from '@/assets/neoledge-logo.png'
+import NeoMark from '@/components/common/NeoMark.vue'
 import SidebarNavItem from './SidebarNavItem.vue'
 import type { NavSection } from '@/types/nav.types'
 import type { RecentProject } from '@/stores/uiStore'
@@ -138,11 +139,12 @@ const recentsToShow = computed<RecentProject[]>(() =>
 }
 .sidebar__logo-pill {
   flex-shrink: 0; width: 40px; height: 40px;
-  border-radius: 10px; background: var(--nl-accent);
   display: flex; align-items: center; justify-content: center;
 }
-.sidebar__logo-text-short {
-  font-size: 0.875rem; font-weight: 800; color: var(--nl-on-accent); letter-spacing: -0.02em;
+/* Transparent vector mark — inherits this colour as its fill (no white tile). */
+.sidebar__logo-mark {
+  width: 100%; height: 100%; display: block;
+  color: var(--nl-accent);
 }
 .sidebar__logo-name {
   font-size: 0.9375rem; font-weight: 700;

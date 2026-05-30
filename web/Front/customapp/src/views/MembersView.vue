@@ -106,6 +106,12 @@
     <AppModal v-model:visible="showAddModal" header="Ajouter un membre au projet" width="520px">
       <div class="mem-form">
         <NeoMessage v-if="usersLoadError" severity="error" :text="usersLoadError" />
+        <p class="mem-modal-hint">
+          <i class="pi pi-info-circle" />
+          Ajoutez un utilisateur <strong>« Équipe spécification »</strong> pour qu'il valide
+          le cahier des charges de ce projet. Le responsable principal de validation se
+          désigne ensuite dans <strong>Vue d'ensemble → Responsabilités équipe</strong>.
+        </p>
         <div class="mem-field">
           <label class="mem-field__label">Utilisateur</label>
           <NeoSelect
@@ -244,8 +250,12 @@ interface Blockers {
   attendees: number
 }
 
-// Roles that should never be addable as project members.
-const EXCLUDED_ROLES = new Set(['Admin', 'Viewer'])
+// Roles that should never be addable as project members:
+//  - Admin / Viewer: system roles, not part of any project team.
+//  - ProjectManager: the project already has its own PM; other PMs aren't team members.
+// SpecificationTeam users ARE addable — adding one enrols them as a cahier
+// validator for this project (see notifyReviewTeams in cahier-des-charges.service.ts).
+const EXCLUDED_ROLES = new Set(['Admin', 'Viewer', 'ProjectManager'])
 
 const allUsers = ref<SystemUserOption[]>([])
 const showAddModal = ref(false)
@@ -551,6 +561,19 @@ onMounted(async () => {
 .mem-field { display: flex; flex-direction: column; gap: 0.375rem; }
 .mem-field__label { font-size: 0.8125rem; font-weight: 500; color: var(--nl-text-muted, #6b7280); }
 .mem-field__hint { font-size: 0.75rem; color: var(--nl-text-muted, #9ca3af); margin: 0.25rem 0 0; }
+.mem-modal-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--nl-text-2, #374151);
+  background: var(--nl-accent-light, #e6f4f1);
+  border: 1px solid color-mix(in srgb, var(--nl-accent) 30%, transparent);
+  border-radius: 6px;
+  padding: 0.625rem 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+.mem-modal-hint i { color: var(--nl-accent, #1e9e8f); margin-top: 0.1rem; flex-shrink: 0; }
 
 .mem-blockers { display: flex; flex-direction: column; gap: 0.875rem; padding: 0.25rem 0; }
 .mem-blockers__intro { margin: 0; font-size: 0.875rem; color: var(--nl-text, #111827); }
@@ -571,9 +594,9 @@ onMounted(async () => {
 .mem-blockers__warn {
   margin: 0;
   font-size: 0.8125rem;
-  color: #b45309;
-  background: #fef3c7;
-  border: 1px solid #fde68a;
+  color: var(--nl-warning);
+  background: var(--nl-warning-light);
+  border: 1px solid color-mix(in srgb, var(--nl-warning) 30%, transparent);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   display: inline-flex;

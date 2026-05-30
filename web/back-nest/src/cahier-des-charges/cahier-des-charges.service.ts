@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common'
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { ZaiFallbackProvider } from '../ai/providers/zai-fallback.provider.js'
@@ -706,32 +706,27 @@ RÈGLES :
   }
 
   /**
-   * Notify ONLY SpecificationTeam users who have been added as members of this
-   * specific project (via ProjectMember). Generic "all spec team users" no
-   * longer fires — the PM controls who reviews each cahier.
+   * Notify the whole SpecificationTeam. The spec team is global — a small group
+   * (one or two people) handles every project's cahier, so there is no
+   * per-project assignment: every active SpecificationTeam user is notified.
+   * `skipScopeCheck` is required because these users are not project members.
    */
   private async notifyReviewTeams(projectId: string, projectName: string): Promise<void> {
-    const reviewers = await this.prisma.projectMember.findMany({
-      where: {
-        projectId,
-        user: {
-          role: 'SpecificationTeam',
-          isActive: true,
-        },
-      },
-      select: { userId: true },
+    const reviewers = await this.prisma.appUser.findMany({
+      where: { role: 'SpecificationTeam', isActive: true, isDeleted: false },
+      select: { id: true },
     })
     if (reviewers.length === 0) {
       this.logger.warn(
-        `notifyReviewTeams: no SpecificationTeam member assigned to project ${projectId} — no notification sent`,
+        `notifyReviewTeams: no active SpecificationTeam user — no notification sent`,
       )
       return
     }
 
     await Promise.allSettled(
-      reviewers.map((m) =>
+      reviewers.map((u) =>
         this.notifications.notifyEnhanced({
-          userId: m.userId,
+          userId: u.id,
           type: 'cahier_ready',
           reason: 'cahier_generated',
           title: 'Cahier des charges à valider',
@@ -740,11 +735,13 @@ RÈGLES :
           entityType: 'Project',
           entityId: projectId,
           link: `/app/pm/projects/${projectId}/cahier`,
+          // Spec team is global, not project members — bypass the membership scope check.
+          skipScopeCheck: true,
         }),
       ),
     )
     this.logger.log(
-      `Notified ${reviewers.length} SpecificationTeam project member(s) about cahier for project ${projectId}`,
+      `Notified ${reviewers.length} SpecificationTeam user(s) about cahier for project ${projectId}`,
     )
   }
 
@@ -829,7 +826,8 @@ RÈGLES :
     comment: string,
     section?: string,
   ): Promise<void> {
-    // Reject self-approval — the project's PM cannot approve their own cahier.
+    // Reject self-approval — the project's PM cannot approve their own cahier
+    // (catches the edge case of an Admin who is also this project's PM).
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, isDeleted: false },
       select: { projectManagerId: true },
@@ -837,6 +835,24 @@ RÈGLES :
     if (project?.projectManagerId === userId) {
       throw new BadRequestException(
         'Vous ne pouvez pas valider votre propre cahier des charges. Cette action est réservée à l\'équipe de validation.',
+      )
+    }
+
+    // The spec team is global: any active SpecificationTeam user (or an Admin) may
+    // validate any project's cahier — no per-project assignment. The frontend hides
+    // the controls for everyone else, but the server must enforce it too, otherwise
+    // any user with project access (a developer, another PM) could POST an approval.
+    const reviewer = await this.prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { role: true, isActive: true, isDeleted: true },
+    })
+    const isAuthorisedReviewer =
+      reviewer?.isDeleted === false &&
+      (reviewer.role === 'Admin' ||
+        (reviewer.role === 'SpecificationTeam' && reviewer.isActive !== false))
+    if (!isAuthorisedReviewer) {
+      throw new ForbiddenException(
+        "Seule l'équipe de spécification peut valider le cahier des charges.",
       )
     }
 

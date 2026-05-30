@@ -233,8 +233,8 @@ watch(
   list-style: none;
   margin: 0;
   padding: 12px 16px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--nl-danger-light);
+  border: 1px solid color-mix(in srgb, var(--nl-danger) 30%, transparent);
   border-radius: var(--nl-radius);
   display: flex;
   flex-direction: column;
@@ -245,9 +245,9 @@ watch(
   align-items: center;
   gap: 8px;
   font-size: 0.875rem;
-  color: #991b1b;
+  color: var(--nl-danger);
 }
-.ai-bk__missing-list .pi { color: #dc2626; }
+.ai-bk__missing-list .pi { color: var(--nl-danger); }
 .ai-bk__missing-hint {
   font-size: 0.8125rem;
   color: var(--nl-text-3);

@@ -110,21 +110,22 @@ describe('AgileController', () => {
   })
 
   // Cards
-  it('moveCard passes columnId + position (with defaults) and happy + failure', async () => {
+  it('moveCard passes columnId + position (with defaults) + actor and happy + failure', async () => {
+    const actor = { userId: 'u1', role: 'ProjectManager' }
     mockService.moveCard.mockResolvedValueOnce(ok({ id: 'wp-1' }))
     expect(
-      await controller.moveCard('p-1', 'wp-1', { columnId: 'c-1', position: 3 } as any),
+      await controller.moveCard('p-1', 'wp-1', { columnId: 'c-1', position: 3 } as any, actor),
     ).toEqual({ id: 'wp-1' })
-    expect(mockService.moveCard).toHaveBeenCalledWith('p-1', 'wp-1', 'c-1', 3)
+    expect(mockService.moveCard).toHaveBeenCalledWith('p-1', 'wp-1', 'c-1', 3, 'u1', 'ProjectManager')
 
     mockService.moveCard.mockResolvedValueOnce(ok({ id: 'wp-1' }))
-    await controller.moveCard('p-1', 'wp-1', {} as any)
-    // default columnId null + position 0
-    expect(mockService.moveCard).toHaveBeenLastCalledWith('p-1', 'wp-1', null, 0)
+    await controller.moveCard('p-1', 'wp-1', {} as any, actor)
+    // default columnId null + position 0, actor threaded through
+    expect(mockService.moveCard).toHaveBeenLastCalledWith('p-1', 'wp-1', null, 0, 'u1', 'ProjectManager')
 
     mockService.moveCard.mockResolvedValueOnce(fail('no'))
     await expect(
-      controller.moveCard('p-1', 'wp-1', {} as any),
+      controller.moveCard('p-1', 'wp-1', {} as any, actor),
     ).rejects.toThrow(BadRequestException)
   })
 

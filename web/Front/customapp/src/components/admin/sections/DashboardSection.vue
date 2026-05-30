@@ -466,25 +466,26 @@ const todayLabel = computed(() =>
   transition: box-shadow 0.15s;
 }
 .kpi-card:hover { box-shadow: var(--nl-shadow-md, 0 2px 8px rgba(0,0,0,0.05)); }
-.kpi-card--alert { border-color: #fecaca; background: #fef2f2; }
-.kpi-card--warn  { border-color: #fde68a; background: #fffbeb; }
+.kpi-card--alert { border-color: color-mix(in srgb, var(--nl-danger) 30%, transparent); background: var(--nl-danger-light); }
+.kpi-card--warn  { border-color: color-mix(in srgb, var(--nl-warning) 30%, transparent); background: var(--nl-warning-light); }
 
 .kpi-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 38px; height: 38px; border-radius: 10px;
   font-size: 1rem; flex-shrink: 0;
 }
-.kpi-icon--blue    { background: #dbeafe; color: #1d4ed8; }
-.kpi-icon--green   { background: #dcfce7; color: #047857; }
-.kpi-icon--danger  { background: #fee2e2; color: #b91c1c; }
-.kpi-icon--warn    { background: #fef3c7; color: #b45309; }
+.kpi-icon--blue    { background: var(--nl-info-light); color: var(--nl-info); }
+.kpi-icon--green   { background: var(--nl-success-light); color: var(--nl-success); }
+.kpi-icon--danger  { background: var(--nl-danger-light); color: var(--nl-danger); }
+.kpi-icon--warn    { background: var(--nl-warning-light); color: var(--nl-warning); }
 .kpi-icon--purple  { background: #ede9fe; color: #6d28d9; }
 .kpi-icon--neutral { background: var(--nl-surface-2); color: var(--nl-text-3); }
+:global(.dark) .kpi-icon--purple { background: rgba(124,58,237,0.18); color: #c4b5fd; }
 
 .kpi-info { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; }
 .kpi-num  { font-size: 1.4rem; font-weight: 800; color: var(--nl-text-1); line-height: 1; }
-.kpi-num.text-danger  { color: #b91c1c; }
-.kpi-num.text-warning { color: #b45309; }
+.kpi-num.text-danger  { color: var(--nl-danger); }
+.kpi-num.text-warning { color: var(--nl-warning); }
 .kpi-lbl  { font-size: 0.75rem; color: var(--nl-text-3); }
 
 .kpi-badge {
@@ -492,10 +493,10 @@ const todayLabel = computed(() =>
   padding: 0.2rem 0.5rem; border-radius: 999px;
   white-space: nowrap;
 }
-.kpi-badge--blue    { background: #eff6ff; color: #1d4ed8; }
-.kpi-badge--green   { background: #ecfdf5; color: #047857; }
-.kpi-badge--danger  { background: #fee2e2; color: #b91c1c; }
-.kpi-badge--warn    { background: #fef3c7; color: #b45309; }
+.kpi-badge--blue    { background: var(--nl-info-light); color: var(--nl-info); }
+.kpi-badge--green   { background: var(--nl-success-light); color: var(--nl-success); }
+.kpi-badge--danger  { background: var(--nl-danger-light); color: var(--nl-danger); }
+.kpi-badge--warn    { background: var(--nl-warning-light); color: var(--nl-warning); }
 .kpi-badge--neutral { background: var(--nl-surface-2); color: var(--nl-text-3); }
 
 /* ── Section / chart cards ───────────────────────────────────────────────── */
@@ -569,7 +570,7 @@ const todayLabel = computed(() =>
 .urgency-bar {
   height: 32px; width: 4px; border-radius: 2px;
 }
-.urgency--overdue  { background: #dc2626; }
+.urgency--overdue  { background: var(--nl-danger); }
 .urgency--critical { background: #f97316; }
 .urgency--warn     { background: #f59e0b; }
 
@@ -582,9 +583,9 @@ const todayLabel = computed(() =>
   font-size: 0.6875rem; font-weight: 700;
   padding: 0.15rem 0.5rem; border-radius: 999px;
 }
-.deadline-badge.urgency--overdue  { background: #fee2e2; color: #b91c1c; }
-.deadline-badge.urgency--critical { background: #ffedd5; color: #c2410c; }
-.deadline-badge.urgency--warn     { background: #fef3c7; color: #b45309; }
+.deadline-badge.urgency--overdue  { background: var(--nl-danger-light); color: var(--nl-danger); }
+.deadline-badge.urgency--critical { background: var(--nl-warning-light); color: var(--nl-warning); }
+.deadline-badge.urgency--warn     { background: var(--nl-warning-light); color: var(--nl-warning); }
 .deadline-date { font-size: 0.6875rem; color: var(--nl-text-3); }
 
 .empty-state {

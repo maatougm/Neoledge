@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { Result } from '../common/result.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateWorkPackageDto, UpdateWorkPackageDto, MoveWorkPackageDto } from './dto/work-package.dto.js';
+import { MEMBER_SUBMITTABLE_STATUSES } from './wp-status.constants.js';
 import { AnalyticsCacheService } from '../analytics/analytics-cache.service.js';
 import { AgentRunnerService } from '../ai/agent/agent-runner.service.js';
 import { runAssignmentAgent, runAssignmentPlannerWorker, type AssignmentSuggestionForWp } from '../ai/assignment-agent.js';
@@ -70,6 +71,32 @@ export class WorkPackagesService {
     } catch (e) {
       this.logger.warn(`ensureProjectMembership(${projectId}, ${userId}) failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  /**
+   * Reject a single-WP write whose assignee is not a valid task assignee.
+   * Mirrors the batch rule enforced in bulkAssign(): a task may only be assigned
+   * to an ACTIVE, non-soft-deleted user with the Member role (PMs own the
+   * project and SpecificationTeam validates the cahier — neither is assignable).
+   *
+   * Without this, create()/update() would happily persist an assigneeId for a
+   * deactivated or soft-deleted user — leaving a dangling reference that every
+   * picker query (which filters `isActive: true`) deliberately excludes. The
+   * three write paths (create / update / bulkAssign) MUST enforce the same rule
+   * or they drift. Uses findUnique + in-code checks (id is the PK) so it reads
+   * the same as ensureProjectMembership.
+   */
+  private async assertAssignable(assigneeId: string): Promise<Result> {
+    const user = await this.prisma.appUser.findUnique({
+      where: { id: assigneeId },
+      select: { isActive: true, isDeleted: true, role: true },
+    });
+    if (!user || !user.isActive || user.isDeleted || user.role !== 'Member') {
+      return Result.fail(
+        "L'utilisateur sélectionné n'est pas assignable : seul un membre actif de l'équipe peut recevoir une tâche.",
+      );
+    }
+    return Result.ok();
   }
 
   /** Fire-and-forget notification for WP events. Never throws. */
@@ -267,6 +294,9 @@ export class WorkPackagesService {
       include: {
         assignee: { select: USER_SELECT },
         author: { select: USER_SELECT },
+        // projectManagerId lets the detail panel gate PM-only actions (validate /
+        // reject a submitted task) to THIS project's PM, without a second request.
+        project: { select: { id: true, name: true, projectManagerId: true } },
         parent: { select: { id: true, title: true } },
         children: {
           where: { isDeleted: false },
@@ -297,6 +327,13 @@ export class WorkPackagesService {
         if (!parent || parent.projectId !== projectId) {
           throw new BadRequestException('parentId must belong to same project');
         }
+      }
+      // Validate the assignee (same rule bulkAssign enforces) before writing —
+      // a deactivated/soft-deleted/non-Member id must not be persisted as the
+      // assignee. See assertAssignable().
+      if (dto.assigneeId) {
+        const assignable = await this.assertAssignable(dto.assigneeId);
+        if (assignable.isFailure) return Result.fail(assignable.error!);
       }
       const maxPos = await this.prisma.workPackage.aggregate({
         where: { projectId, parentId: dto.parentId ?? null },
@@ -378,6 +415,44 @@ export class WorkPackagesService {
         if (forbidden.length > 0) {
           return Result.fail(`Champs non autorisés pour le rôle Member: ${forbidden.join(', ')}.`);
         }
+        // Workflow guard: a Member may move their task among New / InProgress /
+        // AwaitingReview (start, submit for review, withdraw) but may NOT set
+        // Resolved/Closed — only the project's PM validates or closes a task.
+        // Without this a Member could PATCH {status:'Resolved'} and self-approve,
+        // bypassing the PM-review flow.
+        if (
+          dto.status !== undefined &&
+          !(MEMBER_SUBMITTABLE_STATUSES as readonly string[]).includes(dto.status)
+        ) {
+          return Result.fail(
+            "En tant que membre, vous ne pouvez pas valider ou clôturer une tâche. Soumettez-la pour validation : seul le chef de projet peut la clôturer.",
+          );
+        }
+      }
+
+      // Validation authority: only an Admin or THIS project's PM may validate
+      // (Resolved), close (Closed), or reject a submitted task (AwaitingReview →
+      // InProgress by someone other than the assignee). The frontend already gates
+      // these to the project PM; this mirrors it server-side so another project's
+      // PM-role member (who passes ProjectAccessGuard) can't act as approver.
+      // actorRole undefined = trusted internal caller (e.g. board move, tests) → skip.
+      if (actorRole && actorRole !== 'Member' && actorRole !== 'Admin') {
+        const isValidateOrClose = dto.status === 'Resolved' || dto.status === 'Closed';
+        const isReject =
+          dto.status === 'InProgress' &&
+          existing.status === 'AwaitingReview' &&
+          existing.assigneeId !== actorId;
+        if (isValidateOrClose || isReject) {
+          const proj = await this.prisma.project.findFirst({
+            where: { id: projectId, isDeleted: false },
+            select: { projectManagerId: true },
+          });
+          if (proj?.projectManagerId !== actorId) {
+            return Result.fail(
+              'Seul le chef de projet de ce projet peut valider, clôturer ou rejeter une tâche.',
+            );
+          }
+        }
       }
 
       // C2: reject self-parent cycles. null/undefined mean "no change" or "clear" — OK.
@@ -395,6 +470,14 @@ export class WorkPackagesService {
         }
       }
 
+      // Validate the assignee on direct reassignment too (bulkAssign already
+      // does — these paths must match or a deactivated/soft-deleted user can be
+      // assigned via PATCH, leaving a dangling assigneeId). null = unassign → skip.
+      if (dto.assigneeId) {
+        const assignable = await this.assertAssignable(dto.assigneeId);
+        if (assignable.isFailure) return Result.fail(assignable.error!);
+      }
+
       const data: Record<string, unknown> = {};
       const keys: (keyof UpdateWorkPackageDto)[] = ['title', 'description', 'type', 'status', 'priority', 'assigneeId', 'parentId', 'sprintId', 'versionId', 'boardColumnId', 'spentHours', 'percentDone', 'position', 'estimatedHours'];
       for (const k of keys) {
@@ -402,6 +485,12 @@ export class WorkPackagesService {
       }
       if (dto.startDate !== undefined) data.startDate = dto.startDate ? new Date(dto.startDate) : null;
       if (dto.dueDate !== undefined) data.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
+
+      // Auto-advance: assigning a still-'New' task to a member starts it (→ En cours),
+      // unless the caller explicitly set a status in the same update.
+      if (dto.assigneeId && existing.status === 'New' && data.status === undefined) {
+        data.status = 'InProgress';
+      }
 
       const wp = await this.prisma.workPackage.update({
         where: { id },
@@ -483,8 +572,22 @@ export class WorkPackagesService {
         }
 
         if (statusChanged) {
-          // Pass the newly-assigned user as an exclusion so they don't receive a
-          // second notification from the watcher blast.
+          // PM validates (AwaitingReview → Resolved) or rejects (AwaitingReview →
+          // InProgress) a submitted task: send the assignee a tailored notification
+          // and exclude them from the generic StatusChange blast to avoid a double.
+          const isApproval = dto.status === 'Resolved' && existing.status === 'AwaitingReview';
+          const isRejection = dto.status === 'InProgress' && existing.status === 'AwaitingReview';
+          const assigneeId = wp.assigneeId;
+          const tailoredAssigneeNotify =
+            (isApproval || isRejection) && !!assigneeId && assigneeId !== actorId;
+
+          // Pass the newly-assigned user (or the assignee we notify ourselves below)
+          // as an exclusion so they don't receive a second notification from the blast.
+          const blastExclude = assigneeChanged
+            ? (newAssignee as string)
+            : tailoredAssigneeNotify
+              ? (assigneeId as string)
+              : undefined;
           void this.notifyWatchersAndAssignee(
             id,
             actorId,
@@ -492,7 +595,7 @@ export class WorkPackagesService {
             'Statut mis à jour',
             `"${wp.title}" → ${dto.status}`,
             projectId,
-            assigneeChanged ? (newAssignee as string) : undefined,
+            blastExclude,
           );
           void this.logActivity(projectId, actorId, 'work_package_status_changed', `"${wp.title}" : ${existing.status} → ${dto.status}`);
           void this.analyticsCache.invalidate('team_workload');
@@ -504,6 +607,26 @@ export class WorkPackagesService {
             void this.notifyPmOnAwaitingReview(projectId, id, wp.title, actorId).catch((e) =>
               this.logger.error('notifyPmOnAwaitingReview failed', e),
             );
+          }
+
+          // Close the loop back to the assignee on the PM's verdict.
+          if (tailoredAssigneeNotify) {
+            void this.notifications
+              .notifyEnhanced({
+                userId: assigneeId as string,
+                type: isApproval ? 'work_package_validated' : 'work_package_rejected',
+                reason: 'StatusChange',
+                title: isApproval ? 'Tâche validée' : 'Tâche renvoyée',
+                message: isApproval
+                  ? `Votre tâche « ${wp.title} » a été validée par le chef de projet.`
+                  : `Votre tâche « ${wp.title} » a été renvoyée pour modifications par le chef de projet.`,
+                projectId,
+                entityType: 'work_package',
+                entityId: id,
+                actorId,
+                link: `/app/team/my-tasks?projectId=${projectId}`,
+              })
+              .catch((e) => this.logger.error('notifyEnhanced (wp verdict) failed', e));
           }
         }
       }
@@ -760,13 +883,15 @@ export class WorkPackagesService {
     //
     // This is the single source of truth — the UI's /assignable-users
     // endpoint and the AI's read_project_members tool return the exact same
-    // set. If you change this, change those two too.
+    // set. If you change this, change those two too. The single-WP create()/
+    // update() paths enforce the same rule via assertAssignable() — keep all
+    // three in lock-step.
     const uniqueAssignees = [
       ...new Set(assignments.map((a) => a.assigneeId).filter((x): x is string => !!x)),
     ];
     if (uniqueAssignees.length > 0) {
       const users = await this.prisma.appUser.findMany({
-        where: { id: { in: uniqueAssignees }, isActive: true },
+        where: { id: { in: uniqueAssignees }, isActive: true, isDeleted: false },
         select: { id: true, role: true },
       });
       if (users.length !== uniqueAssignees.length) {
@@ -799,7 +924,15 @@ export class WorkPackagesService {
             data: { assigneeId, updatedAt: new Date() },
           });
           updated += res.count;
+          // Auto-advance: assigning a still-'New' task to a member starts it (→ En cours).
+          if (assigneeId) {
+            await tx.workPackage.updateMany({
+              where: { id: { in: wpIds }, projectId, isDeleted: false, status: 'New' },
+              data: { status: 'InProgress' },
+            });
+          }
         }
+
       });
     } catch (e) {
       this.logger.error('bulkAssign transaction failed', e);

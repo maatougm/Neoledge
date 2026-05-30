@@ -14,17 +14,22 @@ export class WpCommentsController {
   constructor(private readonly service: WpCommentsService) {}
 
   @Get()
-  async list(@Param('wpId') wpId: string) {
-    const r = await this.service.list(wpId);
+  async list(@Param('projectId') projectId: string, @Param('wpId') wpId: string) {
+    const r = await this.service.list(wpId, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Param('wpId') wpId: string, @Body() body: { content: string }, @CurrentUser() user: AuthUser) {
+  async create(
+    @Param('projectId') projectId: string,
+    @Param('wpId') wpId: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: AuthUser,
+  ) {
     if (!body.content?.trim()) throw new BadRequestException('Contenu requis.');
-    const r = await this.service.create(wpId, user.userId, body.content);
+    const r = await this.service.create(wpId, user.userId, body.content, projectId);
     if (r.isFailure) throw new BadRequestException(r.error);
     return r.value;
   }

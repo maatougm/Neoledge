@@ -88,6 +88,7 @@ export class SearchService {
           ? this.prisma.appUser.findMany({
               where: {
                 isActive: true,
+                isDeleted: false,
                 OR: [
                   { firstName: { contains: query } },
                   { lastName: { contains: query } },
@@ -100,6 +101,7 @@ export class SearchService {
           : this.prisma.appUser.findMany({
               where: {
                 isActive: true,
+                isDeleted: false,
                 OR: [
                   { firstName: { contains: query } },
                   { lastName: { contains: query } },

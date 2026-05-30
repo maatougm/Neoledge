@@ -303,7 +303,7 @@ function onClose(_v: boolean): void {
   border-radius: 8px;
 }
 .cls-loading { background: var(--nl-surface-alt, #fafbfc); color: var(--nl-text-muted, #666); }
-.cls-error { background: #ffeaea; color: #c0392b; }
+.cls-error { background: var(--nl-danger-light); color: var(--nl-danger); }
 .cls-empty { background: var(--nl-surface-alt, #fafbfc); color: var(--nl-text-muted, #666); }
 
 .cls-body { display: flex; flex-direction: column; gap: 18px; }

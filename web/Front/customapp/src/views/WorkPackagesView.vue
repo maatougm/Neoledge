@@ -159,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { NeoButton, NeoInputText, NeoSelect, NeoDatePicker, NeoTag, useNeoToast } from '@neolibrary/components'
 import AppModal from '@/components/common/AppModal.vue'
@@ -192,14 +192,12 @@ const creating = ref(false)
 const filters = reactive<{ q: string; status: string; type: string }>({ q: '', status: '', type: '' })
 
 // Quick-filter pills
-type PillKey = 'all' | 'mine' | 'due-soon' | 'overdue' | 'unassigned' | 'blocked'
+type PillKey = 'all' | 'due-soon' | 'overdue' | 'unassigned'
 const pills: { key: PillKey; label: string; icon: string }[] = [
   { key: 'all',        label: 'Tout',         icon: 'pi-list' },
-  { key: 'mine',       label: 'Mes tâches',   icon: 'pi-user' },
   { key: 'due-soon',   label: 'Dues ≤ 7 j',   icon: 'pi-calendar' },
   { key: 'overdue',    label: 'En retard',    icon: 'pi-exclamation-triangle' },
   { key: 'unassigned', label: 'Non assignés', icon: 'pi-user-minus' },
-  { key: 'blocked',    label: 'Bloqués',      icon: 'pi-lock' },
 ]
 const activePill = ref<PillKey>('all')
 function activatePill(key: PillKey): void { activePill.value = key }
@@ -208,7 +206,6 @@ function matchesPill(wp: WorkPackage, key: PillKey): boolean {
   const now = Date.now()
   switch (key) {
     case 'all':        return true
-    case 'mine':       return wp.assigneeId === authStore.userId
     case 'due-soon': {
       if (!wp.dueDate) return false
       const d = new Date(wp.dueDate).getTime()
@@ -216,7 +213,6 @@ function matchesPill(wp: WorkPackage, key: PillKey): boolean {
     }
     case 'overdue':    return !!wp.dueDate && new Date(wp.dueDate).getTime() < now && wp.status !== 'Closed' && wp.status !== 'Resolved'
     case 'unassigned': return !wp.assigneeId
-    case 'blocked':    return String(wp.status) === 'OnHold' || String(wp.status) === 'Blocked' || String(wp.status) === 'On Hold'
   }
 }
 
@@ -306,8 +302,6 @@ const statusOptions: { label: string; value: WpStatus | '' }[] = [
   { label: 'En cours', value: 'InProgress' },
   { label: 'En attente de validation', value: 'AwaitingReview' },
   { label: 'Résolu', value: 'Resolved' },
-  { label: 'Fermé', value: 'Closed' },
-  { label: 'En attente', value: 'OnHold' },
 ]
 const typeOptions: { label: string; value: WpType | '' }[] = [
   { label: 'Tous types', value: '' },
@@ -341,6 +335,13 @@ async function load() {
 
 async function onAiBacklogAccepted() {
   await load()
+}
+
+// Deep-link: /…/workpackages?wpId=<id> opens that task's detail panel directly.
+// Used by "Mes tâches" row clicks and the PM's "Tâche à valider" notification.
+function openFromQuery(): void {
+  const qWp = route.query.wpId
+  if (typeof qWp === 'string' && qWp) selectedId.value = qWp
 }
 
 async function submitCreate() {
@@ -377,7 +378,30 @@ function onDeleted(id: string) {
   if (selectedId.value === id) selectedId.value = null
 }
 
-onMounted(load)
+onMounted(() => {
+  openFromQuery()
+  void load()
+})
+
+// This route reuses the component instance across projects (param-only nav), so
+// setup() doesn't re-run. Re-sync projectId + selection when the :id changes, e.g.
+// clicking a "Tâche à valider" notification for project B while viewing project A.
+watch(
+  () => route.params.id,
+  (id) => {
+    if (typeof id !== 'string' || !id || id === projectId.value) return
+    projectId.value = id
+    selectedId.value = null
+    clearSelection()
+    openFromQuery()
+    void load()
+  },
+)
+// In-place notification click that only changes ?wpId= (same project) re-opens the panel.
+watch(
+  () => route.query.wpId,
+  () => openFromQuery(),
+)
 </script>
 
 <style scoped>
@@ -463,8 +487,8 @@ onMounted(load)
   letter-spacing: 0.03em;
 }
 .wp-table__row { cursor: pointer; border-bottom: 1px solid var(--nl-border, #e5e7eb); }
-.wp-table__row:hover { background: rgba(30,158,143,0.04); }
-.wp-table__row--active { background: rgba(30,158,143,0.10); }
+.wp-table__row:hover { background: var(--nl-row-hover); }
+.wp-table__row--active { background: var(--nl-row-selected); }
 .wp-table__row td { padding: 0.75rem 0.75rem; vertical-align: middle; }
 .wp-table__title { font-weight: 500; color: var(--nl-text, #111827); }
 .wp-empty { text-align: center; color: var(--nl-text-muted, #6b7280); padding: 2rem !important; }
