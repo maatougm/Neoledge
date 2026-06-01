@@ -97,7 +97,7 @@
   <AppModal v-model:visible="showAddMilestone" :header="editingId ? 'Modifier jalon' : 'Nouveau jalon'" width="480px">
       <div class="gantt__form">
         <NeoInputText v-model="msForm.title" label="Titre" placeholder="Titre du jalon" />
-        <NeoDatePicker v-model="msForm.date" placeholder="Date" />
+        <NeoDatePicker v-model="msForm.date" dateFormat="yy-mm-dd" label="Date" placeholder="Date" />
         <NeoInputText v-model="msForm.description" label="Description" />
         <label class="gantt__checkbox">
           <input v-model="msForm.isReached" type="checkbox" />
