@@ -5,12 +5,7 @@ import { Result } from '../common/result.js';
 const STATUS_ORDER = [
   'Draft',
   'Kickoff',
-  'CadrageTechnique',
-  'Environnement',
-  'Parametrage',
-  'Integration',
-  'Recette',
-  'MEP',
+  'Realisation',
   'Cloture',
 ] as const;
 
@@ -24,12 +19,12 @@ interface GatedTransition {
 
 const GATED_TRANSITIONS: GatedTransition[] = [
   {
-    from: 'Parametrage',
-    to: 'Integration',
+    from: 'Kickoff',
+    to: 'Realisation',
     requiredRole: 'SpecificationTeam',
   },
   {
-    from: 'MEP',
+    from: 'Realisation',
     to: 'Cloture',
     requiredRole: 'ProjectManager',
   },

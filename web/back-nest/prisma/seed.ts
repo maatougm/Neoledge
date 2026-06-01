@@ -162,7 +162,7 @@ async function main() {
       id: ID.p4,
       name: 'Mise en production Elise v4 — CHU Bordeaux',
       clientName: 'Ministère de l\'Économie et des Finances',
-      status: 'MEP',
+      status: 'Realisation',
       priority: 'Critical',
       projectManagerId: R.pm2,
       createdByAdminId: R.admin,

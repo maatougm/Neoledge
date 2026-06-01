@@ -27,7 +27,7 @@ const day = (n: number): Date => {
 };
 
 // ── Canonical phase values (match src/utils/phaseLabels.ts) ──────────────────
-type Phase = 'Kickoff' | 'CadrageTechnique' | 'Parametrage' | 'Recette' | 'MEP';
+type Phase = 'Kickoff' | 'Realisation';
 
 interface WpSpec {
   title: string;
@@ -150,7 +150,7 @@ async function main() {
       wps: baseWps(0, 1, 1, 2).slice(0, 4),
     },
     {
-      name: 'Déploiement Elise v4 — CHU Bordeaux', clientName: 'CHU de Bordeaux', phase: 'CadrageTechnique', priority: 'Critical',
+      name: 'Déploiement Elise v4 — CHU Bordeaux', clientName: 'CHU de Bordeaux', phase: 'Kickoff', priority: 'Critical',
       pm: pmLuca, startOffset: -30, endOffset: 150, tags: 'santé,elise,déploiement',
       members: [
         { u: antoine, label: 'Développeur' }, { u: nadia, label: 'Déploiement' },
@@ -161,7 +161,7 @@ async function main() {
       cahier: true,
     },
     {
-      name: 'Intégration NeoLeadge — Région PACA', clientName: 'Conseil Régional PACA', phase: 'Parametrage', priority: 'High',
+      name: 'Intégration NeoLeadge — Région PACA', clientName: 'Conseil Régional PACA', phase: 'Realisation', priority: 'High',
       pm: pmEmma, startOffset: -60, endOffset: 90, tags: 'NeoLeadge,région,intégration',
       members: [
         { u: karim, label: 'Développeur backend' }, { u: antoine, label: 'Développeur' },
@@ -171,7 +171,7 @@ async function main() {
       wps: baseWps(0, 1, 2, 3),
     },
     {
-      name: 'Déploiement Elise — Ministère des Finances', clientName: 'Ministère de l\'Économie et des Finances', phase: 'Recette', priority: 'Critical',
+      name: 'Déploiement Elise — Ministère des Finances', clientName: 'Ministère de l\'Économie et des Finances', phase: 'Realisation', priority: 'Critical',
       pm: pmEmma, startOffset: -120, endOffset: 40, tags: 'archivage,ministère,recette',
       members: [
         { u: nadia, label: 'Déploiement' }, { u: marc, label: 'DevOps' },
@@ -181,7 +181,7 @@ async function main() {
       wps: (() => { const w = baseWps(0, 1, 2, 3); return w.map((s, i) => ({ ...s, status: (i < 7 ? (i < 5 ? 'Closed' : 'Resolved') : 'InProgress') as WpSpec['status'], pct: i < 5 ? 100 : i < 7 ? 90 : 60 })); })(),
     },
     {
-      name: 'Mise en place GED — Université Paris-Saclay', clientName: 'Université Paris-Saclay', phase: 'MEP', priority: 'Medium',
+      name: 'Mise en place GED — Université Paris-Saclay', clientName: 'Université Paris-Saclay', phase: 'Realisation', priority: 'Medium',
       pm: pmLuca, startOffset: -200, endOffset: 10, tags: 'enseignement,GED,université',
       members: [
         { u: antoine, label: 'Développeur' }, { u: nadia, label: 'Déploiement' },

@@ -24,21 +24,14 @@ const props = defineProps<{ status: ProjectStatus }>()
 const emit = defineEmits<{ 'change-status': [newStatus: ProjectStatus] }>()
 
 const PHASES: readonly { key: ProjectStatus; label: string }[] = [
-  { key: 'Draft',            label: 'Brouillon' },
-  { key: 'Kickoff',          label: 'Lancement' },
-  { key: 'CadrageTechnique', label: 'Cadrage' },
-  { key: 'Environnement',    label: 'Environnement' },
-  { key: 'Parametrage',      label: 'Paramétrage' },
-  { key: 'Integration',      label: 'Intégration' },
-  { key: 'Recette',          label: 'Recette' },
-  { key: 'MEP',              label: 'MEP' },
-  { key: 'Cloture',          label: 'Clôture' },
+  { key: 'Draft',       label: 'Brouillon' },
+  { key: 'Kickoff',     label: 'Lancement' },
+  { key: 'Realisation', label: 'Réalisation' },
+  { key: 'Cloture',     label: 'Clôture' },
 ]
 
 const ORDER: Record<ProjectStatus, number> = {
-  Draft: 0, Kickoff: 1, CadrageTechnique: 2,
-  Environnement: 3, Parametrage: 4, Integration: 5,
-  Recette: 6, MEP: 7, Cloture: 8, Archived: 9,
+  Draft: 0, Kickoff: 1, Realisation: 2, Cloture: 3, Archived: 4,
 }
 
 const stepState = (key: ProjectStatus): 'done' | 'active' | 'pending' => {

@@ -161,18 +161,13 @@ async function onExport(id: string, fmt: 'csv' | 'pdf'): Promise<void> {
 // ─── Phase pipeline ────────────────────────────────────────────────────────────
 
 const PIPELINE_PHASES: ProjectStatus[] = [
-  'Draft', 'Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP', 'Cloture',
+  'Draft', 'Kickoff', 'Realisation', 'Cloture',
 ]
 
 const PHASE_SHORT_LABELS: Record<ProjectStatus, string> = {
   Draft:            'Brouillon',
   Kickoff:          'Lancement',
-  CadrageTechnique: 'Cadrage',
-  Environnement:    'Env.',
-  Parametrage:      'Param.',
-  Integration:      'Intégr.',
-  Recette:          'Recette',
-  MEP:              'MEP',
+  Realisation:      'Réalisation',
   Cloture:          'Clôture',
   Archived:         'Archivé',
 }
@@ -180,12 +175,7 @@ const PHASE_SHORT_LABELS: Record<ProjectStatus, string> = {
 const STATUS_COLORS: Record<ProjectStatus, string> = {
   Draft:            'var(--nl-border-strong)',
   Kickoff:          '#93c5fd',
-  CadrageTechnique: '#3b82f6',
-  Environnement:    '#1d4ed8',
-  Parametrage:      '#f59e0b',
-  Integration:      '#d97706',
-  Recette:          '#f97316',
-  MEP:              '#10b981',
+  Realisation:      '#f59e0b',
   Cloture:          '#0d9488',
   Archived:         'var(--nl-border-strong)',
 }
@@ -206,7 +196,7 @@ const activeFilter = ref<FilterValue>('all')
 
 const TERMINAL_STATUSES: ProjectStatus[] = ['Cloture', 'Archived']
 const activeCount    = computed(() => store.projects.filter(p => !TERMINAL_STATUSES.includes(p.status)).length)
-const pendingCount   = computed(() => store.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP').length)
+const pendingCount   = computed(() => store.projects.filter(p => p.status === 'Realisation').length)
 const completedCount = computed(() => store.projects.filter(p => p.status === 'Cloture').length)
 
 const STATUS_FILTERS = computed<{ value: FilterValue; label: string; count: number }[]>(() => [
@@ -219,7 +209,7 @@ const STATUS_FILTERS = computed<{ value: FilterValue; label: string; count: numb
 const filtered = computed<ProjectSummary[]>(() => {
   if (activeFilter.value === 'all')       return store.projects
   if (activeFilter.value === 'active')    return store.projects.filter(p => !TERMINAL_STATUSES.includes(p.status))
-  if (activeFilter.value === 'pending')   return store.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP')
+  if (activeFilter.value === 'pending')   return store.projects.filter(p => p.status === 'Realisation')
   if (activeFilter.value === 'completed') return store.projects.filter(p => p.status === 'Cloture')
   return store.projects
 })

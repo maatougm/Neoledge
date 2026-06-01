@@ -46,7 +46,7 @@ const mockValidation: ProjectValidation = {
   projectId: 'p1',
   validatedByRole: 'ProjectManager',
   validatedByName: 'Marie Martin',
-  phase: 'Parametrage',
+  phase: 'Realisation',
   isApproved: true,
   comment: 'Looks good',
   validatedAt: '2026-04-01T10:00:00Z',

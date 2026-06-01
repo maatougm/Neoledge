@@ -49,9 +49,7 @@ describe('PhaseGateService', () => {
 
     it('returns forward statuses plus Archived from Kickoff', () => {
       const result = service.getValidNextStatuses('Kickoff');
-      expect(result).toContain('CadrageTechnique');
-      expect(result).toContain('Environnement');
-      expect(result).toContain('MEP');
+      expect(result).toContain('Realisation');
       expect(result).toContain('Cloture');
       expect(result).toContain('Archived');
       expect(result).not.toContain('Draft');
@@ -78,7 +76,7 @@ describe('PhaseGateService', () => {
 
   describe('canTransition → Archived', () => {
     it('always allows transition to Archived regardless of current status', async () => {
-      const statuses = ['Draft', 'Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP', 'Cloture'];
+      const statuses = ['Draft', 'Kickoff', 'Realisation', 'Cloture'];
 
       for (const from of statuses) {
         const result = await service.canTransition('proj-1', from, 'Archived');
@@ -101,8 +99,8 @@ describe('PhaseGateService', () => {
       expect(mockPrisma.projectValidation.count).not.toHaveBeenCalled();
     });
 
-    it('blocks Integration → Kickoff', async () => {
-      const result = await service.canTransition('proj-1', 'Integration', 'Kickoff');
+    it('blocks Realisation → Kickoff', async () => {
+      const result = await service.canTransition('proj-1', 'Realisation', 'Kickoff');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toContain('impossible de revenir');
@@ -126,35 +124,35 @@ describe('PhaseGateService', () => {
       expect(mockPrisma.projectValidation.count).not.toHaveBeenCalled();
     });
 
-    it('allows Kickoff → CadrageTechnique without approval check', async () => {
-      const result = await service.canTransition('proj-1', 'Kickoff', 'CadrageTechnique');
+    it('allows Draft → Realisation without approval check', async () => {
+      const result = await service.canTransition('proj-1', 'Draft', 'Realisation');
 
       expect(result.isSuccess).toBe(true);
       expect(mockPrisma.projectValidation.count).not.toHaveBeenCalled();
     });
 
-    it('allows Recette → MEP without approval check', async () => {
-      const result = await service.canTransition('proj-1', 'Recette', 'MEP');
+    it('allows Kickoff → Cloture without approval check', async () => {
+      const result = await service.canTransition('proj-1', 'Kickoff', 'Cloture');
 
       expect(result.isSuccess).toBe(true);
       expect(mockPrisma.projectValidation.count).not.toHaveBeenCalled();
     });
   });
 
-  // ── canTransition — Parametrage → Integration gate ───────────────────────
+  // ── canTransition — Kickoff → Realisation gate ───────────────────────────
 
-  describe('canTransition — Parametrage → Integration gate', () => {
+  describe('canTransition — Kickoff → Realisation gate', () => {
     it('blocks when no SpecificationTeam approval exists', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(0);
 
-      const result = await service.canTransition('proj-1', 'Parametrage', 'Integration');
+      const result = await service.canTransition('proj-1', 'Kickoff', 'Realisation');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toContain('SpecificationTeam');
       expect(mockPrisma.projectValidation.count).toHaveBeenCalledWith({
         where: {
           projectId: 'proj-1',
-          phase: 'Parametrage',
+          phase: 'Kickoff',
           isApproved: true,
           validatedByRole: 'SpecificationTeam',
         },
@@ -164,7 +162,7 @@ describe('PhaseGateService', () => {
     it('allows when at least 1 SpecificationTeam approval exists', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(1);
 
-      const result = await service.canTransition('proj-1', 'Parametrage', 'Integration');
+      const result = await service.canTransition('proj-1', 'Kickoff', 'Realisation');
 
       expect(result.isSuccess).toBe(true);
     });
@@ -172,26 +170,26 @@ describe('PhaseGateService', () => {
     it('allows when multiple SpecificationTeam approvals exist', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(3);
 
-      const result = await service.canTransition('proj-1', 'Parametrage', 'Integration');
+      const result = await service.canTransition('proj-1', 'Kickoff', 'Realisation');
 
       expect(result.isSuccess).toBe(true);
     });
   });
 
-  // ── canTransition — MEP → Cloture gate ───────────────────────────────────
+  // ── canTransition — Realisation → Cloture gate ───────────────────────────
 
-  describe('canTransition — MEP → Cloture gate', () => {
+  describe('canTransition — Realisation → Cloture gate', () => {
     it('bloque si aucune approbation ProjectManager n\'existe', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(0);
 
-      const result = await service.canTransition('proj-1', 'MEP', 'Cloture');
+      const result = await service.canTransition('proj-1', 'Realisation', 'Cloture');
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toContain('ProjectManager');
       expect(mockPrisma.projectValidation.count).toHaveBeenCalledWith({
         where: {
           projectId: 'proj-1',
-          phase: 'MEP',
+          phase: 'Realisation',
           isApproved: true,
           validatedByRole: 'ProjectManager',
         },
@@ -201,7 +199,7 @@ describe('PhaseGateService', () => {
     it('autorise si au moins 1 approbation ProjectManager existe', async () => {
       mockPrisma.projectValidation.count.mockResolvedValue(1);
 
-      const result = await service.canTransition('proj-1', 'MEP', 'Cloture');
+      const result = await service.canTransition('proj-1', 'Realisation', 'Cloture');
 
       expect(result.isSuccess).toBe(true);
     });

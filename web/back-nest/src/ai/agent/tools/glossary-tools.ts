@@ -24,9 +24,9 @@ const GLOSSARY: Record<string, string> = {
   'task':               "Unité de travail concrète et implémentable (1 à 80h). Type : Task / Feature / Bug. Doit être livrable indépendamment.",
   'specification team': "Équipe (rôle SpecificationTeam) chargée de valider le cahier des charges. Le PM ne peut PAS valider son propre cahier (blocage serveur).",
   'deployment team':    "Équipe (rôle DeploymentTeam) qui prend le projet en charge une fois la phase de cadrage validée. Reçoit les tâches via l'écran Assignation.",
-  'kickoff':            "Première phase du projet (status='Kickoff'). Cadrage initial, livrable principal : cahier des charges approuvé.",
-  'cadrage technique':  "Phase suivant Kickoff (status='CadrageTechnique'). Livrables : architecture cible, choix de stack, plan de développement.",
-  'phase':              'Étape du cycle de vie projet. Ordre : Draft → Kickoff → CadrageTechnique → Realization → Integration → UAT → Deployment → MaintenanceTransfer → Closure / Archived.',
+  'kickoff':            "Phase de lancement (status='Kickoff', affichée « Lancement »), juste après Brouillon (status='Draft'). Cadrage initial, livrable principal : cahier des charges approuvé.",
+  'realisation':        "Phase d'exécution (status='Realisation', affichée « Réalisation »), juste après Lancement (status='Kickoff'). Couvre le développement, le paramétrage et l'intégration jusqu'à la livraison. Livrables : architecture cible, développement, intégration et recette.",
+  'phase':              "Étape du cycle de vie projet (Project.status), affichée comme un stepper à 4 étapes. Ordre (libellé affiché → clé status) : Brouillon (Draft) → Lancement (Kickoff) → Réalisation (Realisation) → Clôture (Cloture). Statut additionnel : Archivé (Archived), historique et hors stepper.",
   'project member':     'Utilisateur ajouté à un projet via l\'écran Membres. Étiquette libre (`label`). Sources d\'autorisation : ProjectMember row OU être PM du projet OU être Admin.',
   'feedback':           'Retour de la SpecificationTeam sur un cahier des charges (table CahierFeedback). Statut : approved / rejected. Re-sauvegarder le cahier réinitialise la file de validation.',
 }

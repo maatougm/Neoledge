@@ -151,12 +151,7 @@ function statusBadgeClass(s: ProjectStatus): string {
   const map: Record<string, string> = {
     Draft:            'ptr__badge--draft',
     Kickoff:          'ptr__badge--inprogress',
-    CadrageTechnique: 'ptr__badge--spec',
-    Environnement:    'ptr__badge--spec',
-    Parametrage:      'ptr__badge--realization',
-    Integration:      'ptr__badge--realization',
-    Recette:          'ptr__badge--mep',
-    MEP:              'ptr__badge--mep',
+    Realisation:      'ptr__badge--realization',
     Cloture:          'ptr__badge--completed',
     Completed:        'ptr__badge--completed',
   }

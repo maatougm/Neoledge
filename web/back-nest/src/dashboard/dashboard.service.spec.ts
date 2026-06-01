@@ -116,7 +116,7 @@ describe('DashboardService', () => {
           managedProjects: [
             { status: 'Kickoff', endDate: future },
             { status: 'Completed', endDate: past },
-            { status: 'Recette', endDate: past }, // overdue + inProgress
+            { status: 'Realisation', endDate: past }, // overdue + inProgress
           ],
         },
       ]);
@@ -137,9 +137,9 @@ describe('DashboardService', () => {
       expect(row.managerName).toBe('Alice PM');
       expect(row.managerEmail).toBe('alice@ex.com');
       expect(row.totalProjects).toBe(3);
-      expect(row.inProgressProjects).toBe(2); // Kickoff + Recette
+      expect(row.inProgressProjects).toBe(2); // Kickoff + Realisation
       expect(row.completedProjects).toBe(1);
-      expect(row.overdueProjects).toBe(1);    // Recette in the past, not Completed/Archived
+      expect(row.overdueProjects).toBe(1);    // Realisation in the past, not Completed/Archived
     });
   });
 
@@ -264,7 +264,7 @@ describe('DashboardService', () => {
       const args = mockPrisma.project.findMany.mock.calls[0][0] as {
         where: { status: { notIn: string[] } };
       };
-      expect(args.where.status.notIn).toEqual(['Completed', 'Archived']);
+      expect(args.where.status.notIn).toEqual(['Cloture', 'Completed', 'Archived']);
     });
   });
 });

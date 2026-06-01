@@ -217,19 +217,14 @@ const overdueCount = computed(() => {
   }).length
 })
 const pendingValidationCount = computed(() =>
-  projectStore.projects.filter(p => p.status === 'Parametrage' || p.status === 'MEP').length,
+  projectStore.projects.filter(p => p.status === 'Realisation').length,
 )
 
 // ── Status colours — keep aligned with the table chips elsewhere. ─────────
 const STATUS_COLORS: Record<ProjectStatus, string> = {
   Draft:            '#94a3b8',
   Kickoff:          '#93c5fd',
-  CadrageTechnique: '#3b82f6',
-  Environnement:    '#1d4ed8',
-  Parametrage:      '#fbbf24',
-  Integration:      '#d97706',
-  Recette:          '#f97316',
-  MEP:              '#10b981',
+  Realisation:      '#fbbf24',
   Cloture:          '#0d9488',
   Archived:         '#cbd5e1',
 }

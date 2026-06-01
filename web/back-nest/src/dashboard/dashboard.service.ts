@@ -12,10 +12,10 @@ export class DashboardService {
 
     const [total, active, completed, archived, overdue, thisMonth] = await Promise.all([
       this.prisma.project.count({ where: { isDeleted: false } }),
-      this.prisma.project.count({ where: { isDeleted: false, status: { in: ['Draft', 'Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP'] } } }),
+      this.prisma.project.count({ where: { isDeleted: false, status: { in: ['Draft', 'Kickoff', 'Realisation'] } } }),
       this.prisma.project.count({ where: { isDeleted: false, status: 'Completed' } }),
       this.prisma.project.count({ where: { isDeleted: false, status: 'Archived' } }),
-      this.prisma.project.count({ where: { isDeleted: false, endDate: { lt: now }, status: { notIn: ['Completed', 'Archived'] } } }),
+      this.prisma.project.count({ where: { isDeleted: false, endDate: { lt: now }, status: { notIn: ['Cloture', 'Completed', 'Archived'] } } }),
       this.prisma.project.count({ where: { isDeleted: false, createdAt: { gte: startOfMonth } } }),
     ]);
 
@@ -57,9 +57,9 @@ export class DashboardService {
         managerName: `${m.firstName} ${m.lastName}`,
         managerEmail: m.email,
         totalProjects: m.managedProjects.length,
-        inProgressProjects: m.managedProjects.filter((p) => ['Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP'].includes(p.status)).length,
+        inProgressProjects: m.managedProjects.filter((p) => ['Kickoff', 'Realisation'].includes(p.status)).length,
         completedProjects: m.managedProjects.filter((p) => p.status === 'Completed').length,
-        overdueProjects: m.managedProjects.filter((p) => p.endDate < new Date() && !['Completed', 'Archived'].includes(p.status)).length,
+        overdueProjects: m.managedProjects.filter((p) => p.endDate < new Date() && !['Cloture', 'Completed', 'Archived'].includes(p.status)).length,
       })),
     );
   }
@@ -126,7 +126,7 @@ export class DashboardService {
 
   async getOverdueProjects() {
     const projects = await this.prisma.project.findMany({
-      where: { isDeleted: false, endDate: { lt: new Date() }, status: { notIn: ['Completed', 'Archived'] } },
+      where: { isDeleted: false, endDate: { lt: new Date() }, status: { notIn: ['Cloture', 'Completed', 'Archived'] } },
       include: { projectManager: { select: { firstName: true, lastName: true, email: true } } },
     });
     return Result.ok({ count: projects.length, projects });

@@ -93,13 +93,8 @@ import { phaseLabel as statusLabel } from '@/utils/phaseLabels'
 function statusClass(status: string): string {
   switch (status) {
     case 'Draft':                    return 'draft'
-    case 'Kickoff':
-    case 'CadrageTechnique':
-    case 'Environnement':
-    case 'Integration':
-    case 'Recette':                  return 'active'
-    case 'Parametrage':
-    case 'MEP':                      return 'validation'
+    case 'Kickoff':                  return 'active'
+    case 'Realisation':              return 'validation'
     case 'Cloture':                  return 'done'
     case 'Archived':                 return 'muted'
     default:                         return 'muted'

@@ -62,12 +62,7 @@ const props = defineProps<{ projectId: string }>()
 const PHASE_LABELS: Record<ProjectStatus | string, string> = {
   Draft:            'Brouillon',
   Kickoff:          'Lancement',
-  CadrageTechnique: 'Cadrage technique',
-  Environnement:    'Environnement',
-  Parametrage:      'Paramétrage',
-  Integration:      'Intégration',
-  Recette:          'Recette',
-  MEP:              'Mise en production',
+  Realisation:      'Réalisation',
   Cloture:          'Clôture',
   Archived:         'Archivé',
 }

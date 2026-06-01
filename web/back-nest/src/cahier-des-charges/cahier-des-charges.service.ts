@@ -870,6 +870,22 @@ RÈGLES :
     })
     this.logger.log(`Cahier feedback saved: ${status} for project ${projectId}`)
 
+    // Lifecycle auto-advance: when the cahier is APPROVED, the project leaves
+    // Brouillon (Draft) and enters Lancement (Kickoff). Forward-only — guarded
+    // on status='Draft' so a re-approval never drags a project that's already
+    // in Réalisation/Clôture backwards. Non-fatal (never breaks the review).
+    if (status === 'approved') {
+      try {
+        const moved = await this.prisma.project.updateMany({
+          where: { id: projectId, status: 'Draft', isDeleted: false },
+          data: { status: 'Kickoff' },
+        })
+        if (moved.count > 0) this.logger.log(`Project ${projectId} auto-advanced Draft → Kickoff (cahier approved)`)
+      } catch (e) {
+        this.logger.warn(`cahier-approved auto-advance failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+
     // Notify the project's PM that the cahier was reviewed.
     void this.notifyPmAboutFeedback(projectId, status, comment).catch((e) =>
       this.logger.warn(`notifyPmAboutFeedback failed: ${e instanceof Error ? e.message : String(e)}`),

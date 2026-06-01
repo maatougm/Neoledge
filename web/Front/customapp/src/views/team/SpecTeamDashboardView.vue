@@ -254,21 +254,20 @@ function onNotifClick(n: Notification): void {
 
 function phaseLabelLocal(s: string): string {
   const m: Record<string, string> = {
-    New: 'Nouveau',
-    Parametrage: 'Paramétrage',
-    MEP: 'MEP',
-    Production: 'Production',
-    Closed: 'Clôturé',
+    Draft: 'Brouillon',
+    Kickoff: 'Lancement',
+    Realisation: 'Réalisation',
+    Cloture: 'Clôture',
     Archived: 'Archivé',
   }
   return m[s] ?? s
 }
 
 function phaseSeverity(s: string): 'info' | 'success' | 'warn' | 'secondary' {
-  if (s === 'Parametrage') return 'warn'
-  if (s === 'MEP' || s === 'Production') return 'success'
-  if (s === 'Closed' || s === 'Archived') return 'secondary'
-  return 'info'
+  if (s === 'Realisation') return 'warn'
+  if (s === 'Cloture') return 'success'
+  if (s === 'Archived') return 'secondary'
+  return 'info' // Draft / Kickoff
 }
 
 // ─── Loaders ─────────────────────────────────────────────────────────────────

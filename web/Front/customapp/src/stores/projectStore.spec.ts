@@ -16,14 +16,14 @@ const mockedApi = api as unknown as Record<'get' | 'post' | 'put' | 'patch' | 'd
 import type { ProjectSummary, ProjectStatus } from '@/types/project.types'
 
 function makeProject(id = 'p1', opts: Partial<{ name: string; status: string }> = {}): ProjectSummary {
-  return { id, name: opts.name ?? 'Proj', clientName: 'ACME', status: (opts.status ?? 'Active') as ProjectStatus, projectManagerName: null, projectManagerEmail: null, startDate: '2026-01-01', endDate: '2026-12-31', createdAt: '2026-01-01T00:00:00Z' }
+  return { id, name: opts.name ?? 'Proj', clientName: 'ACME', status: (opts.status ?? 'Realisation') as ProjectStatus, projectManagerName: null, projectManagerEmail: null, startDate: '2026-01-01', endDate: '2026-12-31', createdAt: '2026-01-01T00:00:00Z' }
 }
 function makeDetail(id = 'p1'): ProjectDetail {
   return {
     id,
     name: 'Proj',
     clientName: 'ACME',
-    status: 'Active',
+    status: 'Realisation',
     fields: [],
     fieldValues: [],
   } as unknown as ProjectDetail
@@ -94,13 +94,13 @@ describe('projectStore', () => {
     it('passes search + status to the URL', async () => {
       mockedApi.get.mockResolvedValue({ data: { items: [makeProject('p1')], total: 1 } })
       const s = useProjectStore()
-      await s.searchProjects({ search: 'foo', status: 'Active' })
+      await s.searchProjects({ search: 'foo', status: 'Realisation' })
       expect(mockedApi.get).toHaveBeenCalledWith(
-        expect.stringMatching(/^\/admin\/project\?.*search=foo.*status=Active|^\/admin\/project\?.*status=Active.*search=foo/),
+        expect.stringMatching(/^\/admin\/project\?.*search=foo.*status=Realisation|^\/admin\/project\?.*status=Realisation.*search=foo/),
         expect.any(Object),
       )
       expect(s.searchQuery).toBe('foo')
-      expect(s.statusFilter).toBe('Active')
+      expect(s.statusFilter).toBe('Realisation')
     })
 
     it('reverts filter refs on a non-aborted failure', async () => {
@@ -108,7 +108,7 @@ describe('projectStore', () => {
       s.searchQuery = 'prev'
       s.statusFilter = 'Draft'
       mockedApi.get.mockRejectedValue(new Error('500'))
-      await s.searchProjects({ search: 'new', status: 'Active' })
+      await s.searchProjects({ search: 'new', status: 'Realisation' })
       expect(s.searchQuery).toBe('prev')
       expect(s.statusFilter).toBe('Draft')
       expect(s.error).toBe('500')
@@ -197,7 +197,7 @@ describe('projectStore', () => {
     it('updates summary + currentProject when the id matches', async () => {
       mockedApi.post.mockResolvedValue({ data: undefined })
       const s = useProjectStore()
-      s.projects = [makeProject('p1', { status: 'Active' })]
+      s.projects = [makeProject('p1', { status: 'Realisation' })]
       s.currentProject = makeDetail('p1')
       await s.updateStatus('p1', 'Cloture' as never)
       expect(s.projects[0].status).toBe('Cloture')
@@ -297,7 +297,7 @@ describe('projectStore', () => {
       const s = useProjectStore()
       s.projects = [
         makeProject('p1', { status: 'Draft' }),
-        makeProject('p2', { status: 'Active' }),
+        makeProject('p2', { status: 'Realisation' }),
         makeProject('p3', { status: 'Cloture' }),
         makeProject('p4', { status: 'Archived' }),
       ]
@@ -338,7 +338,7 @@ describe('projectStore', () => {
       s.currentProject = makeDetail('p1')
       s.totalProjects = 1
       s.searchQuery = 'foo'
-      s.statusFilter = 'Active'
+      s.statusFilter = 'Realisation'
       s.selectedProjectIds = ['p1']
       s.reset()
       expect(s.projects).toEqual([])

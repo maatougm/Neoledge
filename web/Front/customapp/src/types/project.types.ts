@@ -11,24 +11,14 @@ import type { UserResponse } from './user.types'
 export type ProjectStatus =
   | 'Draft'
   | 'Kickoff'
-  | 'CadrageTechnique'
-  | 'Environnement'
-  | 'Parametrage'
-  | 'Integration'
-  | 'Recette'
-  | 'MEP'
+  | 'Realisation'
   | 'Cloture'
   | 'Archived'
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   Draft: 'Brouillon',
   Kickoff: 'Lancement',
-  CadrageTechnique: 'Cadrage technique',
-  Environnement: 'Environnement',
-  Parametrage: 'Paramétrage',
-  Integration: 'Intégration',
-  Recette: 'Recette',
-  MEP: 'Mise en production',
+  Realisation: 'Réalisation',
   Cloture: 'Clôture',
   Archived: 'Archivé',
 }
@@ -36,12 +26,7 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
 export const PROJECT_STATUS_SEVERITY: Record<ProjectStatus, string> = {
   Draft: 'secondary',
   Kickoff: 'info',
-  CadrageTechnique: 'info',
-  Environnement: 'info',
-  Parametrage: 'warning',
-  Integration: 'warning',
-  Recette: 'warning',
-  MEP: 'success',
+  Realisation: 'warning',
   Cloture: 'success',
   Archived: 'secondary',
 }

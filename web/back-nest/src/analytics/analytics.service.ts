@@ -41,8 +41,8 @@ export interface TeamWorkloadRow {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CACHE_TTL = 15; // minutes
-const ACTIVE_STATUSES = ['Draft', 'Kickoff', 'CadrageTechnique', 'Environnement', 'Parametrage', 'Integration', 'Recette', 'MEP'];
-const TERMINAL_STATUSES = ['Completed', 'Archived'];
+const ACTIVE_STATUSES = ['Draft', 'Kickoff', 'Realisation'];
+const TERMINAL_STATUSES = ['Cloture', 'Completed', 'Archived'];
 
 // Detail field pattern: "Statut changé: <from> → <to>"
 const STATUS_CHANGE_RE = /Statut\s+chang[ée]\s*:\s*(\S+)\s*[→>]\s*(\S+)/i;

@@ -74,6 +74,24 @@ export class WorkPackagesService {
   }
 
   /**
+   * Lifecycle auto-advance: assigning a task to a member moves the project into
+   * Réalisation (status 'Realisation'). Forward-only — guarded on the pre-exec
+   * statuses (Draft / Kickoff) so a late assignment can't drag a project back
+   * from Clôture/Archived. Fire-and-forget safe: never throws into the caller.
+   */
+  private async autoAdvanceToRealisation(projectId: string): Promise<void> {
+    try {
+      const moved = await this.prisma.project.updateMany({
+        where: { id: projectId, status: { in: ['Draft', 'Kickoff'] }, isDeleted: false },
+        data: { status: 'Realisation' },
+      });
+      if (moved.count > 0) this.logger.log(`Project ${projectId} auto-advanced → Realisation (task assigned)`);
+    } catch (e) {
+      this.logger.warn(`autoAdvanceToRealisation(${projectId}) failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
    * Reject a single-WP write whose assignee is not a valid task assignee.
    * Mirrors the batch rule enforced in bulkAssign(): a task may only be assigned
    * to an ACTIVE, non-soft-deleted user with the Member role (PMs own the
@@ -521,6 +539,8 @@ export class WorkPackagesService {
           // Grant the new assignee project access before the notify call —
           // notify's scope guard checks ProjectMember.
           await this.ensureProjectMembership(projectId, newAssignee as string);
+          // Lifecycle: assigning a task to a member advances the project to Réalisation.
+          void this.autoAdvanceToRealisation(projectId);
           void this.notifications.notifyEnhanced({
             userId: newAssignee as string,
             type: 'work_package_assigned',
@@ -937,6 +957,11 @@ export class WorkPackagesService {
     } catch (e) {
       this.logger.error('bulkAssign transaction failed', e);
       return Result.fail<{ updated: number }>('Échec de la mise à jour groupée.');
+    }
+
+    // Lifecycle: assigning tasks to members moves the project into Réalisation.
+    if (assignments.some((a) => a.assigneeId)) {
+      await this.autoAdvanceToRealisation(projectId);
     }
 
     // Group by assignee → one consolidated notification per user (skip un-assignments).

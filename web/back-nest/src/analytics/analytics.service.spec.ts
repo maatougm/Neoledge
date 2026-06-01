@@ -335,7 +335,7 @@ describe('AnalyticsService', () => {
 
       const call = mockPrisma.project.findMany.mock.calls[0][0];
       expect(call.where.isDeleted).toBe(false);
-      expect(call.where.status.notIn).toEqual(['Completed', 'Archived']);
+      expect(call.where.status.notIn).toEqual(['Cloture', 'Completed', 'Archived']);
       expect(call.take).toBe(500);
     });
 
@@ -381,9 +381,9 @@ describe('AnalyticsService', () => {
             // active + upcoming (endDate within 14 days, active status)
             { status: 'Kickoff',          endDate: daysFromNow(7),  updatedAt: daysAgo(2) },
             // active + overdue (endDate in past, active status)
-            { status: 'CadrageTechnique', endDate: daysAgo(3),       updatedAt: daysAgo(5) },
+            { status: 'Realisation',      endDate: daysAgo(3),       updatedAt: daysAgo(5) },
             // active, not upcoming (>14 days out)
-            { status: 'Recette',          endDate: daysFromNow(60), updatedAt: daysAgo(1) },
+            { status: 'Realisation',      endDate: daysFromNow(60), updatedAt: daysAgo(1) },
             // completed within 90 days (updatedAt 30 days ago)
             { status: 'Completed',        endDate: daysAgo(60),      updatedAt: daysAgo(30) },
             // completed but TOO OLD (>90 days ago) — must not count
@@ -400,8 +400,8 @@ describe('AnalyticsService', () => {
       const row = result.value![0];
       expect(row.pmId).toBe('pm1');
       expect(row.pmName).toBe('Alice PM');
-      expect(row.active).toBe(3);     // Kickoff, CadrageTechnique, Recette
-      expect(row.overdue).toBe(1);    // CadrageTechnique (active + past endDate)
+      expect(row.active).toBe(3);     // Kickoff, Realisation, Realisation
+      expect(row.overdue).toBe(1);    // the Realisation with a past endDate
       expect(row.completed).toBe(1);  // only the recent Completed
       expect(row.upcoming).toBe(1);   // Kickoff (active + within 14 days, not past)
     });
@@ -416,7 +416,7 @@ describe('AnalyticsService', () => {
           id: 'pm-high', firstName: 'High', lastName: 'B',
           managedProjects: [
             { status: 'Kickoff', endDate: daysFromNow(30), updatedAt: daysAgo(1) },
-            { status: 'Recette', endDate: daysFromNow(30), updatedAt: daysAgo(1) },
+            { status: 'Realisation', endDate: daysFromNow(30), updatedAt: daysAgo(1) },
           ],
         },
         {

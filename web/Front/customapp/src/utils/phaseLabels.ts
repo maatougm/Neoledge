@@ -3,12 +3,7 @@
 export const PHASE_LABELS: Record<string, string> = {
   Draft: 'Brouillon',
   Kickoff: 'Lancement',
-  CadrageTechnique: 'Cadrage technique',
-  Environnement: 'Environnement',
-  Parametrage: 'Paramétrage',
-  Integration: 'Intégration',
-  Recette: 'Recette',
-  MEP: 'Mise en production',
+  Realisation: 'Réalisation',
   Cloture: 'Clôture',
   Archived: 'Archivé',
 }

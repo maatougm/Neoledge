@@ -62,7 +62,7 @@ describe('ValidationTimeline', () => {
       data: [
         makeValidation({ id: 'v1' }),
         makeValidation({ id: 'v2', isApproved: false }),
-        makeValidation({ id: 'v3', phase: 'Recette' }),
+        makeValidation({ id: 'v3', phase: 'Realisation' }),
       ],
     })
 

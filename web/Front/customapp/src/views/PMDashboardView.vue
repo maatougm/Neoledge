@@ -228,10 +228,12 @@ const loadingMilestones = ref<boolean>(true)
 const error = ref<string | null>(null)
 
 const stats = computed(() => {
-  const active = projects.value.filter((p) => p.status !== 'Closed' && p.status !== 'Archived').length
-  const awaitingSpec = projects.value.filter((p) => p.status === 'Parametrage').length
+  const active = projects.value.filter((p) => p.status !== 'Cloture' && p.status !== 'Archived').length
+  // Brouillon (Draft) = cahier not yet approved → still awaiting the spec team.
+  const awaitingSpec = projects.value.filter((p) => p.status === 'Draft').length
+  // Cahier approved once the project advances past Brouillon.
   const cahierValidated = projects.value.filter(
-    (p) => p.status === 'MEP' || p.status === 'Production' || p.status === 'Closed',
+    (p) => p.status === 'Kickoff' || p.status === 'Realisation' || p.status === 'Cloture',
   ).length
   const open = myTasks.value.filter((t) => t.status !== 'Closed' && t.status !== 'Resolved')
   return {
@@ -313,21 +315,20 @@ function monthShort(dateStr: string): string {
 
 function phaseLabelLocal(s: string): string {
   const m: Record<string, string> = {
-    New: 'Nouveau',
-    Parametrage: 'Paramétrage',
-    MEP: 'MEP',
-    Production: 'Production',
-    Closed: 'Clôturé',
+    Draft: 'Brouillon',
+    Kickoff: 'Lancement',
+    Realisation: 'Réalisation',
+    Cloture: 'Clôture',
     Archived: 'Archivé',
   }
   return m[s] ?? s
 }
 
 function phaseSeverity(s: string): 'info' | 'success' | 'warn' | 'secondary' {
-  if (s === 'Parametrage') return 'warn'
-  if (s === 'MEP' || s === 'Production') return 'success'
-  if (s === 'Closed' || s === 'Archived') return 'secondary'
-  return 'info'
+  if (s === 'Realisation') return 'warn'
+  if (s === 'Cloture') return 'success'
+  if (s === 'Archived') return 'secondary'
+  return 'info' // Draft / Kickoff
 }
 
 // ─── Loaders ─────────────────────────────────────────────────────────────────
