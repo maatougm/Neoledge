@@ -25,7 +25,6 @@ import { readGlossaryTool } from '../ai/agent/tools/glossary-tools.js'
 import type { ToolDefinition } from '../ai/agent/agent-types.js'
 import { obj, str, arr, bool } from '../ai/agent/json-schema.js'
 import { buildLiveCopilotPrompt } from './live-copilot.prompt.js'
-import { isCopilotDemoSession, runDemoFire } from './live-copilot.demo.js'
 import {
   COPILOT_LIMITS,
   DEFAULT_MEETING_TYPE,
@@ -136,18 +135,6 @@ export class LiveCopilotService {
     const state = this.sessions.get(liveSessionId)
     if (!state) {
       return Result.ok(this.skipResult(null, 'no_session'))
-    }
-
-    // ── DEMO MODE (temporary) ────────────────────────────────────────────────
-    // When DEMO_COPILOT_MODE=on and this session is the Rapido demo project, the
-    // copilot replays a deterministic, hand-authored checklist instead of calling
-    // the AI — no tokens, no provider, no latency. Off by default; a no-op for
-    // every real session. See live-copilot.demo.ts. (cooldown/caps/force N/A.)
-    if (isCopilotDemoSession(state)) {
-      state.fireCount += 1
-      state.lastFiredAtMs = Date.now()
-      state.lastFiredAtOffset = state.totalCharsAppended
-      return Result.ok(runDemoFire(state))
     }
 
     // Concurrency guard — two near-simultaneous fires (PM double-clicks

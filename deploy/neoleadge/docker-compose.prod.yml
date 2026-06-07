@@ -71,11 +71,6 @@ services:
       CAHIER_USE_SEMANTIC_RETRIEVAL: ${CAHIER_USE_SEMANTIC_RETRIEVAL:-off}
       EMBEDDING_TIMEOUT_MS: ${EMBEDDING_TIMEOUT_MS:-15000}
       LIVE_MEETING_COPILOT: ${LIVE_MEETING_COPILOT:-off}
-      # Demo video only — when "on", the AI features (live copilot, cahier,
-      # backlog) return fixed perfect "Rapido" answers for ANY project (no AI,
-      # no tokens). Leave "off" outside of demos. See .env.prod.example.
-      DEMO_COPILOT_MODE: ${DEMO_COPILOT_MODE:-off}
-      DEMO_COPILOT_PROJECT_ID: ${DEMO_COPILOT_PROJECT_ID:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Pinned to the docker-internal service name — overriding via .env.prod
       # would break the compose-network resolution.

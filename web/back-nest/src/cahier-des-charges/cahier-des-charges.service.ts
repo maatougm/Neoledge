@@ -41,8 +41,6 @@ import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
 import { EmbeddingsService } from '../ai/embeddings/embeddings.service.js'
 import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
 import { runCahierAgent, runCahierPlannerWorker } from './cahier-agent.js'
-import { isAiDemoMode } from '../common/demo-mode.js'
-import { RAPIDO_CAHIER } from './cahier.demo.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 import { redactPii } from '../common/pii-redact.js'
@@ -293,17 +291,6 @@ export class CahierDesChargesService {
   // FR: Renvoie un CahierPreflightResult avec un score de préparation (0-1),
   //     les listes de champs manquants et remplis, et si la génération est bloquée.
   async runPreflight(projectId: string): Promise<CahierPreflightResult> {
-    // DEMO MODE — always "ready", never blocks generation (temporary). See demo-mode.ts.
-    if (isAiDemoMode()) {
-      return {
-        readinessScore: 1,
-        missingFields: [],
-        answeredFields: ['Questionnaire', 'Réunion de cadrage', 'Cahier des charges'],
-        canGenerate: true,
-        computedAt: Date.now(),
-        source: 'heuristic',
-      }
-    }
     const { formData, transcripts } = await this.gatherProjectData(projectId)
 
     // Pull existing cahier so we can flag remaining INFO_MANQUANTE markers too.
@@ -1181,12 +1168,6 @@ RÈGLES :
     transcripts: CahierTranscriptInput[],
     projectId?: string,
   ): Promise<CahierAiResult> {
-    // DEMO MODE — return the fixed Rapido cahier with no AI call (temporary).
-    // See common/demo-mode.ts. Off by default.
-    if (isAiDemoMode()) {
-      this.logger.log(`generateCahierContent: DEMO MODE → returning fixed Rapido cahier`)
-      return RAPIDO_CAHIER
-    }
     // Pre-flight gates — must run BEFORE the agent-mode branch so turning on
     // AI_AGENT_MODE doesn't silently disable the safety net.
     if (projectId) {
@@ -1560,23 +1541,6 @@ RÈGLES :
     onEvent: (e: CahierStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    // DEMO MODE — stream the fixed Rapido cahier progressively (no AI). The
-    // three section events give the live "generation" feel on camera; the
-    // complete event carries the full 9-key result. See common/demo-mode.ts.
-    if (isAiDemoMode()) {
-      const c = RAPIDO_CAHIER
-      const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
-      onEvent({ type: 'started', totalGroups: 3, transcriptCount: transcripts.length })
-      await pause(500)
-      onEvent({ type: 'section', group: 'intro', partial: { objectifDocument: c.objectifDocument, contexte: c.contexte }, latencyMs: 500 })
-      await pause(650)
-      onEvent({ type: 'section', group: 'scope', partial: { objectifProjet: c.objectifProjet, perimetreInclus: c.perimetreInclus, perimetreExclus: c.perimetreExclus, exigencesFonctionnelles: c.exigencesFonctionnelles }, latencyMs: 650 })
-      await pause(650)
-      onEvent({ type: 'section', group: 'delivery', partial: { architectureTechnique: c.architectureTechnique, livrables: c.livrables, conclusion: c.conclusion }, latencyMs: 650 })
-      await pause(400)
-      onEvent({ type: 'complete', aiContent: c, durationMs: 2200 })
-      return
-    }
     if (!this.zaiFallback.isConfigured()) {
       onEvent({ type: 'error', message: 'streaming requires Z.AI provider (AI_FALLBACK_API_KEY)' })
       return

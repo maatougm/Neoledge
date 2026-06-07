@@ -42,8 +42,6 @@ import {
 import { AgentRunnerService } from './agent/agent-runner.service.js';
 import { runBacklogAgent, runBacklogPlannerWorker } from './backlog-agent.js';
 import { AgentEmitMissedError } from './agent/agent-errors.js';
-import { isAiDemoMode } from '../common/demo-mode.js';
-import { RAPIDO_BACKLOG } from './backlog.demo.js';
 
 // A tag string written to every WorkPackage created from the AI backlog.
 // Used in the concurrency guard to detect recent AI acceptances.
@@ -92,15 +90,6 @@ export class BacklogService {
    * AI provider. Returns a sanitized preview — NO DB writes.
    */
   async preview(projectId: string): Promise<ProposedBacklog> {
-    // ── DEMO MODE (temporary) ────────────────────────────────────────────────
-    // Return the fixed Rapido backlog with no AI call and no gating (so a
-    // freshly-created demo project, even with an empty questionnaire, gets a
-    // perfect backlog). Off by default. See common/demo-mode.ts.
-    if (isAiDemoMode()) {
-      this.logger.log(`backlog preview: DEMO MODE → returning fixed Rapido backlog for ${projectId}`);
-      return RAPIDO_BACKLOG;
-    }
-
     // ── In-memory cooldown guard ─────────────────────────────────────────────
     const now = Date.now();
     const last = this.lastPreviewAt.get(projectId) ?? 0;
