@@ -241,15 +241,16 @@ function normalize(s: string): string {
 
 /**
  * Is this live session running in deterministic demo mode?
- * True only when `DEMO_COPILOT_MODE=on` AND the session's project id matches
- * the configured demo project (defaults to the Rapido fixed id).
+ * True when `DEMO_COPILOT_MODE=on`. By default (DEMO_COPILOT_PROJECT_ID unset)
+ * it applies to EVERY project, so a project created live on camera also gets
+ * the scripted checklist. Set DEMO_COPILOT_PROJECT_ID to scope it to one id.
  */
 export function isCopilotDemoSession(state: LiveSessionState): boolean {
   if ((process.env.DEMO_COPILOT_MODE ?? 'off').toLowerCase() !== 'on')
     return false;
   const configured = (process.env.DEMO_COPILOT_PROJECT_ID ?? '').trim();
-  const target = configured.length > 0 ? configured : RAPIDO_DEMO_PROJECT_ID;
-  return state.projectId === target;
+  // Empty → all projects; otherwise scope to the configured id.
+  return configured.length === 0 || state.projectId === configured;
 }
 
 /**

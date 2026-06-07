@@ -1,3 +1,38 @@
+/* ============================================================================
+ * FILE: cahier-des-charges.service.ts  —  AI "Cahier des Charges" generator
+ *                                          Générateur IA de Cahier des Charges
+ * ============================================================================
+ * EN — A "cahier des charges" (CDC) is a formal French project-specification
+ *   document. This service builds one automatically from three data sources:
+ *   (1) the questionnaire answers the PM filled in, (2) transcripts of recorded
+ *   meetings, and (3) past feedback from the SpecificationTeam (so the AI
+ *   learns from previous rejections). The data is packed into a compact TOON
+ *   prompt (Token-Oriented Object Notation — ~50 % fewer tokens than verbose
+ *   key:value prose) and sent to an AI provider (Z.AI primary, OpenAI/Gemini
+ *   fallback). The AI returns a strict 9-key JSON that is saved into
+ *   Project.aiOutput. The PM cannot approve their own CDC; only SpecificationTeam
+ *   members (or Admins) can. A "grounding pass" and a "self-critique pass" run
+ *   after generation to replace hallucinated tech names with INFO_MANQUANTE
+ *   markers before the document reaches the review team.
+ *
+ * FR — Un « cahier des charges » (CDC) est un document contractuel formel.
+ *   Ce service en génère un automatiquement depuis trois sources : (1) les
+ *   réponses au questionnaire remplies par le MP, (2) les transcriptions des
+ *   réunions enregistrées, et (3) les retours passés de l'équipe de
+ *   spécification (pour que l'IA apprenne des rejets précédents). Les données
+ *   sont compressées en un prompt TOON compact (~50 % de tokens en moins) et
+ *   envoyées à un fournisseur IA (Z.AI en priorité, OpenAI/Gemini en secours).
+ *   L'IA renvoie un JSON strictement à 9 clés sauvegardé dans Project.aiOutput.
+ *   Le MP ne peut pas approuver son propre CDC ; seuls les membres de
+ *   SpecificationTeam (ou les Admins) le peuvent. Un « passage d'ancrage » et
+ *   un « passage d'auto-critique » s'exécutent après la génération pour
+ *   remplacer les noms techniques hallucin és par des marqueurs INFO_MANQUANTE.
+ *
+ * SEE ALSO / VOIR AUSSI: docs/handbook/00-programming-fundamentals.md
+ *   → §4 async/await, §9 public/private/readonly, §13 Decorators,
+ *     §14 NestJS DI, §15 Result, §16 HTTP & Guards, §17 Prisma, §20 Symbols.
+ * ========================================================================== */
+
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -6,9 +41,13 @@ import { AgentRunnerService } from '../ai/agent/agent-runner.service.js'
 import { EmbeddingsService } from '../ai/embeddings/embeddings.service.js'
 import { AgentEmitMissedError } from '../ai/agent/agent-errors.js'
 import { runCahierAgent, runCahierPlannerWorker } from './cahier-agent.js'
+import { isAiDemoMode } from '../common/demo-mode.js'
+import { RAPIDO_CAHIER } from './cahier.demo.js'
 import { AiUsageService } from '../ai-usage/ai-usage.service.js'
 import { NotificationsService } from '../notifications/notifications.service.js'
 import { redactPii } from '../common/pii-redact.js'
+// `import type` imports TypeScript types only — they vanish at runtime (§11, §12).
+// FR: `import type` importe seulement des types TypeScript — ils disparaissent à l'exécution.
 import type {
   CahierFormData,
   CahierTranscriptInput,
@@ -21,6 +60,14 @@ import type {
 } from './cahier-des-charges.types.js'
 
 // ─── System prompt for cahier des charges generation ─────────────────────────
+// EN — This is the instruction text that is sent to the AI BEFORE the project
+//   data. It defines the AI's role, the output JSON schema (9 keys), the strict
+//   anti-hallucination rules (write INFO_MANQUANTE when data is missing, never
+//   invent), and the priority order of the three data sources.
+// FR — Ce texte d'instruction est envoyé à l'IA AVANT les données projet. Il
+//   définit le rôle de l'IA, le schéma JSON de sortie (9 clés), les règles
+//   strictes anti-hallucination (écrire INFO_MANQUANTE si données manquantes,
+//   ne jamais inventer) et l'ordre de priorité des trois sources.
 
 const SYSTEM_PROMPT = `# RÈGLE NUMÉRO UN — NE JAMAIS INVENTER
 
@@ -87,33 +134,61 @@ Français, ton contractuel professionnel, exhaustif **mais sourcé**. Réutilise
 
 Tu n'es PAS autorisé à reformuler une section que l'équipe de validation a corrigée juste pour "améliorer le style". Leur rédaction prévaut.`
 
+// `@Injectable()` = NestJS may create this class and inject it elsewhere (§13, §14).
+// FR: NestJS peut créer cette classe et l'injecter ailleurs.
 @Injectable()
 export class CahierDesChargesService {
+  // Private logger — writes warnings/errors to the server console. Never crashes the request.
+  // FR: Logger privé — écrit avertissements/erreurs sur la console serveur. Ne plante jamais.
   private readonly logger = new Logger(CahierDesChargesService.name)
 
+  // Dependency Injection (§14): NestJS supplies all seven services below.
+  // Each is stored as a `private readonly` property (§9) so it cannot be
+  // accidentally replaced after construction.
+  // FR: Injection de dépendances (§14) : NestJS fournit les sept services.
+  //     Chacun est stocké en propriété `private readonly` (§9).
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-    private readonly zaiFallback: ZaiFallbackProvider,
-    private readonly aiUsage: AiUsageService,
-    private readonly agentRunner: AgentRunnerService,
-    private readonly notifications: NotificationsService,
-    private readonly embeddings: EmbeddingsService,
+    private readonly prisma: PrismaService,         // database client / client BD
+    private readonly config: ConfigService,         // reads .env variables / lit les variables .env
+    private readonly zaiFallback: ZaiFallbackProvider, // Z.AI API wrapper / enveloppe API Z.AI
+    private readonly aiUsage: AiUsageService,       // tracks daily token budget / suit le budget quotidien
+    private readonly agentRunner: AgentRunnerService, // runs multi-step AI agent loops / exécute les boucles d'agent IA
+    private readonly notifications: NotificationsService, // sends in-app notifications / envoie des notifs
+    private readonly embeddings: EmbeddingsService, // pgvector semantic search / recherche sémantique
   ) {}
 
   /** Phase 4 — pgvector semantic retrieval flag. Off by default until the
    *  backfill is verified on prod data (Stage 1.9 → 1.10). */
+  // FR: Drapeau de récupération sémantique pgvector. Désactivé par défaut
+  //     jusqu'à vérification du backfill sur les données prod.
+  // `this.config.get<string>(...)` reads an environment variable. `?? 'off'`
+  // defaults to 'off' if the variable is not set (§20). `.toLowerCase()` makes
+  // the comparison case-insensitive. FR: `config.get` lit une variable d'env ;
+  // `?? 'off'` = valeur par défaut si absente ; `.toLowerCase()` = insensible à la casse.
   private isSemanticRetrievalEnabled(): boolean {
     return (this.config.get<string>('CAHIER_USE_SEMANTIC_RETRIEVAL') ?? 'off').toLowerCase() === 'on'
   }
 
   /** True when the cahier agent loop should run instead of single-shot. */
+  // FR: Vrai quand la boucle d'agent CDC doit tourner au lieu du mode mono-appel.
   private isAgentModeEnabled(): boolean {
     const raw = (this.config.get<string>('AI_AGENT_MODE') ?? 'off').toLowerCase()
+    // `raw === 'all'` enables agent mode for every feature.
+    // `.split(/[,\s]+/).includes('cahier')` handles comma/space-separated lists
+    // like "backlog,cahier". FR: `raw === 'all'` active l'agent pour tout ;
+    // `.split(...).includes('cahier')` gère les listes séparées par virgule.
     return raw === 'all' || raw.split(/[,\s]+/).includes('cahier')
   }
 
   // ─── 1. Gather all project data ────────────────────────────────────────────
+  // EN — Reads the project row + its questionnaire answers + meeting transcripts
+  //   from the database and packages them into two typed objects (`formData` and
+  //   `transcripts`) that the prompt-builder can consume. Throws NotFoundException
+  //   (HTTP 404) if the project doesn't exist. See §4, §17.
+  // FR — Lit la ligne projet + ses réponses au questionnaire + les transcriptions
+  //   de réunions depuis la BD et les emballe en deux objets typés que le
+  //   constructeur de prompt peut utiliser. Lève NotFoundException (HTTP 404)
+  //   si le projet n'existe pas.
 
   async gatherProjectData(projectId: string): Promise<{
     formData: CahierFormData
@@ -122,6 +197,8 @@ export class CahierDesChargesService {
     // Hard caps to keep the prompt + memory bounded for projects with many
     // long meetings. The cahier is a summary — we don't need every segment of
     // every transcript, just the most recent + AI-summarised meetings.
+    // FR: Plafonds durs pour limiter la taille du prompt. Le CDC est un résumé —
+    //     pas besoin de chaque segment de chaque transcription.
     const MAX_TRANSCRIPTS = 8
     const MAX_SEGMENTS_PER_TRANSCRIPT = 250
 
@@ -144,10 +221,18 @@ export class CahierDesChargesService {
     })
 
     if (!project) {
+      // `throw` here is the exception: services normally return Result (§15),
+      // but `gatherProjectData` is called by other methods that propagate
+      // NestJS HTTP exceptions directly to the controller. FR: `throw` ici est
+      // l'exception à la règle : normalement les services renvoient Result (§15),
+      // mais `gatherProjectData` est appelé par des méthodes qui propagent les
+      // exceptions HTTP NestJS directement au controller.
       throw new NotFoundException('Projet non trouvé')
     }
 
-    // Build form data
+    // Build form data — a plain object (§5) summarising the project's scalar fields.
+    // FR: Construire les données de formulaire — un objet simple (§5) résumant
+    //     les champs scalaires du projet.
     const formData: CahierFormData = {
       projectName: project.name,
       clientName: project.clientName,
@@ -165,7 +250,11 @@ export class CahierDesChargesService {
       })),
     }
 
-    // Build transcript inputs
+    // Build transcript inputs — `.map(t => ({...}))` transforms each raw DB
+    // transcript row into the shape `CahierTranscriptInput` expects. `[...new Set(...)]`
+    // deduplicates speaker names. See §3, §5 (objects/spread).
+    // FR: `.map(t => ({...}))` transforme chaque ligne BD en CahierTranscriptInput.
+    //     `[...new Set(...)]` déduplique les noms des intervenants.
     const transcripts: CahierTranscriptInput[] = project.transcripts.map((t) => ({
       title: t.title,
       recordedAt: t.recordedAt.toISOString().slice(0, 10),
@@ -195,10 +284,32 @@ export class CahierDesChargesService {
    * meetings, or (c) explicitly accept generating with holes — instead of the
    * AI silently inventing "À définir" placeholders or, worse, hallucinating data.
    */
+  // FR — Inspecte questionnaire + réunions + CDC sauvegardé et signale ce qui
+  //   manque AVANT la génération. Permet au MP de (a) combler les lacunes,
+  //   (b) enregistrer d'autres réunions, ou (c) accepter de générer avec des
+  //   trous — plutôt que l'IA invente silencieusement des « À définir ».
+  // Returns a `CahierPreflightResult` containing a readiness score (0–1),
+  // lists of missing and answered fields, and whether generation is blocked.
+  // FR: Renvoie un CahierPreflightResult avec un score de préparation (0-1),
+  //     les listes de champs manquants et remplis, et si la génération est bloquée.
   async runPreflight(projectId: string): Promise<CahierPreflightResult> {
+    // DEMO MODE — always "ready", never blocks generation (temporary). See demo-mode.ts.
+    if (isAiDemoMode()) {
+      return {
+        readinessScore: 1,
+        missingFields: [],
+        answeredFields: ['Questionnaire', 'Réunion de cadrage', 'Cahier des charges'],
+        canGenerate: true,
+        computedAt: Date.now(),
+        source: 'heuristic',
+      }
+    }
     const { formData, transcripts } = await this.gatherProjectData(projectId)
 
     // Pull existing cahier so we can flag remaining INFO_MANQUANTE markers too.
+    // `.catch(() => ...)` means: if the DB call fails, use a safe default
+    // instead of crashing — the preflight result is still useful without it.
+    // FR: `.catch(() => ...)` : si l'appel BD échoue, utiliser un défaut sûr.
     const persisted = await this.getPersistedCahier(projectId).catch(() => ({ aiContent: null }))
 
     // Pull project fields so the UI can deep-link "fill this answer" actions.
@@ -210,10 +321,14 @@ export class CahierDesChargesService {
 
     // 1. Cheap deterministic checks first — these never miss the obvious
     //    "no questionnaire / no meeting" cases regardless of AI mood.
+    // FR: 1. Vérifications déterministes bon marché en premier — elles ne ratent
+    //    jamais les cas évidents « pas de questionnaire / pas de réunion ».
     const heuristicGaps = this.collectHeuristicGaps(formData, transcripts, persisted.aiContent, fieldByLabel)
 
     // 2. Try the LLM for richer, project-specific gap discovery. Failure
     //    falls back to heuristic-only — never blocks the user.
+    // FR: 2. Essayer le LLM pour une découverte de lacunes plus riche et spécifique.
+    //    L'échec repasse en heuristique seulement — ne bloque jamais l'utilisateur.
     let aiGaps: MissingFieldInfo[] = []
     let source: 'ai' | 'heuristic' = 'heuristic'
     if (this.zaiFallback.isConfigured()) {
@@ -1066,6 +1181,12 @@ RÈGLES :
     transcripts: CahierTranscriptInput[],
     projectId?: string,
   ): Promise<CahierAiResult> {
+    // DEMO MODE — return the fixed Rapido cahier with no AI call (temporary).
+    // See common/demo-mode.ts. Off by default.
+    if (isAiDemoMode()) {
+      this.logger.log(`generateCahierContent: DEMO MODE → returning fixed Rapido cahier`)
+      return RAPIDO_CAHIER
+    }
     // Pre-flight gates — must run BEFORE the agent-mode branch so turning on
     // AI_AGENT_MODE doesn't silently disable the safety net.
     if (projectId) {
@@ -1439,6 +1560,23 @@ RÈGLES :
     onEvent: (e: CahierStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {
+    // DEMO MODE — stream the fixed Rapido cahier progressively (no AI). The
+    // three section events give the live "generation" feel on camera; the
+    // complete event carries the full 9-key result. See common/demo-mode.ts.
+    if (isAiDemoMode()) {
+      const c = RAPIDO_CAHIER
+      const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+      onEvent({ type: 'started', totalGroups: 3, transcriptCount: transcripts.length })
+      await pause(500)
+      onEvent({ type: 'section', group: 'intro', partial: { objectifDocument: c.objectifDocument, contexte: c.contexte }, latencyMs: 500 })
+      await pause(650)
+      onEvent({ type: 'section', group: 'scope', partial: { objectifProjet: c.objectifProjet, perimetreInclus: c.perimetreInclus, perimetreExclus: c.perimetreExclus, exigencesFonctionnelles: c.exigencesFonctionnelles }, latencyMs: 650 })
+      await pause(650)
+      onEvent({ type: 'section', group: 'delivery', partial: { architectureTechnique: c.architectureTechnique, livrables: c.livrables, conclusion: c.conclusion }, latencyMs: 650 })
+      await pause(400)
+      onEvent({ type: 'complete', aiContent: c, durationMs: 2200 })
+      return
+    }
     if (!this.zaiFallback.isConfigured()) {
       onEvent({ type: 'error', message: 'streaming requires Z.AI provider (AI_FALLBACK_API_KEY)' })
       return
